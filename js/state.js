@@ -1,14 +1,20 @@
 import { loadState, saveState } from "./storage.js";
+import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js";
 
 const GROUP_COLORS = [
   "#5b8def", "#e0698e", "#3fb98c", "#f2a541",
   "#9b6bdb", "#4fb3bf", "#e05c5c", "#7d8ca3",
 ];
 
+const PUSH_DEBOUNCE_MS = 600;
+
 class Store {
   constructor() {
     this.state = loadState();
+    if (!this.state.updatedAt) this.state.updatedAt = 0;
     this.listeners = new Set();
+    this.pushTimer = null;
+    this.initRemote();
   }
 
   subscribe(fn) {
@@ -17,8 +23,34 @@ class Store {
   }
 
   emit() {
+    this.state.updatedAt = Date.now();
     saveState(this.state);
     this.listeners.forEach((fn) => fn(this.state));
+    this.scheduleRemotePush();
+  }
+
+  // --- remote sync ---
+  scheduleRemotePush() {
+    clearTimeout(this.pushTimer);
+    this.pushTimer = setTimeout(() => pushRemoteState(this.state), PUSH_DEBOUNCE_MS);
+  }
+
+  applyRemote(remoteState) {
+    if (!remoteState) return;
+    if ((remoteState.updatedAt || 0) <= (this.state.updatedAt || 0)) return;
+    this.state = remoteState;
+    saveState(this.state);
+    this.listeners.forEach((fn) => fn(this.state));
+  }
+
+  async initRemote() {
+    const remote = await fetchRemoteState();
+    if (remote) {
+      this.applyRemote(remote);
+    } else {
+      pushRemoteState(this.state);
+    }
+    subscribeRemote((remoteState) => this.applyRemote(remoteState));
   }
 
   // --- tasks ---
