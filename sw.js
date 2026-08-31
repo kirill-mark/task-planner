@@ -1,17 +1,17 @@
-const CACHE_NAME = "task-planner-v3";
+const CACHE_NAME = "task-planner-v4";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=2",
-  "./js/app.js?v=2",
+  "./css/style.css?v=3",
+  "./js/app.js?v=3",
   "./js/state.js",
   "./js/storage.js",
   "./js/dates.js",
   "./js/sync.js",
   "./manifest.json",
-  "./icons/icon-192.png?v=2",
-  "./icons/icon-512.png?v=2",
-  "./icons/icon-180.png?v=2",
+  "./icons/icon-192.png?v=3",
+  "./icons/icon-512.png?v=3",
+  "./icons/icon-180.png?v=3",
 ];
 
 self.addEventListener("install", (event) => {

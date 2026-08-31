@@ -357,7 +357,7 @@ function render() {
   const viewLabel = { list: "Список", week: "Неделя", day: "День" };
   root.innerHTML = `
     <header class="app-header">
-      <h1><img src="icons/icon-192.png" alt="" class="logo" />MARK</h1>
+      <h1><img src="icons/icon-192.png?v=3" alt="" class="logo" />MARK</h1>
       <nav class="view-switch">
         ${["list", "week", "day"].map((v) => `
           <button data-action="switch-view" data-view="${v}" class="${ui.view === v ? "active" : ""}">
