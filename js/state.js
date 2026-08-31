@@ -10,11 +10,11 @@ const PUSH_DEBOUNCE_MS = 600;
 
 class Store {
   constructor() {
-    this.state = loadState();
-    if (!this.state.updatedAt) this.state.updatedAt = 0;
+    this.userId = null;
+    this.state = { sections: [], groups: [], tasks: [], updatedAt: 0 };
     this.listeners = new Set();
     this.pushTimer = null;
-    this.initRemote();
+    this.channel = null;
   }
 
   subscribe(fn) {
@@ -24,33 +24,49 @@ class Store {
 
   emit() {
     this.state.updatedAt = Date.now();
-    saveState(this.state);
+    saveState(this.userId, this.state);
     this.listeners.forEach((fn) => fn(this.state));
     this.scheduleRemotePush();
   }
 
+  // --- user session lifecycle ---
+  async attachUser(userId) {
+    this.userId = userId;
+    this.state = loadState(userId);
+    if (!this.state.updatedAt) this.state.updatedAt = 0;
+    this.listeners.forEach((fn) => fn(this.state));
+
+    const remote = await fetchRemoteState(userId);
+    if (this.userId !== userId) return; // user switched again while awaiting
+    if (remote) {
+      this.applyRemote(remote);
+    } else {
+      pushRemoteState(userId, this.state);
+    }
+    this.channel = subscribeRemote(userId, (remoteState) => this.applyRemote(remoteState));
+  }
+
+  detachUser() {
+    clearTimeout(this.pushTimer);
+    if (this.channel) { this.channel.unsubscribe(); this.channel = null; }
+    this.userId = null;
+    this.state = { sections: [], groups: [], tasks: [], updatedAt: 0 };
+  }
+
   // --- remote sync ---
   scheduleRemotePush() {
+    if (!this.userId) return;
     clearTimeout(this.pushTimer);
-    this.pushTimer = setTimeout(() => pushRemoteState(this.state), PUSH_DEBOUNCE_MS);
+    const userId = this.userId;
+    this.pushTimer = setTimeout(() => pushRemoteState(userId, this.state), PUSH_DEBOUNCE_MS);
   }
 
   applyRemote(remoteState) {
     if (!remoteState) return;
     if ((remoteState.updatedAt || 0) <= (this.state.updatedAt || 0)) return;
     this.state = remoteState;
-    saveState(this.state);
+    saveState(this.userId, this.state);
     this.listeners.forEach((fn) => fn(this.state));
-  }
-
-  async initRemote() {
-    const remote = await fetchRemoteState();
-    if (remote) {
-      this.applyRemote(remote);
-    } else {
-      pushRemoteState(this.state);
-    }
-    subscribeRemote((remoteState) => this.applyRemote(remoteState));
   }
 
   // --- tasks ---

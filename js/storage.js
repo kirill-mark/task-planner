@@ -1,4 +1,4 @@
-const STORAGE_KEY = "task-planner:v1";
+const STORAGE_PREFIX = "task-planner:v1:";
 const DEFAULT_SECTION_ID = "general";
 
 const DEFAULT_SECTIONS = [
@@ -49,9 +49,9 @@ function migrate(state) {
   return state;
 }
 
-export function loadState() {
+export function loadState(userId) {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_PREFIX + userId);
     if (!raw) return seedState();
     const parsed = JSON.parse(raw);
     if (!parsed.groups || !parsed.tasks) return seedState();
@@ -61,6 +61,6 @@ export function loadState() {
   }
 }
 
-export function saveState(state) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+export function saveState(userId, state) {
+  localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(state));
 }

@@ -3,9 +3,12 @@ import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
 } from "./dates.js";
+import {
+  onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
+} from "./sync.js";
 
 const ui = {
-  view: "list",       // 'list' | 'week' | 'day'
+  view: "list",       // 'list' | 'week' | 'day' | 'profile'
   refDate: todayISO(),
   filter: { type: "all" }, // {type:'all'} | {type:'section', id} | {type:'group', id}
   editingGroupId: null,
@@ -14,7 +17,23 @@ const ui = {
   openForms: new Set(),
 };
 
+let session = null;
+let authMode = "signin"; // 'signin' | 'signup'
+let authError = "";
+let authMessage = "";
+let authBusy = false;
+let profileNameMsg = "";
+let profilePasswordMsg = "";
+
 const root = document.getElementById("app");
+
+function initials(text) {
+  return (text || "?").trim().slice(0, 1).toUpperCase();
+}
+
+function displayNameOf(sess) {
+  return sess.user.user_metadata?.display_name || sess.user.email;
+}
 
 function escapeHtml(str) {
   const div = document.createElement("div");
@@ -351,19 +370,83 @@ function renderSidebar() {
     </div>`;
 }
 
+// ---------- Auth & profile screens ----------
+
+function renderAuthScreen() {
+  const isSignup = authMode === "signup";
+  return `
+    <div class="auth-screen">
+      <div class="auth-card">
+        <h1><img src="icons/icon-192.png?v=5" alt="" class="logo" />MARK</h1>
+        <p class="auth-subtitle">Планировщик задач</p>
+        <form class="auth-form" data-action="auth-submit">
+          <input type="email" name="email" placeholder="Email" required autocomplete="email" />
+          <input type="password" name="password" placeholder="Пароль" required minlength="6"
+            autocomplete="${isSignup ? "new-password" : "current-password"}" />
+          ${authError ? `<div class="auth-error">${escapeHtml(authError)}</div>` : ""}
+          ${authMessage ? `<div class="auth-message">${escapeHtml(authMessage)}</div>` : ""}
+          <button type="submit" ${authBusy ? "disabled" : ""}>${isSignup ? "Зарегистрироваться" : "Войти"}</button>
+        </form>
+        <button type="button" class="auth-toggle" data-action="toggle-auth-mode">
+          ${isSignup ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться"}
+        </button>
+      </div>
+    </div>`;
+}
+
+function renderProfileScreen() {
+  const email = session.user.email;
+  const name = session.user.user_metadata?.display_name || "";
+  return `
+    <header class="app-header">
+      <button class="back-btn" data-action="back-to-app" aria-label="Назад">←</button>
+      <h1>Личный кабинет</h1>
+    </header>
+    <div class="profile-screen">
+      <div class="profile-section">
+        <label class="field-label">Email</label>
+        <div class="profile-static">${escapeHtml(email)}</div>
+      </div>
+      <form class="profile-form" data-action="save-display-name">
+        <label class="field-label">Имя</label>
+        <input type="text" name="displayName" value="${escapeHtml(name)}" placeholder="Как тебя называть" maxlength="40" />
+        <button type="submit">Сохранить имя</button>
+        ${profileNameMsg ? `<div class="profile-msg">${escapeHtml(profileNameMsg)}</div>` : ""}
+      </form>
+      <form class="profile-form" data-action="save-password">
+        <label class="field-label">Новый пароль</label>
+        <input type="password" name="password" placeholder="Минимум 6 символов" minlength="6" />
+        <button type="submit">Сменить пароль</button>
+        ${profilePasswordMsg ? `<div class="profile-msg">${escapeHtml(profilePasswordMsg)}</div>` : ""}
+      </form>
+      <button type="button" class="logout-btn" data-action="logout">Выйти из аккаунта</button>
+    </div>`;
+}
+
 // ---------- Root render ----------
 
 function render() {
+  if (!session) {
+    root.innerHTML = renderAuthScreen();
+    return;
+  }
+  if (ui.view === "profile") {
+    root.innerHTML = renderProfileScreen();
+    return;
+  }
   const viewLabel = { list: "Список", week: "Неделя", day: "День" };
   root.innerHTML = `
     <header class="app-header">
-      <h1><img src="icons/icon-192.png?v=4" alt="" class="logo" />MARK</h1>
+      <h1><img src="icons/icon-192.png?v=5" alt="" class="logo" />MARK</h1>
       <nav class="view-switch">
         ${["list", "week", "day"].map((v) => `
           <button data-action="switch-view" data-view="${v}" class="${ui.view === v ? "active" : ""}">
             ${viewLabel[v]}
           </button>`).join("")}
       </nav>
+      <button class="profile-btn" data-action="open-profile" title="${escapeHtml(displayNameOf(session))}">
+        ${escapeHtml(initials(displayNameOf(session)))}
+      </button>
     </header>
     <div class="app-body">
       <aside class="sidebar">${renderSidebar()}</aside>
@@ -421,6 +504,21 @@ root.addEventListener("click", (e) => {
   } else if (action === "close-add-form") {
     ui.openForms.delete(el.dataset.form);
     render();
+  } else if (action === "toggle-auth-mode") {
+    authMode = authMode === "signin" ? "signup" : "signin";
+    authError = "";
+    authMessage = "";
+    render();
+  } else if (action === "open-profile") {
+    profileNameMsg = "";
+    profilePasswordMsg = "";
+    ui.view = "profile";
+    render();
+  } else if (action === "back-to-app") {
+    ui.view = "list";
+    render();
+  } else if (action === "logout") {
+    signOut();
   }
 });
 
@@ -469,8 +567,65 @@ root.addEventListener("submit", (e) => {
       date: data.get("date"),
       groupId: data.get("groupId"),
     });
+  } else if (action === "auth-submit") {
+    const email = data.get("email")?.toString().trim();
+    const password = data.get("password")?.toString();
+    if (!email || !password) return;
+    authError = "";
+    authMessage = "";
+    authBusy = true;
+    render();
+    (async () => {
+      const { data: result, error } = authMode === "signup"
+        ? await signUp(email, password)
+        : await signIn(email, password);
+      authBusy = false;
+      if (error) {
+        authError = error.message;
+      } else if (authMode === "signup" && !result.session) {
+        authMessage = "Проверь почту и перейди по ссылке для подтверждения, потом сможешь войти.";
+      }
+      render();
+    })();
+  } else if (action === "save-display-name") {
+    const name = data.get("displayName")?.toString().trim();
+    (async () => {
+      const { data: result, error } = await updateDisplayName(name);
+      if (result?.user) session.user = result.user;
+      profileNameMsg = error ? error.message : "Сохранено";
+      render();
+    })();
+  } else if (action === "save-password") {
+    const password = data.get("password")?.toString();
+    if (!password || password.length < 6) {
+      profilePasswordMsg = "Минимум 6 символов";
+      render();
+      return;
+    }
+    (async () => {
+      const { error } = await updatePassword(password);
+      profilePasswordMsg = error ? error.message : "Пароль изменён";
+      el.reset();
+      render();
+    })();
   }
 });
 
+// ---------- Auth bootstrap ----------
+
 store.subscribe(render);
+
+onAuthChange((newSession) => {
+  const wasLoggedIn = !!session;
+  const isLoggedIn = !!newSession;
+  session = newSession;
+  if (isLoggedIn && (!wasLoggedIn || store.userId !== newSession.user.id)) {
+    store.attachUser(newSession.user.id);
+  } else if (!isLoggedIn && wasLoggedIn) {
+    store.detachUser();
+    ui.view = "list";
+  }
+  render();
+});
+
 render();
