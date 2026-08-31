@@ -39,12 +39,22 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
   padding: 14px 24px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  padding-left: calc(24px + env(safe-area-inset-left));
+  padding-right: calc(24px + env(safe-area-inset-right));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
 
-.app-header h1 { font-size: 1.25rem; margin: 0; }
+.app-header h1 {
+  font-size: 1.25rem; margin: 0; display: flex; align-items: center; gap: 8px;
+}
+.app-header h1 .logo {
+  width: 28px; height: 28px; border-radius: 8px; display: block; flex-shrink: 0;
+}
 
 .view-switch { display: flex; gap: 4px; background: var(--bg); padding: 4px; border-radius: var(--radius); }
 .view-switch button {

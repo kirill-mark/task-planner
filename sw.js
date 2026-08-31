@@ -1,4 +1,4 @@
-const CACHE_NAME = "task-planner-v1";
+const CACHE_NAME = "task-planner-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -7,9 +7,11 @@ const APP_SHELL = [
   "./js/state.js",
   "./js/storage.js",
   "./js/dates.js",
+  "./js/sync.js",
   "./manifest.json",
-  "./icons/icon-192.png",
-  "./icons/icon-512.png",
+  "./icons/icon-192.png?v=2",
+  "./icons/icon-512.png?v=2",
+  "./icons/icon-180.png?v=2",
 ];
 
 self.addEventListener("install", (event) => {
