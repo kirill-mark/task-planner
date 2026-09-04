@@ -49,14 +49,14 @@ async function transcribeVoice(fileId: string): Promise<string> {
 
   const form = new FormData();
   form.append("file", audioBlob, "voice.ogg");
-  form.append("model", "whisper-large-v3-turbo");
+  form.append("model", "whisper-large-v3");
   form.append("language", "ru");
 
   const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
     method: "POST",
     headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
     body: form,
-    signal: withTimeout(),
+    signal: AbortSignal.timeout(30000),
   });
   const groqJson = await groqRes.json();
   if (!groqRes.ok) throw new Error(`Groq: ${groqJson.error?.message || groqRes.status}`);
