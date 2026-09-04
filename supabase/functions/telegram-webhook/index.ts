@@ -1,29 +1,43 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN")!;
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY")!;
-const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
+const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
+
+for (const [name, val] of Object.entries({
+  SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, GROQ_API_KEY,
+})) {
+  if (!val) console.error(`missing secret: ${name}`);
+}
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+const TIMEOUT_MS = 20000;
+function withTimeout() {
+  return AbortSignal.timeout(TIMEOUT_MS);
+}
 
 async function sendMessage(chatId: number, text: string) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text }),
+    signal: withTimeout(),
   });
 }
 
 async function transcribeVoice(fileId: string): Promise<string> {
   const fileRes = await fetch(
-    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`
+    `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`,
+    { signal: withTimeout() }
   );
   const fileJson = await fileRes.json();
-  const filePath = fileJson.result.file_path;
+  const filePath = fileJson.result?.file_path;
+  if (!filePath) throw new Error("Не удалось получить голосовой файл от Telegram");
   const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const audioRes = await fetch(fileUrl);
+  const audioRes = await fetch(fileUrl, { signal: withTimeout() });
   const audioBlob = await audioRes.blob();
 
   const form = new FormData();
@@ -35,8 +49,10 @@ async function transcribeVoice(fileId: string): Promise<string> {
     method: "POST",
     headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
     body: form,
+    signal: withTimeout(),
   });
   const groqJson = await groqRes.json();
+  if (!groqRes.ok) throw new Error(`Groq: ${groqJson.error?.message || groqRes.status}`);
   return groqJson.text || "";
 }
 
@@ -66,20 +82,23 @@ async function parseTaskWithClaude(text: string, groups: GroupInfo[]) {
       system,
       messages: [{ role: "user", content: text }],
     }),
+    signal: withTimeout(),
   });
   const json = await res.json();
+  if (!res.ok) throw new Error(`Claude: ${json.error?.message || res.status}`);
   const raw = json.content?.[0]?.text || "{}";
   const match = raw.match(/\{[\s\S]*\}/);
   return JSON.parse(match ? match[0] : raw);
 }
 
 Deno.serve(async (req) => {
+  let chatId: number | null = null;
   try {
     const update = await req.json();
     const message = update.message;
     if (!message) return new Response("ok");
 
-    const chatId = message.chat.id;
+    chatId = message.chat.id;
     const username: string | null = message.from?.username || null;
 
     // --- linking flow: /start <code> ---
@@ -183,6 +202,14 @@ Deno.serve(async (req) => {
     return new Response("ok");
   } catch (e) {
     console.error(e);
+    if (chatId) {
+      const msg = e instanceof Error ? e.message : String(e);
+      try {
+        await sendMessage(chatId, `Ошибка при обработке: ${msg}\nПопробуй ещё раз или напиши другими словами.`);
+      } catch (sendErr) {
+        console.error("failed to notify user of error", sendErr);
+      }
+    }
     return new Response("ok");
   }
 });
