@@ -6,10 +6,18 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
 
+const ASCII_ONLY = /^[\x20-\x7E]*$/;
+const badSecrets: string[] = [];
 for (const [name, val] of Object.entries({
   SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, GROQ_API_KEY,
 })) {
-  if (!val) console.error(`missing secret: ${name}`);
+  if (!val) {
+    console.error(`missing secret: ${name}`);
+    badSecrets.push(`${name} не задан`);
+  } else if (!ASCII_ONLY.test(val)) {
+    console.error(`secret ${name} contains invalid (non-ASCII) characters, length ${val.length}`);
+    badSecrets.push(`${name} содержит недопустимые символы (похоже, скопирован с "умными" кавычками/пробелами)`);
+  }
 }
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -100,6 +108,14 @@ Deno.serve(async (req) => {
 
     chatId = message.chat.id;
     const username: string | null = message.from?.username || null;
+
+    if (badSecrets.length > 0) {
+      await sendMessage(
+        chatId,
+        `Бот неправильно настроен на сервере:\n${badSecrets.join("\n")}\n\nНужно пересохранить эти секреты в Supabase.`
+      );
+      return new Response("ok");
+    }
 
     // --- linking flow: /start <code> ---
     if (typeof message.text === "string" && message.text.startsWith("/start")) {
