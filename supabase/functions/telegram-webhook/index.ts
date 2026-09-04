@@ -48,7 +48,7 @@ async function transcribeVoice(fileId: string): Promise<string> {
   const audioBlob = await audioRes.blob();
 
   const form = new FormData();
-  form.append("file", audioBlob, "voice.oga");
+  form.append("file", audioBlob, "voice.ogg");
   form.append("model", "whisper-large-v3-turbo");
   form.append("language", "ru");
 
