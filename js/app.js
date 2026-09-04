@@ -6,6 +6,7 @@ import {
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
+  telegramMiniAppSignIn, getSession,
 } from "./sync.js";
 
 const ui = {
@@ -28,6 +29,7 @@ let profilePasswordMsg = "";
 let telegramLink = null;      // { telegram_username, linked_at } | null
 let telegramLinkChecked = false;
 let telegramPendingCode = null; // { code, url } while waiting for user to open the bot
+let tgAutoLoginDone = false;
 let telegramChannel = null;
 
 const root = document.getElementById("app");
@@ -694,4 +696,36 @@ onAuthChange((newSession) => {
   render();
 });
 
+// ---------- Telegram Mini App ----------
+
+function initTelegramWebApp() {
+  const tg = window.Telegram?.WebApp;
+  if (!tg) return null;
+  tg.ready();
+  tg.expand();
+  try {
+    tg.setHeaderColor("#16a34a");
+    tg.setBackgroundColor("#f4f5f7");
+  } catch {}
+  return tg;
+}
+
+async function tryTelegramAutoLogin(tg) {
+  if (tgAutoLoginDone || !tg?.initData) return;
+  tgAutoLoginDone = true;
+  const existing = await getSession();
+  if (existing) return;
+  authBusy = true;
+  render();
+  const result = await telegramMiniAppSignIn(tg.initData);
+  authBusy = false;
+  if (!result.ok && result.reason === "not_linked") {
+    authMessage = "Этот Telegram ещё не привязан к аккаунту MARK. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
+  }
+  render();
+}
+
 render();
+
+const tgWebApp = initTelegramWebApp();
+if (tgWebApp) tryTelegramAutoLogin(tgWebApp);

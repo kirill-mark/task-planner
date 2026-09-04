@@ -27,6 +27,24 @@ export async function signOut() {
   return supabase.auth.signOut();
 }
 
+export async function telegramMiniAppSignIn(initData) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/telegram-miniapp-auth`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
+      body: JSON.stringify({ initData }),
+    });
+    const body = await res.json();
+    if (!res.ok) return { ok: false, reason: body.error || "unknown" };
+    const { error } = await supabase.auth.verifyOtp({ email: body.email, token: body.token, type: "magiclink" });
+    if (error) return { ok: false, reason: error.message };
+    return { ok: true };
+  } catch (e) {
+    console.warn("telegram mini app sign-in failed", e);
+    return { ok: false, reason: "network" };
+  }
+}
+
 export async function updateDisplayName(name) {
   return supabase.auth.updateUser({ data: { display_name: name } });
 }
