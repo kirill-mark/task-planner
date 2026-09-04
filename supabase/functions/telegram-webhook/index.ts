@@ -3,13 +3,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
-const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
 
 const ASCII_ONLY = /^[\x20-\x7E]*$/;
 const badSecrets: string[] = [];
 for (const [name, val] of Object.entries({
-  SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY, GROQ_API_KEY,
+  SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, GROQ_API_KEY,
 })) {
   if (!val) {
     console.error(`missing secret: ${name}`);
@@ -66,7 +65,7 @@ async function transcribeVoice(fileId: string): Promise<string> {
 
 type GroupInfo = { id: string; name: string; sectionName: string };
 
-async function parseTaskWithClaude(text: string, groups: GroupInfo[]) {
+async function parseTaskWithGroq(text: string, groups: GroupInfo[]) {
   const today = new Date().toISOString().slice(0, 10);
   const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
   const system =
@@ -77,24 +76,26 @@ async function parseTaskWithClaude(text: string, groups: GroupInfo[]) {
     `groupId (выбери максимально подходящий id группы из списка по смыслу; если неясно — возьми первый). ` +
     `Ответь СТРОГО в формате JSON без пояснений и без markdown: {"title": "...", "notes": "...", "date": "YYYY-MM-DD", "groupId": "..."}`;
 
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-api-key": ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
+      Authorization: `Bearer ${GROQ_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "claude-haiku-4-5-20251001",
+      model: "openai/gpt-oss-20b",
       max_tokens: 300,
-      system,
-      messages: [{ role: "user", content: text }],
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: text },
+      ],
     }),
     signal: withTimeout(),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(`Claude: ${json.error?.message || res.status}`);
-  const raw = json.content?.[0]?.text || "{}";
+  if (!res.ok) throw new Error(`Groq (parse): ${json.error?.message || res.status}`);
+  const raw = json.choices?.[0]?.message?.content || "{}";
   const match = raw.match(/\{[\s\S]*\}/);
   return JSON.parse(match ? match[0] : raw);
 }
@@ -195,7 +196,7 @@ Deno.serve(async (req) => {
       sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
     }));
 
-    const parsed = await parseTaskWithClaude(inputText, groupInfo);
+    const parsed = await parseTaskWithGroq(inputText, groupInfo);
 
     const newTask = {
       id: crypto.randomUUID(),
