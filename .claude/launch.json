@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "task-planner",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["-m", "http.server", "8811", "--directory", "/Users/kirillmarcenko/Desktop/task-planner"],
+      "port": 8811
+    }
+  ]
+}

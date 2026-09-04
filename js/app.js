@@ -90,6 +90,10 @@ function renderProgressBar(tasks, size = "") {
     </div>`;
 }
 
+function byTimeThenCreated(a, b) {
+  return (a.time || "").localeCompare(b.time || "") || a.createdAt - b.createdAt;
+}
+
 function taskGroup(task) {
   return store.groupById(task.groupId) || { name: "Без группы", color: "#7d8ca3" };
 }
@@ -104,6 +108,7 @@ function renderTaskEditForm(task) {
         <div class="field-row">
           <label class="field-label">дедлайн</label>
           <input type="date" name="date" value="${task.date}" />
+          <input type="time" name="time" value="${task.time || ""}" />
         </div>
         <div class="form-actions">
           <button type="submit">Сохранить</button>
@@ -123,11 +128,11 @@ function renderTaskItem(task, { showGroupChip = true, showDate = false } = {}) {
         ${task.completed ? "✓" : ""}
       </button>
       <div class="task-body">
-        <div class="task-title">${escapeHtml(task.title)}</div>
+        <div class="task-title">${escapeHtml(task.title)}${task.time ? `<span class="task-time">${task.time}</span>` : ""}</div>
         ${task.notes ? `<div class="task-notes">${escapeHtml(task.notes)}</div>` : ""}
         <div class="task-meta">
           ${showGroupChip ? `<span class="chip" style="--chip-color:${g.color}">${escapeHtml(g.name)}</span>` : ""}
-          ${showDate ? `<span class="task-date ${overdue ? "overdue" : ""}">до ${formatShort(task.date)}</span>` : ""}
+          ${showDate ? `<span class="task-date ${overdue ? "overdue" : ""}">до ${formatShort(task.date)}${task.time ? `, ${task.time}` : ""}</span>` : ""}
         </div>
       </div>
       <button class="task-edit" data-action="edit-task" data-id="${task.id}" aria-label="Редактировать">✎</button>
@@ -155,6 +160,7 @@ function renderAddForm(defaultDate, formId) {
       <div class="field-row">
         <label class="field-label" for="${formId}-date">дедлайн</label>
         <input type="date" id="${formId}-date" name="date" value="${defaultDate}" />
+        <input type="time" id="${formId}-time" name="time" />
       </div>
       <div class="form-actions">
         <button type="submit">Добавить</button>
@@ -171,7 +177,7 @@ function renderWeekView() {
   const cols = dates.map((iso) => {
     const tasks = store.state.tasks
       .filter((t) => t.date === iso && isGroupVisible(t.groupId))
-      .sort((a, b) => a.createdAt - b.createdAt);
+      .sort(byTimeThenCreated);
     return `
       <div class="day-col ${isToday(iso) ? "is-today" : ""}">
         <div class="day-col-header">
@@ -199,7 +205,7 @@ function renderWeekView() {
 function renderDayView() {
   const tasks = store.state.tasks
     .filter((t) => t.date === ui.refDate && isGroupVisible(t.groupId))
-    .sort((a, b) => a.createdAt - b.createdAt);
+    .sort(byTimeThenCreated);
 
   return `
     <div class="view-toolbar">
@@ -221,7 +227,7 @@ function sortByDeadline(tasks) {
   return [...tasks].sort((a, b) =>
     (a.completed === b.completed ? 0 : a.completed ? 1 : -1) ||
     a.date.localeCompare(b.date) ||
-    a.createdAt - b.createdAt
+    byTimeThenCreated(a, b)
   );
 }
 
@@ -595,6 +601,7 @@ root.addEventListener("submit", (e) => {
       title,
       notes: data.get("notes"),
       date: data.get("date") || el.dataset.date,
+      time: data.get("time")?.toString().trim() || "",
       groupId: data.get("groupId"),
     });
   } else if (action === "add-group-form") {
@@ -623,6 +630,7 @@ root.addEventListener("submit", (e) => {
       title,
       notes: data.get("notes")?.toString().trim() || "",
       date: data.get("date"),
+      time: data.get("time")?.toString().trim() || "",
       groupId: data.get("groupId"),
     });
   } else if (action === "auth-submit") {

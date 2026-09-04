@@ -70,12 +70,13 @@ class Store {
   }
 
   // --- tasks ---
-  addTask({ title, notes, date, groupId }) {
+  addTask({ title, notes, date, time, groupId }) {
     this.state.tasks.push({
       id: crypto.randomUUID(),
       title: title.trim(),
       notes: (notes || "").trim(),
       date,
+      time: time || "",
       groupId,
       completed: false,
       createdAt: Date.now(),

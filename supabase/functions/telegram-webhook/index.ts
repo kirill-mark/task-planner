@@ -71,10 +71,11 @@ async function parseTaskWithGroq(text: string, groups: GroupInfo[]) {
   const system =
     `Ты помощник планировщика задач. Сегодня ${today}. Вот группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
     `Пользователь прислал сообщение с задачей (возможно, расшифровку голосового, там могут быть огрехи распознавания). ` +
-    `Извлеки: title (короткое ёмкое название), notes (детали, если явно есть, иначе пустая строка), ` +
+    `Извлеки: title (короткое ёмкое название, БЕЗ времени и даты в тексте), notes (детали, если явно есть, иначе пустая строка), ` +
     `date (в формате YYYY-MM-DD; понимай "завтра", "в пятницу", "через неделю" относительно сегодняшней даты; если дата вообще не упоминается — ставь сегодняшнюю), ` +
+    `time (в формате HH:MM 24-часовом, если в сообщении явно названо время события, например "в 11:00", "в 9 утра", "в 15:30"; если время не упомянуто — пустая строка ""), ` +
     `groupId (выбери максимально подходящий id группы из списка по смыслу; если неясно — возьми первый). ` +
-    `Ответь СТРОГО в формате JSON без пояснений и без markdown: {"title": "...", "notes": "...", "date": "YYYY-MM-DD", "groupId": "..."}`;
+    `Ответь СТРОГО в формате JSON без пояснений и без markdown: {"title": "...", "notes": "...", "date": "YYYY-MM-DD", "time": "HH:MM", "groupId": "..."}`;
 
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
@@ -200,7 +201,7 @@ Deno.serve(async (req) => {
       sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
     }));
 
-    let parsed: { title?: string; notes?: string; date?: string; groupId?: string } = {};
+    let parsed: { title?: string; notes?: string; date?: string; time?: string; groupId?: string } = {};
     try {
       parsed = await parseTaskWithGroq(inputText, groupInfo);
     } catch (parseErr) {
@@ -212,6 +213,7 @@ Deno.serve(async (req) => {
       title: parsed.title || inputText.slice(0, 100),
       notes: parsed.notes || "",
       date: parsed.date || new Date().toISOString().slice(0, 10),
+      time: /^\d{2}:\d{2}$/.test(parsed.time || "") ? parsed.time : "",
       groupId: groups.some((g: any) => g.id === parsed.groupId) ? parsed.groupId : groups[0].id,
       completed: false,
       createdAt: Date.now(),
@@ -224,7 +226,7 @@ Deno.serve(async (req) => {
       .from("planner_state")
       .upsert({ user_id: userId, data: state, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
 
-    await sendMessage(chatId, `Добавил ✅\n«${newTask.title}»\nдо ${newTask.date}`);
+    await sendMessage(chatId, `Добавил ✅\n«${newTask.title}»\nдо ${newTask.date}${newTask.time ? `, ${newTask.time}` : ""}`);
     return new Response("ok");
   } catch (e) {
     console.error(e);
