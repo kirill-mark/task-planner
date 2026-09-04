@@ -71,3 +71,53 @@ export function subscribeRemote(userId, onChange) {
     )
     .subscribe();
 }
+
+// --- telegram linking ---
+const TELEGRAM_BOT_USERNAME = "markplanner_bot";
+
+function randomCode() {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+export async function fetchTelegramLink(userId) {
+  const { data, error } = await supabase
+    .from("telegram_links")
+    .select("telegram_username, linked_at")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.warn("telegram: fetch link failed", error.message);
+    return null;
+  }
+  return data;
+}
+
+export async function createLinkCode(userId) {
+  const code = randomCode();
+  const { error } = await supabase.from("link_codes").insert({ code, user_id: userId });
+  if (error) {
+    console.warn("telegram: create code failed", error.message);
+    return null;
+  }
+  return { code, url: `https://t.me/${TELEGRAM_BOT_USERNAME}?start=${code}` };
+}
+
+export async function unlinkTelegram(userId) {
+  const { error } = await supabase.from("telegram_links").delete().eq("user_id", userId);
+  if (error) console.warn("telegram: unlink failed", error.message);
+  return !error;
+}
+
+export function subscribeTelegramLink(userId, onChange) {
+  return supabase
+    .channel(`telegram_link_${userId}`)
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "telegram_links", filter: `user_id=eq.${userId}` },
+      () => onChange()
+    )
+    .subscribe();
+}

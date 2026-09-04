@@ -5,6 +5,7 @@ import {
 } from "./dates.js";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
+  fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
 } from "./sync.js";
 
 const ui = {
@@ -24,6 +25,10 @@ let authMessage = "";
 let authBusy = false;
 let profileNameMsg = "";
 let profilePasswordMsg = "";
+let telegramLink = null;      // { telegram_username, linked_at } | null
+let telegramLinkChecked = false;
+let telegramPendingCode = null; // { code, url } while waiting for user to open the bot
+let telegramChannel = null;
 
 const root = document.getElementById("app");
 
@@ -377,7 +382,7 @@ function renderAuthScreen() {
   return `
     <div class="auth-screen">
       <div class="auth-card">
-        <h1><img src="icons/icon-192.png?v=5" alt="" class="logo" />MARK</h1>
+        <h1><img src="icons/icon-192.png?v=6" alt="" class="logo" />MARK</h1>
         <p class="auth-subtitle">Планировщик задач</p>
         <form class="auth-form" data-action="auth-submit">
           <input type="email" name="email" placeholder="Email" required autocomplete="email" />
@@ -419,8 +424,46 @@ function renderProfileScreen() {
         <button type="submit">Сменить пароль</button>
         ${profilePasswordMsg ? `<div class="profile-msg">${escapeHtml(profilePasswordMsg)}</div>` : ""}
       </form>
+      <div class="profile-section">
+        <label class="field-label">Telegram</label>
+        ${renderTelegramBlock()}
+      </div>
       <button type="button" class="logout-btn" data-action="logout">Выйти из аккаунта</button>
     </div>`;
+}
+
+async function loadTelegramLink() {
+  telegramLink = await fetchTelegramLink(session.user.id);
+  telegramLinkChecked = true;
+  if (telegramLink) telegramPendingCode = null;
+  render();
+  if (!telegramChannel) {
+    telegramChannel = subscribeTelegramLink(session.user.id, async () => {
+      telegramLink = await fetchTelegramLink(session.user.id);
+      if (telegramLink) telegramPendingCode = null;
+      render();
+    });
+  }
+}
+
+function renderTelegramBlock() {
+  if (telegramLink) {
+    const who = telegramLink.telegram_username ? `@${escapeHtml(telegramLink.telegram_username)}` : "аккаунт привязан";
+    return `
+      <div class="profile-static">Подключено: ${who}</div>
+      <button type="button" class="add-form-cancel" data-action="unlink-telegram" style="margin-top:8px;">Отвязать</button>`;
+  }
+  if (telegramPendingCode) {
+    return `
+      <div class="telegram-pending">
+        <p class="empty-hint">Открой бота и нажми «Запустить» — привяжется автоматически:</p>
+        <a class="auth-form-link" href="${telegramPendingCode.url}" target="_blank" rel="noopener">
+          <button type="button">Открыть @markplanner_bot</button>
+        </a>
+        <p class="empty-hint">Или пришли боту в чате: <code>/start ${telegramPendingCode.code}</code></p>
+      </div>`;
+  }
+  return `<button type="button" data-action="link-telegram">Подключить Telegram</button>`;
 }
 
 // ---------- Root render ----------
@@ -437,7 +480,7 @@ function render() {
   const viewLabel = { list: "Список", week: "Неделя", day: "День" };
   root.innerHTML = `
     <header class="app-header">
-      <h1><img src="icons/icon-192.png?v=5" alt="" class="logo" />MARK</h1>
+      <h1><img src="icons/icon-192.png?v=6" alt="" class="logo" />MARK</h1>
       <nav class="view-switch">
         ${["list", "week", "day"].map((v) => `
           <button data-action="switch-view" data-view="${v}" class="${ui.view === v ? "active" : ""}">
@@ -512,13 +555,28 @@ root.addEventListener("click", (e) => {
   } else if (action === "open-profile") {
     profileNameMsg = "";
     profilePasswordMsg = "";
+    telegramPendingCode = null;
     ui.view = "profile";
     render();
+    loadTelegramLink();
   } else if (action === "back-to-app") {
+    if (telegramChannel) { telegramChannel.unsubscribe(); telegramChannel = null; }
     ui.view = "list";
     render();
   } else if (action === "logout") {
+    if (telegramChannel) { telegramChannel.unsubscribe(); telegramChannel = null; }
     signOut();
+  } else if (action === "link-telegram") {
+    (async () => {
+      telegramPendingCode = await createLinkCode(session.user.id);
+      render();
+    })();
+  } else if (action === "unlink-telegram") {
+    (async () => {
+      await unlinkTelegram(session.user.id);
+      telegramLink = null;
+      render();
+    })();
   }
 });
 

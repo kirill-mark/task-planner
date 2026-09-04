@@ -36,6 +36,7 @@ body {
 #app { min-height: 100vh; display: flex; flex-direction: column; }
 
 .app-header {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -44,7 +45,7 @@ body {
   padding: 14px 24px;
   padding-top: calc(14px + env(safe-area-inset-top));
   padding-left: calc(24px + env(safe-area-inset-left));
-  padding-right: calc(24px + env(safe-area-inset-right));
+  padding-right: calc(24px + env(safe-area-inset-right) + 46px);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -64,6 +65,9 @@ body {
 .view-switch button.active { background: var(--accent); color: white; }
 
 .profile-btn {
+  position: absolute;
+  top: calc(14px + env(safe-area-inset-top));
+  right: calc(24px + env(safe-area-inset-right));
   width: 32px; height: 32px; border-radius: 50%; border: none; background: var(--accent);
   color: white; font-size: 0.85rem; font-weight: 600; cursor: pointer; flex-shrink: 0;
 }
@@ -133,6 +137,21 @@ body {
   padding: 10px 12px; cursor: pointer; font-size: 0.85rem; margin-top: 8px;
 }
 .logout-btn:hover { background: var(--danger); color: white; border-color: var(--danger); }
+
+.profile-section > button {
+  border: none; background: var(--accent); color: white; border-radius: 8px;
+  padding: 9px 12px; cursor: pointer; font-size: 0.85rem; align-self: flex-start;
+}
+.profile-section > button:hover { filter: brightness(1.08); }
+.telegram-pending { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.telegram-pending a { text-decoration: none; }
+.telegram-pending button {
+  border: none; background: var(--accent); color: white; border-radius: 8px;
+  padding: 9px 12px; cursor: pointer; font-size: 0.85rem;
+}
+.telegram-pending code {
+  background: var(--bg); padding: 2px 6px; border-radius: 6px; font-size: 0.82rem;
+}
 
 .sidebar {
   width: 240px;
