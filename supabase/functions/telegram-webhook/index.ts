@@ -84,7 +84,8 @@ async function parseTaskWithGroq(text: string, groups: GroupInfo[]) {
     },
     body: JSON.stringify({
       model: "openai/gpt-oss-20b",
-      max_tokens: 300,
+      max_tokens: 600,
+      reasoning_effort: "low",
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -94,7 +95,10 @@ async function parseTaskWithGroq(text: string, groups: GroupInfo[]) {
     signal: withTimeout(),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(`Groq (parse): ${json.error?.message || res.status}`);
+  if (!res.ok) {
+    console.error("Groq parse failed:", JSON.stringify(json));
+    throw new Error(`Groq (parse): ${json.error?.message || res.status}`);
+  }
   const raw = json.choices?.[0]?.message?.content || "{}";
   const match = raw.match(/\{[\s\S]*\}/);
   return JSON.parse(match ? match[0] : raw);
@@ -196,7 +200,12 @@ Deno.serve(async (req) => {
       sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
     }));
 
-    const parsed = await parseTaskWithGroq(inputText, groupInfo);
+    let parsed: { title?: string; notes?: string; date?: string; groupId?: string } = {};
+    try {
+      parsed = await parseTaskWithGroq(inputText, groupInfo);
+    } catch (parseErr) {
+      console.error("parseTaskWithGroq failed, falling back to raw text:", parseErr);
+    }
 
     const newTask = {
       id: crypto.randomUUID(),
