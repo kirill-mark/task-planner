@@ -26,13 +26,17 @@ function withTimeout() {
   return AbortSignal.timeout(TIMEOUT_MS);
 }
 
-async function sendMessage(chatId: number, text: string) {
+async function sendMessage(chatId: number, text: string, opts: { html?: boolean } = {}) {
   await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: opts.html ? "HTML" : undefined }),
     signal: withTimeout(),
   });
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 async function transcribeVoice(fileId: string): Promise<string> {
@@ -226,7 +230,15 @@ Deno.serve(async (req) => {
       .from("planner_state")
       .upsert({ user_id: userId, data: state, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
 
-    await sendMessage(chatId, `Добавил ✅\n«${newTask.title}»\nдо ${newTask.date}${newTask.time ? `, ${newTask.time}` : ""}`);
+    const confirmation = [
+      "Твоя задача добавлена ✅",
+      "",
+      `<b>Задача:</b> ${escapeHtml(newTask.title)}`,
+      `<b>Описание:</b> ${escapeHtml(newTask.notes || "")}`,
+      `<b>Дедлайн:</b> ${newTask.date}`,
+      `<b>Время:</b> ${newTask.time || ""}`,
+    ].join("\n");
+    await sendMessage(chatId, confirmation, { html: true });
     return new Response("ok");
   } catch (e) {
     console.error(e);
