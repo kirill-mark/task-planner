@@ -1,9 +1,9 @@
-const CACHE_NAME = "task-planner-v9";
+const CACHE_NAME = "task-planner-v10";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=7",
-  "./js/app.js?v=8",
+  "./css/style.css?v=9",
+  "./js/app.js?v=9",
   "./js/state.js",
   "./js/storage.js",
   "./js/dates.js",

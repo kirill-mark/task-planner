@@ -64,3 +64,22 @@ export function loadState(userId) {
 export function saveState(userId, state) {
   localStorage.setItem(STORAGE_PREFIX + userId, JSON.stringify(state));
 }
+
+// --- first-run welcome screen ---
+const WELCOME_PREFIX = "task-planner:welcome-seen:v1:";
+
+export function hasSeenWelcome(userId) {
+  try {
+    return localStorage.getItem(WELCOME_PREFIX + userId) === "1";
+  } catch {
+    return true; // storage blocked: never trap the user on the welcome screen
+  }
+}
+
+export function markWelcomeSeen(userId) {
+  try {
+    localStorage.setItem(WELCOME_PREFIX + userId, "1");
+  } catch {
+    /* ignore: welcome screen just shows again next time */
+  }
+}

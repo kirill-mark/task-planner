@@ -386,3 +386,166 @@ body {
   .sidebar { width: auto; border-right: none; border-bottom: 1px solid var(--border); }
   .week-grid { grid-template-columns: 1fr; }
 }
+
+/* ---------- Welcome screen (first Mini App / first login) ---------- */
+
+.welcome {
+  position: relative;
+  flex: 1;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #ffffff;
+  color: #101418;
+  padding: max(env(safe-area-inset-top), 18px) 20px calc(20px + env(safe-area-inset-bottom));
+  isolation: isolate;
+}
+
+/* Soft flowing green light behind the hero, like the reference art. */
+.welcome-glow {
+  position: absolute;
+  z-index: -1;
+  border-radius: 50%;
+  filter: blur(60px);
+  pointer-events: none;
+}
+.welcome-glow-a {
+  top: 2%; left: -30%; width: 100%; aspect-ratio: 1.4;
+  background: radial-gradient(circle, rgba(22, 163, 74, 0.42), transparent 68%);
+}
+.welcome-glow-b {
+  top: 10%; right: -34%; width: 105%; aspect-ratio: 1.2;
+  background: radial-gradient(circle, rgba(52, 211, 153, 0.46), transparent 68%);
+}
+.welcome-glow-c {
+  top: 24%; left: 2%; width: 96%; aspect-ratio: 1.6;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.34), transparent 70%);
+}
+
+.welcome-inner { max-width: 460px; margin: 0 auto; }
+
+.welcome-topbar { display: flex; justify-content: space-between; gap: 16px; }
+.welcome-kicker {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 0.6rem; letter-spacing: 0.19em; text-transform: uppercase;
+  color: #9aa3ad; line-height: 1.25;
+}
+.welcome-kicker strong { font-size: 0.78rem; letter-spacing: 0.24em; color: #4b5563; font-weight: 600; }
+.welcome-kicker.right { text-align: right; }
+
+/* --- hero collage --- */
+.welcome-hero {
+  position: relative;
+  margin: 6px 0 4px;
+  aspect-ratio: 1 / 1;
+  display: flex; align-items: center; justify-content: center;
+  container-type: inline-size;
+}
+.welcome-logo {
+  width: 41%; height: auto;
+  border-radius: 23%;
+  box-shadow: 0 18px 38px rgba(16, 122, 60, 0.38);
+}
+
+.wcard {
+  position: absolute;
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.9);
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(20, 60, 40, 0.10);
+  padding: 3.2cqw 3.6cqw;
+}
+.wcard-row { display: flex; align-items: center; gap: 2.6cqw; }
+.wcard-ico {
+  flex-shrink: 0;
+  width: 8.4cqw; height: 8.4cqw;
+  border-radius: 26%;
+  background: #e8f7ee;
+  color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+}
+.wcard-ico.bare { background: transparent; }
+.wcard-ico svg { width: 62%; height: 62%; }
+.wcard-text {
+  font-size: 3.5cqw; line-height: 1.28; font-weight: 600; color: #1d2530; white-space: nowrap;
+}
+.wcard-text.dim { color: #7b8794; font-weight: 500; }
+.wcard-sub {
+  display: block; margin-top: 0.6cqw;
+  font-size: 3cqw; font-style: normal; font-weight: 500; color: #8b95a1;
+}
+.wcard-check {
+  flex-shrink: 0; width: 6.6cqw; height: 6.6cqw; border-radius: 50%;
+  background: var(--accent); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+}
+.wcard-check svg { width: 58%; height: 58%; }
+.wcard-donut { flex-shrink: 0; width: 9cqw; height: 9cqw; color: var(--accent); }
+.wcard-donut svg { width: 100%; height: 100%; }
+.wcard-trend { flex-shrink: 0; width: 5.4cqw; height: 5.4cqw; color: var(--accent); align-self: flex-end; }
+.wcard-trend svg { width: 100%; height: 100%; }
+
+.wcard-lines { margin-top: 2.6cqw; display: flex; flex-direction: column; gap: 1.8cqw; }
+.wcard-lines i { height: 1.5cqw; border-radius: 999px; background: #e6e9ed; }
+.wcard-lines i:first-child { width: 82%; }
+.wcard-lines i:last-child { width: 58%; }
+
+.wave { margin-top: 2.4cqw; display: flex; align-items: center; gap: 0.9cqw; height: 5cqw; }
+.wave i { flex: 1; border-radius: 999px; background: #9fdcb8; min-width: 0.7cqw; }
+
+.wcard-voice { left: -4%; top: 13%; }
+.wcard-meet { right: -3%; top: 3%; }
+.wcard-idea { right: -4%; top: 46%; }
+.wcard-strategy { left: -2%; top: 63%; }
+.wcard-results { right: 0; bottom: 0; }
+
+/* --- copy --- */
+.welcome-title {
+  margin: 18px 0 0;
+  font-size: clamp(1.9rem, 8.6vw, 2.5rem);
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  text-align: center;
+  font-weight: 800;
+  color: #0f1720;
+}
+.welcome-title span { color: var(--accent); }
+.welcome-sub {
+  margin: 12px auto 0;
+  max-width: 21em;
+  text-align: center;
+  font-size: 0.94rem;
+  line-height: 1.5;
+  color: #6b7581;
+}
+
+.welcome-features {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 10px; margin: 22px 0 24px;
+}
+.wfeature {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  text-align: center; font-size: 0.78rem; line-height: 1.35; color: #55606d;
+}
+.wfeature-ico {
+  width: 44px; height: 44px; border-radius: 50%;
+  background: #e8f7ee; color: var(--accent);
+  display: flex; align-items: center; justify-content: center;
+}
+.wfeature-ico svg { width: 21px; height: 21px; }
+
+.welcome-cta {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 17px 22px;
+  border: none; border-radius: 999px;
+  background: linear-gradient(180deg, #1eb45a, #128a44);
+  color: #fff; font-size: 1.02rem; font-weight: 600; cursor: pointer;
+  box-shadow: 0 12px 26px rgba(18, 138, 68, 0.34);
+}
+.welcome-cta:hover { filter: brightness(1.05); }
+.welcome-cta:active { transform: translateY(1px); }
+
+@media (min-width: 520px) {
+  .welcome-hero { aspect-ratio: 1.15 / 1; }
+}

@@ -1,4 +1,5 @@
 import { store } from "./state.js";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
@@ -17,6 +18,7 @@ const ui = {
   editingSectionId: null,
   editingTaskId: null,
   openForms: new Set(),
+  showWelcome: false,
 };
 
 let session = null;
@@ -407,6 +409,123 @@ function renderAuthScreen() {
     </div>`;
 }
 
+// Inline so the welcome screen needs no extra network round-trips.
+const svg = (body, opts = "") =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+    stroke-linecap="round" stroke-linejoin="round" ${opts}>${body}</svg>`;
+
+const ICON_MIC = svg(`<rect x="9" y="3" width="6" height="10" rx="3" />
+  <path d="M5 11a7 7 0 0 0 14 0" /><path d="M12 18v3" />`);
+const ICON_CALENDAR = svg(`<rect x="3" y="5" width="18" height="16" rx="3" />
+  <path d="M8 3v4M16 3v4M3 10h18" />`);
+const ICON_SPARKLE = svg(`<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" />
+  <path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />`);
+const ICON_CHECKBOX = svg(`<rect x="3" y="3" width="18" height="18" rx="4" />
+  <path d="M8 12.5l2.8 2.8L16.5 9.5" />`);
+const ICON_CHECK = svg(`<path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="2.6" />`);
+const ICON_DONUT = svg(`<circle cx="12" cy="12" r="8.5" stroke-opacity=".18" stroke-width="3" />
+  <path d="M12 3.5a8.5 8.5 0 0 1 6.6 13.8" stroke-width="3" />`);
+const ICON_TREND = svg(`<path d="M4 16.5L10 10l3.5 3.5L20 7" /><path d="M15 7h5v5" />`);
+const ICON_BOLT = svg(`<path d="M13 3L5.5 13.5H11L10 21l7.5-10.5H12z" />`);
+const ICON_LIST = svg(`<path d="M9 6h11M9 12h11M9 18h11" /><path d="M4.5 6h.01M4.5 12h.01M4.5 18h.01" stroke-width="2.6" />`);
+const ICON_BARS = svg(`<path d="M6 20v-6M12 20V6M18 20v-9" stroke-width="2.4" />`);
+
+function renderWelcomeScreen() {
+  return `
+    <div class="welcome">
+      <div class="welcome-glow welcome-glow-a"></div>
+      <div class="welcome-glow welcome-glow-b"></div>
+      <div class="welcome-glow welcome-glow-c"></div>
+
+      <div class="welcome-inner">
+        <div class="welcome-topbar">
+          <div class="welcome-kicker">
+            <strong>MARK</strong>
+            <span>your ideas</span>
+            <span>into actions</span>
+          </div>
+          <div class="welcome-kicker right">
+            <span>AI</span>
+            <span>task manager</span>
+            <span>for a better you</span>
+          </div>
+        </div>
+
+        <div class="welcome-hero">
+          <img class="welcome-logo" src="icons/icon-512.png?v=6" alt="MARK" />
+
+          <div class="wcard wcard-voice">
+            <div class="wcard-row">
+              <span class="wcard-ico">${ICON_MIC}</span>
+              <span class="wcard-text">Собери план<br />на сегодня</span>
+            </div>
+            <div class="wave">${Array.from({ length: 22 }, (_, i) =>
+              `<i style="height:${[30, 62, 44, 80, 52, 34, 70, 46, 88, 40, 58, 30, 74, 50, 36, 66, 42, 78, 54, 32, 60, 38][i]}%"></i>`
+            ).join("")}</div>
+          </div>
+
+          <div class="wcard wcard-meet">
+            <div class="wcard-row">
+              <span class="wcard-ico">${ICON_CALENDAR}</span>
+              <span class="wcard-text">Встреча<br />с командой
+                <em class="wcard-sub">11:00 – 12:00</em>
+              </span>
+              <span class="wcard-check">${ICON_CHECK}</span>
+            </div>
+          </div>
+
+          <div class="wcard wcard-idea">
+            <div class="wcard-row">
+              <span class="wcard-ico bare">${ICON_SPARKLE}</span>
+              <span class="wcard-text">Идея<br />в задачу</span>
+            </div>
+          </div>
+
+          <div class="wcard wcard-strategy">
+            <div class="wcard-row">
+              <span class="wcard-ico">${ICON_CHECKBOX}</span>
+              <span class="wcard-text">Стратегия<br />на Q4</span>
+            </div>
+            <div class="wcard-lines"><i></i><i></i></div>
+          </div>
+
+          <div class="wcard wcard-results">
+            <div class="wcard-row">
+              <span class="wcard-donut">${ICON_DONUT}</span>
+              <span class="wcard-text dim">Больше<br />результатов</span>
+              <span class="wcard-trend">${ICON_TREND}</span>
+            </div>
+          </div>
+        </div>
+
+        <h1 class="welcome-title">Добро пожаловать<br />в <span>MARK</span></h1>
+        <p class="welcome-sub">
+          Ваш AI-помощник, который превращает идеи, голос и заметки
+          в понятные задачи и помогает доводить их до результата.
+        </p>
+
+        <div class="welcome-features">
+          <div class="wfeature">
+            <span class="wfeature-ico">${ICON_BOLT}</span>
+            <span>Быстро<br />добавляйте задачи</span>
+          </div>
+          <div class="wfeature">
+            <span class="wfeature-ico">${ICON_LIST}</span>
+            <span>Планируйте<br />с умом</span>
+          </div>
+          <div class="wfeature">
+            <span class="wfeature-ico">${ICON_BARS}</span>
+            <span>Достигайте<br />больше</span>
+          </div>
+        </div>
+
+        <button type="button" class="welcome-cta" data-action="welcome-start">
+          Привести дела в порядок <span aria-hidden="true">→</span>
+        </button>
+      </div>
+    </div>`;
+}
+
 function renderProfileScreen() {
   const email = session.user.email;
   const name = session.user.user_metadata?.display_name || "";
@@ -481,6 +600,10 @@ function render() {
     root.innerHTML = renderAuthScreen();
     return;
   }
+  if (ui.showWelcome) {
+    root.innerHTML = renderWelcomeScreen();
+    return;
+  }
   if (ui.view === "profile") {
     root.innerHTML = renderProfileScreen();
     return;
@@ -514,7 +637,12 @@ root.addEventListener("click", (e) => {
   if (!el) return;
   const action = el.dataset.action;
 
-  if (action === "toggle-task") store.toggleTask(el.dataset.id);
+  if (action === "welcome-start") {
+    if (session) markWelcomeSeen(session.user.id);
+    ui.showWelcome = false;
+    render();
+  }
+  else if (action === "toggle-task") store.toggleTask(el.dataset.id);
   else if (action === "delete-task") store.deleteTask(el.dataset.id);
   else if (action === "edit-task") { ui.editingTaskId = el.dataset.id; render(); }
   else if (action === "cancel-edit-task") { ui.editingTaskId = null; render(); }
@@ -688,10 +816,12 @@ onAuthChange((newSession) => {
   const isLoggedIn = !!newSession;
   session = newSession;
   if (isLoggedIn && (!wasLoggedIn || store.userId !== newSession.user.id)) {
+    ui.showWelcome = !hasSeenWelcome(newSession.user.id);
     store.attachUser(newSession.user.id);
   } else if (!isLoggedIn && wasLoggedIn) {
     store.detachUser();
     ui.view = "list";
+    ui.showWelcome = false;
   }
   render();
 });
