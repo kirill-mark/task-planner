@@ -36,7 +36,7 @@ export async function telegramMiniAppSignIn(initData) {
     });
     const body = await res.json();
     if (!res.ok) return { ok: false, reason: body.error || "unknown" };
-    const { error } = await supabase.auth.verifyOtp({ email: body.email, token: body.token, type: "magiclink" });
+    const { error } = await supabase.auth.verifyOtp({ token_hash: body.token, type: "magiclink" });
     if (error) return { ok: false, reason: error.message };
     return { ok: true };
   } catch (e) {
