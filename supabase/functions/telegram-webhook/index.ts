@@ -152,6 +152,36 @@ function taskCard(task: Task, heading: string): string {
   ].join("\n");
 }
 
+// --- daily plan (the digest the reminders function sends) ---
+
+function planKeyboard(date: string): Keyboard {
+  return {
+    inline_keyboard: [[
+      { text: "➕ Добавить задачу", callback_data: `padd:${date}` },
+      { text: "🗑 Удалить задачу", callback_data: `pdel:${date}` },
+    ]],
+  };
+}
+
+function humanDate(date: string): string {
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  if (date === today) return "сегодня";
+  if (date === tomorrow) return "завтра";
+  return date;
+}
+
+function planText(state: any, date: string, heading: string): string {
+  const tasks: Task[] = (state.tasks || [])
+    .filter((t: Task) => !t.completed && t.date === date)
+    .sort((a: Task, b: Task) => (a.time || "").localeCompare(b.time || ""));
+  if (!tasks.length) return `${heading}\n\nЗадач нет.`;
+  return (
+    `${heading}\n\n` +
+    tasks.map((t) => `• ${escapeHtml(t.title)}${t.time ? ` — ${t.time}` : ""}`).join("\n")
+  );
+}
+
 function taskKeyboard(taskId: string): Keyboard {
   return {
     inline_keyboard: [
@@ -316,7 +346,7 @@ async function applyEditWithGroq(
 async function handleCallback(cb: any) {
   const chatId: number = cb.message.chat.id;
   const messageId: number = cb.message.message_id;
-  const [action, taskId] = String(cb.data || "").split(":");
+  const [action, arg, arg2] = String(cb.data || "").split(":");
 
   const { data: link } = await supabase
     .from("telegram_links")
@@ -329,6 +359,62 @@ async function handleCallback(cb: any) {
   }
 
   const state = await loadState(link.user_id);
+
+  // --- buttons under a daily plan: they carry a date, not a task ---
+  if (action === "padd") {
+    await supabase.from("telegram_pending_actions").upsert({
+      telegram_chat_id: chatId,
+      action: "add_for_date",
+      task_id: null,
+      payload: arg,
+      created_at: new Date().toISOString(),
+    });
+    await answerCallback(cb.id, "Жду задачу");
+    await sendMessage(
+      chatId,
+      `➕ Что добавить на ${humanDate(arg)}? Пришли текстом или голосовым.`
+    );
+    return;
+  }
+
+  if (action === "pdel") {
+    const open: Task[] = (state.tasks || [])
+      .filter((t: Task) => !t.completed && t.date === arg)
+      .sort((a: Task, b: Task) => (a.time || "").localeCompare(b.time || ""));
+    if (!open.length) {
+      await answerCallback(cb.id, "Удалять нечего");
+      return;
+    }
+    await answerCallback(cb.id);
+    await sendMessage(chatId, `Какую задачу убрать из плана на ${humanDate(arg)}?`, {
+      keyboard: {
+        inline_keyboard: open.map((t) => [
+          { text: `🗑 ${t.title}`.slice(0, 60), callback_data: `pdone:${t.id}:${arg}` },
+        ]),
+      },
+    });
+    return;
+  }
+
+  if (action === "pdone") {
+    const target = (state.tasks || []).find((t: Task) => t.id === arg);
+    if (!target) {
+      await answerCallback(cb.id, "Задача уже удалена");
+      return;
+    }
+    state.tasks = state.tasks.filter((t: Task) => t.id !== arg);
+    await saveState(link.user_id, state);
+    await answerCallback(cb.id, "Удалено");
+    await editMessage(chatId, messageId, `🗑 Удалено: <s>${escapeHtml(target.title)}</s>`);
+    await sendMessage(
+      chatId,
+      planText(state, arg2, `📋 <b>Обновлённый план на ${humanDate(arg2)}</b>`),
+      { html: true, keyboard: planKeyboard(arg2) }
+    );
+    return;
+  }
+
+  const taskId = arg;
   const task = (state.tasks || []).find((t: Task) => t.id === taskId);
   if (!task) {
     await answerCallback(cb.id, "Задача уже удалена");
@@ -458,9 +544,44 @@ async function handleMessage(message: any) {
   // --- pending edit: this message is an instruction for a specific task ---
   const { data: pending } = await supabase
     .from("telegram_pending_actions")
-    .select("action, task_id, created_at")
+    .select("action, task_id, payload, created_at")
     .eq("telegram_chat_id", chatId)
     .maybeSingle();
+
+  // --- pending add: the task goes on the date the plan button carried ---
+  if (pending?.action === "add_for_date") {
+    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+    const targetDate = pending.payload as string;
+
+    let parsedAdd: Intent = {};
+    try {
+      parsedAdd = await parseIntentWithGroq(inputText, groupInfo, []);
+    } catch (err) {
+      console.error("parse for dated add failed, using raw text:", err);
+    }
+
+    const task: Task = {
+      id: crypto.randomUUID(),
+      title: parsedAdd.title || inputText.slice(0, 100),
+      notes: parsedAdd.notes || "",
+      date: targetDate, // the plan's date wins over anything the model inferred
+      time: /^\d{2}:\d{2}$/.test(parsedAdd.time || "") ? parsedAdd.time! : "",
+      dateMode: parsedAdd.dateMode === "on" ? "on" : "due",
+      groupId: groups.some((g: any) => g.id === parsedAdd.groupId) ? parsedAdd.groupId! : groups[0].id,
+      completed: false,
+      createdAt: Date.now(),
+    };
+    state.tasks = [...(state.tasks || []), task];
+    await saveState(userId, state);
+
+    await sendMessage(chatId, taskCard(task, "Добавил в план ✅"), { html: true });
+    await sendMessage(
+      chatId,
+      planText(state, targetDate, `📋 <b>Обновлённый план на ${humanDate(targetDate)}</b>`),
+      { html: true, keyboard: planKeyboard(targetDate) }
+    );
+    return;
+  }
 
   if (pending?.action === "edit") {
     await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);

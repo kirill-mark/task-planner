@@ -34,15 +34,25 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function sendMessage(chatId: number, text: string) {
+async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
   const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML" }),
+    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup: keyboard }),
     signal: AbortSignal.timeout(15000),
   });
   if (!res.ok) console.error("telegram send failed", chatId, await res.text());
   return res.ok;
+}
+
+// Lets the digest be acted on straight from the chat; the webhook handles these.
+function planKeyboard(date: string) {
+  return {
+    inline_keyboard: [[
+      { text: "➕ Добавить задачу", callback_data: `padd:${date}` },
+      { text: "🗑 Удалить задачу", callback_data: `pdel:${date}` },
+    ]],
+  };
 }
 
 // Local wall-clock parts for a timezone, without pulling in a date library.
@@ -146,7 +156,7 @@ Deno.serve(async (req) => {
             todays,
             "На сегодня задач нет — можно спокойно выдохнуть."
           );
-          if (await sendMessage(chatId, text)) sent++;
+          if (await sendMessage(chatId, text, planKeyboard(local.date))) sent++;
         }
       }
 
@@ -164,7 +174,7 @@ Deno.serve(async (req) => {
             next,
             "На завтра пока ничего не запланировано."
           );
-          if (await sendMessage(chatId, text)) sent++;
+          if (await sendMessage(chatId, text, planKeyboard(tomorrow))) sent++;
         }
       }
 

@@ -39,10 +39,26 @@ function toHex(bytes: Uint8Array): string {
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
 const MAX_AGE_SEC = 86400;
 
+// URLSearchParams also turns "+" into a space, which corrupts any value that
+// legitimately contains one (query_id is base64 and often does) and makes the
+// HMAC fail. Decode each pair ourselves so values survive byte-for-byte.
+function parseInitData(initData: string): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const pair of initData.split("&")) {
+    if (!pair) continue;
+    const eq = pair.indexOf("=");
+    if (eq === -1) continue;
+    const key = decodeURIComponent(pair.slice(0, eq));
+    const value = decodeURIComponent(pair.slice(eq + 1));
+    out.set(key, value);
+  }
+  return out;
+}
+
 async function verifyInitData(
   initData: string
 ): Promise<{ ok: boolean; telegramId?: number; reason?: string }> {
-  const params = new URLSearchParams(initData);
+  const params = parseInitData(initData);
   const hash = params.get("hash");
   if (!hash) return { ok: false, reason: "no_hash" };
 
@@ -58,7 +74,15 @@ async function verifyInitData(
 
   const secretKey = await hmacSha256(TELEGRAM_BOT_TOKEN, "WebAppData");
   const computed = toHex(await hmacSha256(secretKey, dataCheckString));
-  if (computed !== hash) return { ok: false, reason: "bad_hash" };
+  if (computed !== hash) {
+    // Field names only - enough to spot an unexpected payload shape without
+    // writing the user's Telegram profile into the logs.
+    console.error(
+      `telegram-miniapp-auth: hash mismatch; fields=[${keys.join(",")}] ` +
+        `len=${dataCheckString.length} got=${hash.slice(0, 8)} computed=${computed.slice(0, 8)}`
+    );
+    return { ok: false, reason: "bad_hash" };
+  }
 
   const authDate = parseInt(params.get("auth_date") || "0", 10);
   const age = Date.now() / 1000 - authDate;
