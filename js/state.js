@@ -1,5 +1,5 @@
-import { loadState, saveState } from "./storage.js?v=9";
-import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js?v=9";
+import { loadState, saveState } from "./storage.js?v=10";
+import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js?v=10";
 
 const GROUP_COLORS = [
   "#5b8def", "#e0698e", "#3fb98c", "#f2a541",

@@ -1,14 +1,14 @@
-import { store } from "./state.js?v=9";
-import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=9";
+import { store } from "./state.js?v=10";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=10";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
-} from "./dates.js?v=9";
+} from "./dates.js?v=10";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
   telegramMiniAppSignIn, getSession, syncUserSettings,
-} from "./sync.js?v=9";
+} from "./sync.js?v=10";
 
 const ui = {
   view: "list",       // 'list' | 'week' | 'day' | 'profile'
@@ -33,6 +33,12 @@ let telegramLinkChecked = false;
 let telegramPendingCode = null; // { code, url } while waiting for user to open the bot
 let tgAutoLoginDone = false;
 let telegramChannel = null;
+
+// Auth state is unknown until Supabase reports in, and inside Telegram we also
+// wait for the silent sign-in. Showing the login form during either would flash
+// a form the user never has to fill in.
+let authResolved = false;
+let tgLoginInFlight = !!window.Telegram?.WebApp?.initData;
 
 const root = document.getElementById("app");
 
@@ -435,6 +441,14 @@ function renderSidebar() {
 
 // ---------- Auth & profile screens ----------
 
+function renderSplash() {
+  return `
+    <div class="splash">
+      <img src="icons/icon-512.png?v=6" alt="" class="splash-logo" />
+      <div class="splash-bar"><i></i></div>
+    </div>`;
+}
+
 function renderAuthScreen() {
   const isSignup = authMode === "signup";
   return `
@@ -645,7 +659,7 @@ function renderTelegramBlock() {
 
 function render() {
   if (!session) {
-    root.innerHTML = renderAuthScreen();
+    root.innerHTML = (!authResolved || tgLoginInFlight) ? renderSplash() : renderAuthScreen();
     return;
   }
   if (ui.showWelcome) {
@@ -863,6 +877,8 @@ root.addEventListener("submit", (e) => {
 store.subscribe(render);
 
 onAuthChange((newSession) => {
+  authResolved = true;
+  if (newSession) tgLoginInFlight = false;
   const wasLoggedIn = !!session;
   const isLoggedIn = !!newSession;
   session = newSession;
@@ -893,18 +909,24 @@ function initTelegramWebApp() {
 }
 
 async function tryTelegramAutoLogin(tg) {
-  if (tgAutoLoginDone || !tg?.initData) return;
-  tgAutoLoginDone = true;
-  const existing = await getSession();
-  if (existing) return;
-  authBusy = true;
-  render();
-  const result = await telegramMiniAppSignIn(tg.initData);
-  authBusy = false;
-  if (!result.ok && result.reason === "not_linked") {
-    authMessage = "Этот Telegram ещё не привязан к аккаунту MARK. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
+  if (tgAutoLoginDone || !tg?.initData) {
+    tgLoginInFlight = false;
+    return;
   }
-  render();
+  tgAutoLoginDone = true;
+  try {
+    const existing = await getSession();
+    if (existing) return; // onAuthChange already has it; splash gives way to the planner
+    const result = await telegramMiniAppSignIn(tg.initData);
+    if (!result.ok && result.reason === "not_linked") {
+      authMessage = "Этот Telegram ещё не привязан к аккаунту MARK. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
+    }
+  } finally {
+    // Whatever happened, stop holding the splash: either a session arrived and
+    // the planner renders, or the user needs the login form after all.
+    tgLoginInFlight = false;
+    render();
+  }
 }
 
 render();

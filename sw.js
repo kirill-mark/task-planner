@@ -1,13 +1,13 @@
-const CACHE_NAME = "task-planner-v10";
+const CACHE_NAME = "task-planner-v11";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=9",
-  "./js/app.js?v=9",
-  "./js/state.js?v=9",
-  "./js/storage.js?v=9",
-  "./js/dates.js?v=9",
-  "./js/sync.js?v=9",
+  "./css/style.css?v=10",
+  "./js/app.js?v=10",
+  "./js/state.js?v=10",
+  "./js/storage.js?v=10",
+  "./js/dates.js?v=10",
+  "./js/sync.js?v=10",
   "./manifest.json",
   "./icons/icon-192.png?v=6",
   "./icons/icon-512.png?v=6",
