@@ -29,11 +29,33 @@ function withTimeout() {
 const api = (method: string) => `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
 
 type Keyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
+type ReplyKeyboard = {
+  keyboard: { text: string }[][];
+  resize_keyboard: boolean;
+  is_persistent: boolean;
+};
+
+// The always-visible menu under the input field.
+const BTN_ADD = "➕ Добавить задачу";
+const BTN_UPCOMING = "📋 Ближайшие задачи";
+const BTN_SECTION = "🗂 Добавить раздел";
+const BTN_TOMORROW = "🌙 Задачи на завтра";
+
+function mainKeyboard(): ReplyKeyboard {
+  return {
+    keyboard: [
+      [{ text: BTN_ADD }, { text: BTN_UPCOMING }],
+      [{ text: BTN_SECTION }, { text: BTN_TOMORROW }],
+    ],
+    resize_keyboard: true,
+    is_persistent: true,
+  };
+}
 
 async function sendMessage(
   chatId: number,
   text: string,
-  opts: { html?: boolean; keyboard?: Keyboard } = {}
+  opts: { html?: boolean; keyboard?: Keyboard | ReplyKeyboard } = {}
 ) {
   await fetch(api("sendMessage"), {
     method: "POST",
@@ -484,7 +506,8 @@ async function handleMessage(message: any) {
       await sendMessage(
         chatId,
         "Привет! Я помогу добавлять задачи в MARK голосом или текстом.\n\n" +
-          "Чтобы начать: открой приложение → «Личный кабинет» → «Привязать Telegram» и перейди по ссылке оттуда."
+          "Чтобы начать: открой приложение → «Личный кабинет» → «Привязать Telegram» и перейди по ссылке оттуда.",
+        { keyboard: mainKeyboard() }
       );
       return;
     }
@@ -502,7 +525,16 @@ async function handleMessage(message: any) {
       .from("telegram_links")
       .upsert({ telegram_chat_id: chatId, user_id: codeRow.user_id, telegram_username: username });
     await supabase.from("link_codes").update({ used: true }).eq("code", code);
-    await sendMessage(chatId, "Готово! Аккаунт привязан ✅ Теперь просто присылай мне задачи текстом или голосом.");
+    await sendMessage(
+      chatId,
+      "Готово! Аккаунт привязан ✅ Теперь просто присылай мне задачи текстом или голосом — или пользуйся кнопками снизу.",
+      { keyboard: mainKeyboard() }
+    );
+    return;
+  }
+
+  if (typeof message.text === "string" && message.text.trim() === "/menu") {
+    await sendMessage(chatId, "Меню внизу 👇", { keyboard: mainKeyboard() });
     return;
   }
 
@@ -541,12 +573,96 @@ async function handleMessage(message: any) {
     sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
   }));
 
+  // --- menu buttons: checked before pending actions, so tapping a button
+  // always acts as a command rather than as an answer to an earlier prompt ---
+  const button = inputText.trim();
+  if ([BTN_ADD, BTN_UPCOMING, BTN_SECTION, BTN_TOMORROW].includes(button)) {
+    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+
+    if (button === BTN_ADD) {
+      await sendMessage(
+        chatId,
+        "➕ Пришли задачу текстом или голосовым — например «созвон с клиентом завтра в 11:00».",
+        { keyboard: mainKeyboard() }
+      );
+      return;
+    }
+
+    if (button === BTN_UPCOMING) {
+      const today = new Date().toISOString().slice(0, 10);
+      const upcoming: Task[] = (state.tasks || [])
+        .filter((t: Task) => !t.completed)
+        .sort(
+          (a: Task, b: Task) =>
+            a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "")
+        )
+        .slice(0, 15);
+
+      if (!upcoming.length) {
+        await sendMessage(chatId, "Открытых задач нет — можно выдохнуть.", { keyboard: mainKeyboard() });
+        return;
+      }
+      const lines = upcoming.map((t) => {
+        const overdue = t.date < today ? "❗️" : "";
+        const when = t.date === today ? "сегодня" : humanDate(t.date);
+        return `${overdue}• ${escapeHtml(t.title)} — ${when}${t.time ? `, ${t.time}` : ""}`;
+      });
+      await sendMessage(chatId, `📋 <b>Ближайшие задачи</b>\n\n${lines.join("\n")}`, {
+        html: true,
+        keyboard: mainKeyboard(),
+      });
+      return;
+    }
+
+    if (button === BTN_SECTION) {
+      await supabase.from("telegram_pending_actions").upsert({
+        telegram_chat_id: chatId,
+        action: "add_section",
+        task_id: null,
+        payload: null,
+        created_at: new Date().toISOString(),
+      });
+      await sendMessage(chatId, "🗂 Как назвать новый раздел?", { keyboard: mainKeyboard() });
+      return;
+    }
+
+    // BTN_TOMORROW
+    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+    await sendMessage(chatId, planText(state, tomorrow, "🌙 <b>Задачи на завтра</b>"), {
+      html: true,
+      keyboard: planKeyboard(tomorrow),
+    });
+    return;
+  }
+
   // --- pending edit: this message is an instruction for a specific task ---
   const { data: pending } = await supabase
     .from("telegram_pending_actions")
     .select("action, task_id, payload, created_at")
     .eq("telegram_chat_id", chatId)
     .maybeSingle();
+
+  // --- pending: this message is the name of a new section ---
+  if (pending?.action === "add_section") {
+    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+    const name = inputText.trim().slice(0, 40);
+    if (!name) {
+      await sendMessage(chatId, "Пустое название — попробуй ещё раз.", { keyboard: mainKeyboard() });
+      return;
+    }
+    const palette = ["#5b8def", "#e0698e", "#3fb98c", "#f2a541", "#9b6bdb", "#4fb3bf", "#e05c5c", "#7d8ca3"];
+    state.sections = [
+      ...(state.sections || []),
+      { id: crypto.randomUUID(), name, color: palette[(state.sections || []).length % palette.length] },
+    ];
+    await saveState(userId, state);
+    await sendMessage(
+      chatId,
+      `🗂 Раздел «${escapeHtml(name)}» создан.\n\nГруппы внутри него можно добавить в приложении — после этого задачи начнут попадать в них.`,
+      { html: true, keyboard: mainKeyboard() }
+    );
+    return;
+  }
 
   // --- pending add: the task goes on the date the plan button carried ---
   if (pending?.action === "add_for_date") {
