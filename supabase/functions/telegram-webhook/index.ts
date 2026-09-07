@@ -154,16 +154,37 @@ function taskCard(task: Task, heading: string): string {
 
 function taskKeyboard(taskId: string): Keyboard {
   return {
-    inline_keyboard: [[
-      { text: "✅ Готово", callback_data: `done:${taskId}` },
-      { text: "🗑 Удалить", callback_data: `del:${taskId}` },
-    ]],
+    inline_keyboard: [
+      [
+        { text: "✅ Выполнено", callback_data: `done:${taskId}` },
+        { text: "🗑 Удалить", callback_data: `del:${taskId}` },
+      ],
+      [{ text: "✏️ Редактировать", callback_data: `edit:${taskId}` }],
+    ],
   };
 }
 
 // --- intent parsing ---
 
 type GroupInfo = { id: string; name: string; sectionName: string };
+
+const WEEKDAYS = [
+  "воскресенье", "понедельник", "вторник", "среда",
+  "четверг", "пятница", "суббота",
+];
+
+// A small model gets weekday arithmetic wrong ("в пятницу" landed on a
+// Wednesday), so hand it a ready-made calendar to look the date up in.
+function calendarHint(days = 14): string {
+  const today = new Date();
+  const lines: string[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + i));
+    const label = i === 0 ? " (сегодня)" : i === 1 ? " (завтра)" : i === 2 ? " (послезавтра)" : "";
+    lines.push(`${d.toISOString().slice(0, 10)} — ${WEEKDAYS[d.getUTCDay()]}${label}`);
+  }
+  return lines.join("\n");
+}
 
 type Intent = {
   intent?: "add" | "delete" | "done";
@@ -190,6 +211,7 @@ async function parseIntentWithGroq(
 
   const system =
     `Ты помощник планировщика задач. Сегодня ${today}.\n\n` +
+    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint()}\n\n` +
     `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
     `Открытые задачи пользователя:\n${taskList}\n\n` +
     `Пользователь прислал сообщение (возможно, расшифровку голосового с огрехами распознавания). ` +
@@ -235,6 +257,60 @@ async function parseIntentWithGroq(
   return JSON.parse(match ? match[0] : raw);
 }
 
+async function applyEditWithGroq(
+  instruction: string,
+  task: Task,
+  groups: GroupInfo[]
+): Promise<Partial<Task>> {
+  const today = new Date().toISOString().slice(0, 10);
+  const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
+
+  const system =
+    `Ты редактируешь одну задачу в планировщике. Сегодня ${today}.\n\n` +
+    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint()}\n\n` +
+    `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
+    `Текущая задача:\n` +
+    `title: ${task.title}\n` +
+    `notes: ${task.notes || ""}\n` +
+    `date: ${task.date}\n` +
+    `time: ${task.time || ""}\n` +
+    `dateMode: ${task.dateMode || "due"}\n` +
+    `groupId: ${task.groupId}\n\n` +
+    `Пользователь прислал, что нужно изменить (возможно, расшифровку голосового с огрехами распознавания). ` +
+    `Верни ПОЛНУЮ задачу после правки: поля, которых правка не касается, оставь ровно такими же. ` +
+    `Даты понимай относительно сегодня. dateMode: "due" — это срок ("до пятницы"), "on" — конкретный день ("в пятницу в 11:00"). ` +
+    `Если просят убрать время — верни пустую строку в time.\n\n` +
+    `Ответь СТРОГО одним JSON-объектом без пояснений и markdown: ` +
+    `{"title":"...","notes":"...","date":"YYYY-MM-DD","time":"HH:MM или пустая строка","dateMode":"due или on","groupId":"..."}`;
+
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "openai/gpt-oss-20b",
+      max_tokens: 600,
+      reasoning_effort: "low",
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: instruction },
+      ],
+    }),
+    signal: withTimeout(),
+  });
+  const json = await res.json();
+  if (!res.ok) {
+    console.error("Groq edit failed:", JSON.stringify(json));
+    throw new Error(`Groq (edit): ${json.error?.message || res.status}`);
+  }
+  const raw = json.choices?.[0]?.message?.content || "{}";
+  const match = raw.match(/\{[\s\S]*\}/);
+  return JSON.parse(match ? match[0] : raw);
+}
+
 // --- update handlers ---
 
 async function handleCallback(cb: any) {
@@ -272,7 +348,31 @@ async function handleCallback(cb: any) {
     task.completed = true;
     await saveState(link.user_id, state);
     await answerCallback(cb.id, "Отмечено выполненной");
-    await editMessage(chatId, messageId, `✅ Выполнено\n\n<s>${escapeHtml(task.title)}</s>`);
+    await editMessage(
+      chatId,
+      messageId,
+      `✅ <b>Задача закрыта</b>\n\n<s>${escapeHtml(task.title)}</s>\n\nОтмечена галочкой в планировщике.`
+    );
+    return;
+  }
+
+  if (action === "edit") {
+    // The next message from this chat is the edit instruction; the function is
+    // stateless, so remember what is being edited in the database.
+    await supabase.from("telegram_pending_actions").upsert({
+      telegram_chat_id: chatId,
+      action: "edit",
+      task_id: taskId,
+      created_at: new Date().toISOString(),
+    });
+    await answerCallback(cb.id, "Жду изменения");
+    await sendMessage(
+      chatId,
+      `✏️ Что поменять в задаче «${escapeHtml(task.title)}»?\n\n` +
+        "Пришли текстом или голосовым — например «перенеси на пятницу», " +
+        "«поставь время 15:00» или «переименуй в созвон с подрядчиком».",
+      { html: true }
+    );
     return;
   }
 
@@ -354,6 +454,45 @@ async function handleMessage(message: any) {
     name: g.name,
     sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
   }));
+
+  // --- pending edit: this message is an instruction for a specific task ---
+  const { data: pending } = await supabase
+    .from("telegram_pending_actions")
+    .select("action, task_id, created_at")
+    .eq("telegram_chat_id", chatId)
+    .maybeSingle();
+
+  if (pending?.action === "edit") {
+    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+
+    const stale = Date.now() - new Date(pending.created_at).getTime() > 30 * 60 * 1000;
+    const task: Task | undefined = (state.tasks || []).find((t: Task) => t.id === pending.task_id);
+
+    if (stale || !task) {
+      await sendMessage(
+        chatId,
+        stale
+          ? "Правка отменена — прошло слишком много времени. Нажми «Редактировать» ещё раз."
+          : "Эта задача уже удалена, редактировать нечего."
+      );
+      return;
+    }
+
+    const patch = await applyEditWithGroq(inputText, task, groupInfo);
+    task.title = patch.title || task.title;
+    task.notes = patch.notes ?? task.notes;
+    task.date = /^\d{4}-\d{2}-\d{2}$/.test(patch.date || "") ? patch.date! : task.date;
+    task.time = /^\d{2}:\d{2}$/.test(patch.time || "") ? patch.time! : "";
+    task.dateMode = patch.dateMode === "on" ? "on" : "due";
+    if (groups.some((g: any) => g.id === patch.groupId)) task.groupId = patch.groupId!;
+
+    await saveState(userId, state);
+    await sendMessage(chatId, taskCard(task, "Задача обновлена ✏️"), {
+      html: true,
+      keyboard: taskKeyboard(task.id),
+    });
+    return;
+  }
 
   // Only open tasks can be deleted or completed, and the newest are the likely targets.
   const openTasks: Task[] = (state.tasks || [])
