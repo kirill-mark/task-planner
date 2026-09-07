@@ -37,29 +37,42 @@ function toHex(bytes: Uint8Array): string {
 }
 
 // https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
-async function verifyInitData(initData: string): Promise<{ ok: boolean; telegramId?: number }> {
+const MAX_AGE_SEC = 86400;
+
+async function verifyInitData(
+  initData: string
+): Promise<{ ok: boolean; telegramId?: number; reason?: string }> {
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) return { ok: false };
+  if (!hash) return { ok: false, reason: "no_hash" };
+
+  // Both `hash` and `signature` are excluded from the data-check-string.
+  // `signature` is the newer Ed25519 field for third-party validation, and
+  // newer clients (Telegram Desktop especially) send it - leaving it in makes
+  // every one of those launches fail the HMAC check.
   params.delete("hash");
+  params.delete("signature");
 
   const keys = Array.from(params.keys()).sort();
   const dataCheckString = keys.map((k) => `${k}=${params.get(k)}`).join("\n");
 
   const secretKey = await hmacSha256(TELEGRAM_BOT_TOKEN, "WebAppData");
   const computed = toHex(await hmacSha256(secretKey, dataCheckString));
-  if (computed !== hash) return { ok: false };
+  if (computed !== hash) return { ok: false, reason: "bad_hash" };
 
   const authDate = parseInt(params.get("auth_date") || "0", 10);
-  if (!authDate || Date.now() / 1000 - authDate > 86400) return { ok: false };
+  const age = Date.now() / 1000 - authDate;
+  if (!authDate || age > MAX_AGE_SEC) {
+    return { ok: false, reason: `stale (${Math.round(age / 3600)}h old)` };
+  }
 
   const userRaw = params.get("user");
-  if (!userRaw) return { ok: false };
+  if (!userRaw) return { ok: false, reason: "no_user" };
   try {
     const user = JSON.parse(userRaw);
     return { ok: true, telegramId: user.id };
   } catch {
-    return { ok: false };
+    return { ok: false, reason: "bad_user_json" };
   }
 }
 
@@ -76,14 +89,21 @@ Deno.serve(async (req) => {
     if (typeof initData !== "string" || !initData) return json({ error: "missing_init_data" }, 400);
 
     const check = await verifyInitData(initData);
-    if (!check.ok) return json({ error: "invalid_signature" }, 401);
+    if (!check.ok) {
+      // Logged so a silent fallback to the login form can be diagnosed later.
+      console.error(`telegram-miniapp-auth: rejected initData (${check.reason})`);
+      return json({ error: "invalid_signature", reason: check.reason }, 401);
+    }
 
     const { data: link } = await supabase
       .from("telegram_links")
       .select("user_id")
       .eq("telegram_chat_id", check.telegramId)
       .maybeSingle();
-    if (!link) return json({ error: "not_linked" }, 404);
+    if (!link) {
+      console.error(`telegram-miniapp-auth: telegram id ${check.telegramId} is not linked`);
+      return json({ error: "not_linked" }, 404);
+    }
 
     const { data: userData, error: userErr } = await supabase.auth.admin.getUserById(link.user_id);
     if (userErr || !userData?.user?.email) {
