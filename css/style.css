@@ -549,3 +549,33 @@ body {
 @media (min-width: 520px) {
   .welcome-hero { aspect-ratio: 1.15 / 1; }
 }
+
+/* ---------- Greeting header ---------- */
+
+.greeting { margin-bottom: 18px; }
+.greeting h2 {
+  margin: 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.greeting p {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+/* ---------- "до / на" date mode ---------- */
+
+.field-row select.date-mode {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 6px 4px 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.add-form .field-row select.date-mode { background: var(--bg); }
+.task-edit-form .field-row select.date-mode { background: var(--surface); }

@@ -1,5 +1,5 @@
-import { loadState, saveState } from "./storage.js";
-import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js";
+import { loadState, saveState } from "./storage.js?v=9";
+import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js?v=9";
 
 const GROUP_COLORS = [
   "#5b8def", "#e0698e", "#3fb98c", "#f2a541",
@@ -70,13 +70,14 @@ class Store {
   }
 
   // --- tasks ---
-  addTask({ title, notes, date, time, groupId }) {
+  addTask({ title, notes, date, time, dateMode, groupId }) {
     this.state.tasks.push({
       id: crypto.randomUUID(),
       title: title.trim(),
       notes: (notes || "").trim(),
       date,
       time: time || "",
+      dateMode: dateMode === "on" ? "on" : "due", // 'due' = до даты, 'on' = на дату
       groupId,
       completed: false,
       createdAt: Date.now(),

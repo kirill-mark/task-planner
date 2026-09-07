@@ -53,6 +53,21 @@ export async function updatePassword(password) {
   return supabase.auth.updateUser({ password });
 }
 
+// --- per-user settings (timezone drives when reminders fire) ---
+export async function syncUserSettings(userId) {
+  let timezone;
+  try {
+    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch {
+    timezone = null;
+  }
+  if (!timezone) return;
+  const { error } = await supabase
+    .from("user_settings")
+    .upsert({ user_id: userId, timezone, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) console.warn("settings: sync failed", error.message);
+}
+
 // --- planner state, scoped per user ---
 export async function fetchRemoteState(userId) {
   const { data, error } = await supabase

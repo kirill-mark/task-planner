@@ -1,14 +1,14 @@
-import { store } from "./state.js";
-import { hasSeenWelcome, markWelcomeSeen } from "./storage.js";
+import { store } from "./state.js?v=9";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=9";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
-} from "./dates.js";
+} from "./dates.js?v=9";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
-  telegramMiniAppSignIn, getSession,
-} from "./sync.js";
+  telegramMiniAppSignIn, getSession, syncUserSettings,
+} from "./sync.js?v=9";
 
 const ui = {
   view: "list",       // 'list' | 'week' | 'day' | 'profile'
@@ -98,6 +98,48 @@ function byTimeThenCreated(a, b) {
   return (a.time || "").localeCompare(b.time || "") || a.createdAt - b.createdAt;
 }
 
+// Picked once per app open: the greeting varies between visits but stays put
+// while you use the app (render() runs on every state change).
+const greetingSeed = Math.floor(Math.random() * 100);
+
+function firstNameOf(sess) {
+  const raw = sess.user.user_metadata?.display_name || sess.user.email || "";
+  const name = raw.split(/[\s@.]/)[0];
+  return name ? name.charAt(0).toUpperCase() + name.slice(1) : "друг";
+}
+
+function renderGreeting() {
+  const name = firstNameOf(session);
+  const hour = new Date().getHours();
+  const timely = hour < 5 ? "Доброй ночи" : hour < 12 ? "Доброе утро" : hour < 18 ? "Добрый день" : "Добрый вечер";
+  const variants = [
+    `${timely}, ${name}!`,
+    `Что у нас сегодня по плану, ${name}?`,
+    `С чего начнём, ${name}?`,
+    `Привет, ${name}. Разложим день по полочкам?`,
+  ];
+  const today = todayISO();
+  const todays = store.state.tasks.filter((t) => t.date === today);
+  const done = todays.filter((t) => t.completed).length;
+  const sub = todays.length
+    ? `На сегодня ${todays.length} ${plural(todays.length, "задача", "задачи", "задач")}, выполнено ${done}`
+    : "На сегодня задач нет — самое время добавить";
+
+  return `
+    <div class="greeting">
+      <h2>${escapeHtml(variants[greetingSeed % variants.length])}</h2>
+      <p>${escapeHtml(sub)}</p>
+    </div>`;
+}
+
+function plural(n, one, few, many) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
 function taskGroup(task) {
   return store.groupById(task.groupId) || { name: "Без группы", color: "#7d8ca3" };
 }
@@ -110,7 +152,10 @@ function renderTaskEditForm(task) {
         <input type="text" name="notes" value="${escapeHtml(task.notes || "")}" placeholder="Описание (необязательно)" maxlength="500" />
         <select name="groupId">${groupOptions(task.groupId)}</select>
         <div class="field-row">
-          <label class="field-label">дедлайн</label>
+          <select name="dateMode" class="date-mode">
+            <option value="due" ${task.dateMode !== "on" ? "selected" : ""}>до</option>
+            <option value="on" ${task.dateMode === "on" ? "selected" : ""}>на</option>
+          </select>
           <input type="date" name="date" value="${task.date}" />
           <input type="time" name="time" value="${task.time || ""}" />
         </div>
@@ -136,7 +181,7 @@ function renderTaskItem(task, { showGroupChip = true, showDate = false } = {}) {
         ${task.notes ? `<div class="task-notes">${escapeHtml(task.notes)}</div>` : ""}
         <div class="task-meta">
           ${showGroupChip ? `<span class="chip" style="--chip-color:${g.color}">${escapeHtml(g.name)}</span>` : ""}
-          ${showDate ? `<span class="task-date ${overdue ? "overdue" : ""}">до ${formatShort(task.date)}${task.time ? `, ${task.time}` : ""}</span>` : ""}
+          ${showDate ? `<span class="task-date ${overdue ? "overdue" : ""}">${task.dateMode === "on" ? "" : "до "}${formatShort(task.date)}${task.time ? `, ${task.time}` : ""}</span>` : ""}
         </div>
       </div>
       <button class="task-edit" data-action="edit-task" data-id="${task.id}" aria-label="Редактировать">✎</button>
@@ -162,7 +207,10 @@ function renderAddForm(defaultDate, formId) {
       <input type="text" name="notes" placeholder="Описание (необязательно)" maxlength="500" />
       <select name="groupId">${groupOptions(defaultGroupId())}</select>
       <div class="field-row">
-        <label class="field-label" for="${formId}-date">дедлайн</label>
+        <select name="dateMode" class="date-mode" aria-label="Тип даты">
+          <option value="due">до</option>
+          <option value="on">на</option>
+        </select>
         <input type="date" id="${formId}-date" name="date" value="${defaultDate}" />
         <input type="time" id="${formId}-time" name="time" />
       </div>
@@ -625,6 +673,7 @@ function render() {
     <div class="app-body">
       <aside class="sidebar">${renderSidebar()}</aside>
       <main class="content">
+        ${renderGreeting()}
         ${ui.view === "week" ? renderWeekView() : ui.view === "day" ? renderDayView() : renderListView()}
       </main>
     </div>`;
@@ -732,6 +781,7 @@ root.addEventListener("submit", (e) => {
       notes: data.get("notes"),
       date: data.get("date") || el.dataset.date,
       time: data.get("time")?.toString().trim() || "",
+      dateMode: data.get("dateMode") || "due",
       groupId: data.get("groupId"),
     });
   } else if (action === "add-group-form") {
@@ -761,6 +811,7 @@ root.addEventListener("submit", (e) => {
       notes: data.get("notes")?.toString().trim() || "",
       date: data.get("date"),
       time: data.get("time")?.toString().trim() || "",
+      dateMode: data.get("dateMode") === "on" ? "on" : "due",
       groupId: data.get("groupId"),
     });
   } else if (action === "auth-submit") {
@@ -818,6 +869,7 @@ onAuthChange((newSession) => {
   if (isLoggedIn && (!wasLoggedIn || store.userId !== newSession.user.id)) {
     ui.showWelcome = !hasSeenWelcome(newSession.user.id);
     store.attachUser(newSession.user.id);
+    syncUserSettings(newSession.user.id);
   } else if (!isLoggedIn && wasLoggedIn) {
     store.detachUser();
     ui.view = "list";
