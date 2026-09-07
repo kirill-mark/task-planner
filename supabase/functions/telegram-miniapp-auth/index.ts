@@ -72,7 +72,12 @@ async function verifyInitData(
   const keys = Array.from(params.keys()).sort();
   const dataCheckString = keys.map((k) => `${k}=${params.get(k)}`).join("\n");
 
-  const secretKey = await hmacSha256(TELEGRAM_BOT_TOKEN, "WebAppData");
+  // Telegram writes this as HMAC_SHA256(<bot_token>, "WebAppData"), where in
+  // their notation the first argument is the DATA and the second is the KEY -
+  // the same order as the line below it, HMAC_SHA256(data_check_string,
+  // secret_key). So the key here is the literal "WebAppData" and the data is
+  // the bot token, not the other way round.
+  const secretKey = await hmacSha256("WebAppData", TELEGRAM_BOT_TOKEN);
   const computed = toHex(await hmacSha256(secretKey, dataCheckString));
   if (computed !== hash) {
     // Field names only - enough to spot an unexpected payload shape without
