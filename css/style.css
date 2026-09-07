@@ -552,7 +552,13 @@ body {
 
 /* ---------- Greeting header ---------- */
 
-.greeting { margin-bottom: 18px; }
+.greeting {
+  padding: 18px 24px 14px;
+  padding-left: calc(24px + env(safe-area-inset-left));
+  padding-right: calc(24px + env(safe-area-inset-right));
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
 .greeting h2 {
   margin: 0;
   font-size: 1.3rem;
@@ -564,6 +570,24 @@ body {
   font-size: 0.82rem;
   color: var(--text-dim);
 }
+
+/* --- collapsible "Разделы" --- */
+.sidebar-toggle {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 4px 0; margin-bottom: 10px;
+  border: none; background: none; cursor: pointer; text-align: left;
+}
+.sidebar-toggle h2 { margin: 0; }
+.sidebar-toggle .sidebar-chevron {
+  color: var(--text-dim); font-size: 1rem; line-height: 1;
+  transition: transform 0.15s ease;
+}
+.sidebar-toggle.open .sidebar-chevron { transform: rotate(90deg); }
+.sidebar-toggle-count {
+  margin-left: auto; font-size: 0.72rem; color: var(--text-dim);
+  background: var(--bg); border-radius: 999px; padding: 1px 8px;
+}
+.sidebar-toggle:hover h2, .sidebar-toggle:hover .sidebar-chevron { color: var(--accent); }
 
 /* ---------- "до / на" date mode ---------- */
 

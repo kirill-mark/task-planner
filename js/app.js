@@ -1,14 +1,14 @@
-import { store } from "./state.js?v=10";
-import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=10";
+import { store } from "./state.js?v=11";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=11";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
-} from "./dates.js?v=10";
+} from "./dates.js?v=11";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
   telegramMiniAppSignIn, getSession, syncUserSettings,
-} from "./sync.js?v=10";
+} from "./sync.js?v=11";
 
 const ui = {
   view: "list",       // 'list' | 'week' | 'day' | 'profile'
@@ -19,6 +19,7 @@ const ui = {
   editingTaskId: null,
   openForms: new Set(),
   showWelcome: false,
+  sectionsOpen: false, // разделы свёрнуты по умолчанию
 };
 
 let session = null;
@@ -104,9 +105,12 @@ function byTimeThenCreated(a, b) {
   return (a.time || "").localeCompare(b.time || "") || a.createdAt - b.createdAt;
 }
 
-// Picked once per app open: the greeting varies between visits but stays put
-// while you use the app (render() runs on every state change).
-const greetingSeed = Math.floor(Math.random() * 100);
+// Derived from the date, so the greeting is the same all day and changes
+// tomorrow - rather than shuffling on every render.
+function greetingSeed() {
+  const [y, m, d] = todayISO().split("-").map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86400000);
+}
 
 function firstNameOf(sess) {
   const raw = sess.user.user_metadata?.display_name || sess.user.email || "";
@@ -123,6 +127,9 @@ function renderGreeting() {
     `Что у нас сегодня по плану, ${name}?`,
     `С чего начнём, ${name}?`,
     `Привет, ${name}. Разложим день по полочкам?`,
+    `${name}, погнали разбирать дела?`,
+    `Рад видеть, ${name}. Чем займёмся?`,
+    `${name}, давай сделаем этот день продуктивным`,
   ];
   const today = todayISO();
   const todays = store.state.tasks.filter((t) => t.date === today);
@@ -133,7 +140,7 @@ function renderGreeting() {
 
   return `
     <div class="greeting">
-      <h2>${escapeHtml(variants[greetingSeed % variants.length])}</h2>
+      <h2>${escapeHtml(variants[greetingSeed() % variants.length])}</h2>
       <p>${escapeHtml(sub)}</p>
     </div>`;
 }
@@ -420,18 +427,24 @@ function renderSidebar() {
 
   return `
     <div class="sidebar-section">
-      <h2>Разделы</h2>
-      <ul class="section-list">
-        <li class="section-row ${ui.filter.type === "all" ? "active" : ""}" data-action="show-all-groups">
-          <span class="group-dot" style="background:#aaa"></span>
-          <span class="section-name">Все разделы</span>
-        </li>
-        ${sections}
-      </ul>
-      <form class="add-group-form" data-action="add-section-form">
-        <input type="text" name="name" placeholder="Новый раздел…" maxlength="40" required />
-        <button type="submit">+</button>
-      </form>
+      <button type="button" class="sidebar-toggle ${ui.sectionsOpen ? "open" : ""}" data-action="toggle-sections"
+        aria-expanded="${ui.sectionsOpen}">
+        <span class="sidebar-chevron" aria-hidden="true">›</span>
+        <h2>Разделы</h2>
+        ${ui.sectionsOpen ? "" : `<span class="sidebar-toggle-count">${store.state.sections.length}</span>`}
+      </button>
+      ${ui.sectionsOpen ? `
+        <ul class="section-list">
+          <li class="section-row ${ui.filter.type === "all" ? "active" : ""}" data-action="show-all-groups">
+            <span class="group-dot" style="background:#aaa"></span>
+            <span class="section-name">Все разделы</span>
+          </li>
+          ${sections}
+        </ul>
+        <form class="add-group-form" data-action="add-section-form">
+          <input type="text" name="name" placeholder="Новый раздел…" maxlength="40" required />
+          <button type="submit">+</button>
+        </form>` : ""}
     </div>
     <div class="sidebar-section">
       <h2>Прогресс всего</h2>
@@ -684,10 +697,10 @@ function render() {
         ${escapeHtml(initials(displayNameOf(session)))}
       </button>
     </header>
+    ${renderGreeting()}
     <div class="app-body">
       <aside class="sidebar">${renderSidebar()}</aside>
       <main class="content">
-        ${renderGreeting()}
         ${ui.view === "week" ? renderWeekView() : ui.view === "day" ? renderDayView() : renderListView()}
       </main>
     </div>`;
@@ -700,7 +713,11 @@ root.addEventListener("click", (e) => {
   if (!el) return;
   const action = el.dataset.action;
 
-  if (action === "welcome-start") {
+  if (action === "toggle-sections") {
+    ui.sectionsOpen = !ui.sectionsOpen;
+    render();
+  }
+  else if (action === "welcome-start") {
     if (session) markWelcomeSeen(session.user.id);
     ui.showWelcome = false;
     render();
