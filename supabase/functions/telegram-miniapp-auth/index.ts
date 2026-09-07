@@ -62,29 +62,34 @@ async function verifyInitData(
   const hash = params.get("hash");
   if (!hash) return { ok: false, reason: "no_hash" };
 
-  // Both `hash` and `signature` are excluded from the data-check-string.
-  // `signature` is the newer Ed25519 field for third-party validation, and
-  // newer clients (Telegram Desktop especially) send it - leaving it in makes
-  // every one of those launches fail the HMAC check.
+  // Telegram's docs say to exclude both `hash` and `signature` from the
+  // data-check-string, but real clients disagree: Telegram Desktop signs with
+  // `signature` included. Try it included first, then excluded, so launches
+  // from either behaviour verify. Both are HMACs under the bot token, so
+  // accepting either does not weaken the check.
   params.delete("hash");
-  params.delete("signature");
+  const withSig = Array.from(params.keys()).sort();
+  const withoutSig = withSig.filter((k) => k !== "signature");
+  const build = (keys: string[]) => keys.map((k) => `${k}=${params.get(k)}`).join("\n");
 
-  const keys = Array.from(params.keys()).sort();
-  const dataCheckString = keys.map((k) => `${k}=${params.get(k)}`).join("\n");
-
-  // Telegram writes this as HMAC_SHA256(<bot_token>, "WebAppData"), where in
-  // their notation the first argument is the DATA and the second is the KEY -
-  // the same order as the line below it, HMAC_SHA256(data_check_string,
-  // secret_key). So the key here is the literal "WebAppData" and the data is
-  // the bot token, not the other way round.
+  // Telegram writes the derivation as HMAC_SHA256(<bot_token>, "WebAppData"),
+  // where their first argument is the DATA and the second is the KEY - the same
+  // order as the line that follows it, HMAC_SHA256(data_check_string,
+  // secret_key). So the key is the literal "WebAppData", not the token.
   const secretKey = await hmacSha256("WebAppData", TELEGRAM_BOT_TOKEN);
-  const computed = toHex(await hmacSha256(secretKey, dataCheckString));
-  if (computed !== hash) {
-    // Field names only - enough to spot an unexpected payload shape without
-    // writing the user's Telegram profile into the logs.
+
+  let matched = false;
+  for (const keys of [withSig, withoutSig]) {
+    if (toHex(await hmacSha256(secretKey, build(keys))) === hash) {
+      matched = true;
+      break;
+    }
+  }
+  if (!matched) {
+    // Field names only - never the user's profile data.
     console.error(
-      `telegram-miniapp-auth: hash mismatch; fields=[${keys.join(",")}] ` +
-        `len=${dataCheckString.length} got=${hash.slice(0, 8)} computed=${computed.slice(0, 8)}`
+      `telegram-miniapp-auth: hash mismatch; fields=[${withSig.join(",")}] ` +
+        `len=${build(withSig).length} got=${hash.slice(0, 8)}`
     );
     return { ok: false, reason: "bad_hash" };
   }
