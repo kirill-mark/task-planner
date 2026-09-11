@@ -40,12 +40,14 @@ const BTN_ADD = "➕ Добавить задачу";
 const BTN_UPCOMING = "📋 Ближайшие задачи";
 const BTN_SECTION = "🗂 Добавить раздел";
 const BTN_TOMORROW = "🌙 Задачи на завтра";
+const BTN_TODAY = "☀️ План на сегодня";
 
 function mainKeyboard(): ReplyKeyboard {
   return {
     keyboard: [
       [{ text: BTN_ADD }, { text: BTN_UPCOMING }],
       [{ text: BTN_SECTION }, { text: BTN_TOMORROW }],
+      [{ text: BTN_TODAY }], // alone in its row, so Telegram renders it full width
     ],
     resize_keyboard: true,
     is_persistent: true,
@@ -185,11 +187,37 @@ function planKeyboard(date: string): Keyboard {
   };
 }
 
-function humanDate(date: string): string {
-  const today = new Date().toISOString().slice(0, 10);
-  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-  if (date === today) return "сегодня";
-  if (date === tomorrow) return "завтра";
+// Dates must be the user's local ones: on UTC, "сегодня" flips to yesterday's
+// plan for anyone east of Greenwich during their late evening.
+function localDate(tz: string, offsetDays = 0): string {
+  const base = new Date(Date.now() + offsetDays * 86400000);
+  const parts: Record<string, string> = {};
+  for (const p of new Intl.DateTimeFormat("en-CA", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(base)) {
+    if (p.type !== "literal") parts[p.type] = p.value;
+  }
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+
+async function timezoneOf(userId: string): Promise<string> {
+  const { data } = await supabase
+    .from("user_settings")
+    .select("timezone")
+    .eq("user_id", userId)
+    .maybeSingle();
+  const tz = data?.timezone || "Europe/Moscow";
+  try {
+    localDate(tz);
+    return tz;
+  } catch {
+    return "Europe/Moscow";
+  }
+}
+
+function humanDate(date: string, tz: string): string {
+  if (date === localDate(tz)) return "сегодня";
+  if (date === localDate(tz, 1)) return "завтра";
   return date;
 }
 
@@ -227,11 +255,11 @@ const WEEKDAYS = [
 
 // A small model gets weekday arithmetic wrong ("в пятницу" landed on a
 // Wednesday), so hand it a ready-made calendar to look the date up in.
-function calendarHint(days = 14): string {
-  const today = new Date();
+function calendarHint(tz: string, days = 14): string {
+  const [y, m, day] = localDate(tz).split("-").map(Number);
   const lines: string[] = [];
   for (let i = 0; i < days; i++) {
-    const d = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() + i));
+    const d = new Date(Date.UTC(y, m - 1, day + i));
     const label = i === 0 ? " (сегодня)" : i === 1 ? " (завтра)" : i === 2 ? " (послезавтра)" : "";
     lines.push(`${d.toISOString().slice(0, 10)} — ${WEEKDAYS[d.getUTCDay()]}${label}`);
   }
@@ -252,9 +280,10 @@ type Intent = {
 async function parseIntentWithGroq(
   text: string,
   groups: GroupInfo[],
-  openTasks: Task[]
+  openTasks: Task[],
+  tz: string
 ): Promise<Intent> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate(tz);
   const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
   // Numbered instead of by id: a small model echoes an index far more reliably than a UUID.
   const taskList = openTasks.length
@@ -263,7 +292,7 @@ async function parseIntentWithGroq(
 
   const system =
     `Ты помощник планировщика задач. Сегодня ${today}.\n\n` +
-    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint()}\n\n` +
+    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint(tz)}\n\n` +
     `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
     `Открытые задачи пользователя:\n${taskList}\n\n` +
     `Пользователь прислал сообщение (возможно, расшифровку голосового с огрехами распознавания). ` +
@@ -312,14 +341,15 @@ async function parseIntentWithGroq(
 async function applyEditWithGroq(
   instruction: string,
   task: Task,
-  groups: GroupInfo[]
+  groups: GroupInfo[],
+  tz: string
 ): Promise<Partial<Task>> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDate(tz);
   const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
 
   const system =
     `Ты редактируешь одну задачу в планировщике. Сегодня ${today}.\n\n` +
-    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint()}\n\n` +
+    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint(tz)}\n\n` +
     `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
     `Текущая задача:\n` +
     `title: ${task.title}\n` +
@@ -381,6 +411,7 @@ async function handleCallback(cb: any) {
   }
 
   const state = await loadState(link.user_id);
+  const tz = await timezoneOf(link.user_id);
 
   // --- buttons under a daily plan: they carry a date, not a task ---
   if (action === "padd") {
@@ -394,7 +425,7 @@ async function handleCallback(cb: any) {
     await answerCallback(cb.id, "Жду задачу");
     await sendMessage(
       chatId,
-      `➕ Что добавить на ${humanDate(arg)}? Пришли текстом или голосовым.`
+      `➕ Что добавить на ${humanDate(arg, tz)}? Пришли текстом или голосовым.`
     );
     return;
   }
@@ -408,7 +439,7 @@ async function handleCallback(cb: any) {
       return;
     }
     await answerCallback(cb.id);
-    await sendMessage(chatId, `Какую задачу убрать из плана на ${humanDate(arg)}?`, {
+    await sendMessage(chatId, `Какую задачу убрать из плана на ${humanDate(arg, tz)}?`, {
       keyboard: {
         inline_keyboard: open.map((t) => [
           { text: `🗑 ${t.title}`.slice(0, 60), callback_data: `pdone:${t.id}:${arg}` },
@@ -430,7 +461,7 @@ async function handleCallback(cb: any) {
     await editMessage(chatId, messageId, `🗑 Удалено: <s>${escapeHtml(target.title)}</s>`);
     await sendMessage(
       chatId,
-      planText(state, arg2, `📋 <b>Обновлённый план на ${humanDate(arg2)}</b>`),
+      planText(state, arg2, `📋 <b>Обновлённый план на ${humanDate(arg2, tz)}</b>`),
       { html: true, keyboard: planKeyboard(arg2) }
     );
     return;
@@ -565,6 +596,7 @@ async function handleMessage(message: any) {
   }
 
   const state = await loadState(userId);
+  const tz = await timezoneOf(userId);
   const groups = ensureGroups(state);
 
   const groupInfo: GroupInfo[] = groups.map((g: any) => ({
@@ -576,7 +608,7 @@ async function handleMessage(message: any) {
   // --- menu buttons: checked before pending actions, so tapping a button
   // always acts as a command rather than as an answer to an earlier prompt ---
   const button = inputText.trim();
-  if ([BTN_ADD, BTN_UPCOMING, BTN_SECTION, BTN_TOMORROW].includes(button)) {
+  if ([BTN_ADD, BTN_UPCOMING, BTN_SECTION, BTN_TOMORROW, BTN_TODAY].includes(button)) {
     await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
 
     if (button === BTN_ADD) {
@@ -589,7 +621,7 @@ async function handleMessage(message: any) {
     }
 
     if (button === BTN_UPCOMING) {
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDate(tz);
       const upcoming: Task[] = (state.tasks || [])
         .filter((t: Task) => !t.completed)
         .sort(
@@ -604,7 +636,7 @@ async function handleMessage(message: any) {
       }
       const lines = upcoming.map((t) => {
         const overdue = t.date < today ? "❗️" : "";
-        const when = t.date === today ? "сегодня" : humanDate(t.date);
+        const when = humanDate(t.date, tz);
         return `${overdue}• ${escapeHtml(t.title)} — ${when}${t.time ? `, ${t.time}` : ""}`;
       });
       await sendMessage(chatId, `📋 <b>Ближайшие задачи</b>\n\n${lines.join("\n")}`, {
@@ -626,11 +658,20 @@ async function handleMessage(message: any) {
       return;
     }
 
-    // BTN_TOMORROW
-    const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-    await sendMessage(chatId, planText(state, tomorrow, "🌙 <b>Задачи на завтра</b>"), {
+    if (button === BTN_TOMORROW) {
+      const tomorrow = localDate(tz, 1);
+      await sendMessage(chatId, planText(state, tomorrow, "🌙 <b>Задачи на завтра</b>"), {
+        html: true,
+        keyboard: planKeyboard(tomorrow),
+      });
+      return;
+    }
+
+    // BTN_TODAY
+    const today = localDate(tz);
+    await sendMessage(chatId, planText(state, today, "☀️ <b>План на сегодня</b>"), {
       html: true,
-      keyboard: planKeyboard(tomorrow),
+      keyboard: planKeyboard(today),
     });
     return;
   }
@@ -671,7 +712,7 @@ async function handleMessage(message: any) {
 
     let parsedAdd: Intent = {};
     try {
-      parsedAdd = await parseIntentWithGroq(inputText, groupInfo, []);
+      parsedAdd = await parseIntentWithGroq(inputText, groupInfo, [], tz);
     } catch (err) {
       console.error("parse for dated add failed, using raw text:", err);
     }
@@ -693,7 +734,7 @@ async function handleMessage(message: any) {
     await sendMessage(chatId, taskCard(task, "Добавил в план ✅"), { html: true });
     await sendMessage(
       chatId,
-      planText(state, targetDate, `📋 <b>Обновлённый план на ${humanDate(targetDate)}</b>`),
+      planText(state, targetDate, `📋 <b>Обновлённый план на ${humanDate(targetDate, tz)}</b>`),
       { html: true, keyboard: planKeyboard(targetDate) }
     );
     return;
@@ -715,7 +756,7 @@ async function handleMessage(message: any) {
       return;
     }
 
-    const patch = await applyEditWithGroq(inputText, task, groupInfo);
+    const patch = await applyEditWithGroq(inputText, task, groupInfo, tz);
     task.title = patch.title || task.title;
     task.notes = patch.notes ?? task.notes;
     task.date = /^\d{4}-\d{2}-\d{2}$/.test(patch.date || "") ? patch.date! : task.date;
@@ -738,7 +779,7 @@ async function handleMessage(message: any) {
 
   let parsed: Intent = {};
   try {
-    parsed = await parseIntentWithGroq(inputText, groupInfo, openTasks);
+    parsed = await parseIntentWithGroq(inputText, groupInfo, openTasks, tz);
   } catch (parseErr) {
     console.error("parseIntentWithGroq failed, falling back to plain add:", parseErr);
   }
@@ -768,7 +809,7 @@ async function handleMessage(message: any) {
     id: crypto.randomUUID(),
     title: parsed.title || inputText.slice(0, 100),
     notes: parsed.notes || "",
-    date: parsed.date || new Date().toISOString().slice(0, 10),
+    date: parsed.date || localDate(tz),
     time: /^\d{2}:\d{2}$/.test(parsed.time || "") ? parsed.time! : "",
     dateMode: parsed.dateMode === "on" ? "on" : "due",
     groupId: groups.some((g: any) => g.id === parsed.groupId) ? parsed.groupId! : groups[0].id,
