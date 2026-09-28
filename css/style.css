@@ -635,3 +635,17 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .splash-bar i { animation: none; width: 100%; opacity: 0.5; }
 }
+
+/* ---------- Sync status ---------- */
+
+.sync-status {
+  position: absolute;
+  top: calc(52px + env(safe-area-inset-top));
+  right: calc(24px + env(safe-area-inset-right));
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.sync-status.ok { color: var(--accent); }
+.sync-status.warn { color: var(--danger); }
+.sync-status.wait { color: var(--text-dim); }

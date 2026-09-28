@@ -1,14 +1,14 @@
-import { store } from "./state.js?v=11";
-import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=11";
+import { store } from "./state.js?v=12";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=12";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
-} from "./dates.js?v=11";
+} from "./dates.js?v=12";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
   telegramMiniAppSignIn, getSession, syncUserSettings,
-} from "./sync.js?v=11";
+} from "./sync.js?v=12";
 
 const ui = {
   view: "list",       // 'list' | 'week' | 'day' | 'profile'
@@ -116,6 +116,28 @@ function firstNameOf(sess) {
   const raw = sess.user.user_metadata?.display_name || sess.user.email || "";
   const name = raw.split(/[\s@.]/)[0];
   return name ? name.charAt(0).toUpperCase() + name.slice(1) : "друг";
+}
+
+// "Синхронизировано" должно означать подтверждённую сервером запись, а не просто
+// наличие интернета — поэтому состояние приходит из store, а не угадывается.
+let syncStatus = { state: "idle", message: "", lastSyncedAt: null };
+
+function renderSyncStatus() {
+  const map = {
+    idle: null,
+    loading: { text: "Загрузка…", cls: "wait" },
+    saving: { text: "Сохраняю…", cls: "wait" },
+    synced: { text: "Синхронизировано", cls: "ok" },
+    pending: { text: "Сохранено локально", cls: "wait" },
+    offline: { text: "Нет связи с сервером", cls: "warn" },
+    error: { text: "Не удалось сохранить", cls: "warn" },
+  };
+  const s = map[syncStatus.state];
+  if (!s) return "";
+  const title = syncStatus.lastSyncedAt
+    ? `Последняя сверка: ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString("ru-RU")}`
+    : syncStatus.message || "";
+  return `<span class="sync-status ${s.cls}" title="${escapeHtml(title)}">${s.text}</span>`;
 }
 
 function renderGreeting() {
@@ -696,6 +718,7 @@ function render() {
       <button class="profile-btn" data-action="open-profile" title="${escapeHtml(displayNameOf(session))}">
         ${escapeHtml(initials(displayNameOf(session)))}
       </button>
+      ${renderSyncStatus()}
     </header>
     ${renderGreeting()}
     <div class="app-body">
@@ -892,6 +915,11 @@ root.addEventListener("submit", (e) => {
 // ---------- Auth bootstrap ----------
 
 store.subscribe(render);
+store.onStatus((s) => {
+  const changed = s.state !== syncStatus.state;
+  syncStatus = s;
+  if (changed && session && !ui.showWelcome) render();
+});
 
 onAuthChange((newSession) => {
   authResolved = true;

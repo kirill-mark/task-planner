@@ -1,5 +1,5 @@
-import { loadState, saveState } from "./storage.js?v=11";
-import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js?v=11";
+import { loadState, saveState } from "./storage.js?v=12";
+import { fetchRemoteState, pushRemoteState, subscribeRemote } from "./sync.js?v=12";
 
 const GROUP_COLORS = [
   "#5b8def", "#e0698e", "#3fb98c", "#f2a541",
@@ -13,13 +13,36 @@ class Store {
     this.userId = null;
     this.state = { sections: [], groups: [], tasks: [], updatedAt: 0 };
     this.listeners = new Set();
+    this.statusListeners = new Set();
     this.pushTimer = null;
     this.channel = null;
+    // Until a read actually succeeds we must not write: a failed read used to be
+    // indistinguishable from an empty account, and pushing over it could bury
+    // real server data under a stale local copy.
+    this.serverRead = false;
+    this.pendingPush = false;
+    this.status = { state: "idle", lastSyncedAt: null, message: "" };
+    this.rechecking = false;
   }
 
   subscribe(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
+  }
+
+  onStatus(fn) {
+    this.statusListeners.add(fn);
+    fn(this.status);
+    return () => this.statusListeners.delete(fn);
+  }
+
+  setStatus(state, message = "") {
+    this.status = {
+      state,
+      message,
+      lastSyncedAt: state === "synced" ? Date.now() : this.status.lastSyncedAt,
+    };
+    this.statusListeners.forEach((fn) => fn(this.status));
   }
 
   emit() {
@@ -34,31 +57,106 @@ class Store {
     this.userId = userId;
     this.state = loadState(userId);
     if (!this.state.updatedAt) this.state.updatedAt = 0;
+    this.serverRead = false;
+    this.pendingPush = false;
     this.listeners.forEach((fn) => fn(this.state));
+    this.setStatus("loading");
 
-    const remote = await fetchRemoteState(userId);
-    if (this.userId !== userId) return; // user switched again while awaiting
-    if (remote) {
-      this.applyRemote(remote);
-    } else {
-      pushRemoteState(userId, this.state);
+    // Subscribe before the first read, then re-check: otherwise a change landing
+    // between the read and the subscription is lost with nothing to notice it.
+    this.channel = subscribeRemote(
+      userId,
+      (remoteState) => this.applyRemote(remoteState),
+      (subStatus) => {
+        if (subStatus === "SUBSCRIBED" && this.serverRead) this.recheck("realtime");
+      }
+    );
+
+    await this.readFromServer(userId);
+    this.installRecheckTriggers();
+  }
+
+  async readFromServer(userId) {
+    const result = await fetchRemoteState(userId);
+    if (this.userId !== userId) return; // user switched while awaiting
+
+    if (result.status === "error") {
+      this.setStatus("offline", "Не удалось получить данные с сервера");
+      return;
     }
-    this.channel = subscribeRemote(userId, (remoteState) => this.applyRemote(remoteState));
+    this.serverRead = true;
+    if (result.status === "ok") {
+      this.applyRemote(result.state);
+      this.setStatus("synced");
+    } else {
+      // Genuinely no row for this account: seeding it is safe.
+      const pushed = await pushRemoteState(userId, this.state);
+      this.setStatus(pushed.ok ? "synced" : "error", pushed.ok ? "" : pushed.message);
+    }
+    if (this.pendingPush) this.scheduleRemotePush();
+  }
+
+  // Covers the gaps Realtime does not: tab wake-up, network return, reconnect.
+  installRecheckTriggers() {
+    if (this.triggersInstalled) return;
+    this.triggersInstalled = true;
+    const recheck = () => this.recheck("wake");
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") recheck();
+    });
+    globalThis.addEventListener("online", recheck);
+    globalThis.addEventListener("focus", recheck);
+  }
+
+  async recheck(reason) {
+    if (!this.userId || this.rechecking) return;
+    this.rechecking = true;
+    try {
+      const userId = this.userId;
+      const result = await fetchRemoteState(userId);
+      if (this.userId !== userId) return;
+      if (result.status === "error") {
+        this.setStatus("offline", "Нет связи с сервером");
+        return;
+      }
+      this.serverRead = true;
+      if (result.status === "ok") this.applyRemote(result.state);
+      this.setStatus("synced");
+      if (this.pendingPush) this.scheduleRemotePush();
+      console.debug("sync: rechecked after", reason);
+    } finally {
+      this.rechecking = false;
+    }
   }
 
   detachUser() {
     clearTimeout(this.pushTimer);
     if (this.channel) { this.channel.unsubscribe(); this.channel = null; }
     this.userId = null;
+    this.serverRead = false;
+    this.pendingPush = false;
     this.state = { sections: [], groups: [], tasks: [], updatedAt: 0 };
+    this.setStatus("idle");
   }
 
   // --- remote sync ---
   scheduleRemotePush() {
     if (!this.userId) return;
+    // Hold the write until we know what is on the server.
+    if (!this.serverRead) {
+      this.pendingPush = true;
+      this.setStatus("pending", "Изменения сохранены локально");
+      return;
+    }
     clearTimeout(this.pushTimer);
     const userId = this.userId;
-    this.pushTimer = setTimeout(() => pushRemoteState(userId, this.state), PUSH_DEBOUNCE_MS);
+    this.setStatus("saving");
+    this.pushTimer = setTimeout(async () => {
+      const result = await pushRemoteState(userId, this.state);
+      if (this.userId !== userId) return;
+      this.pendingPush = !result.ok;
+      this.setStatus(result.ok ? "synced" : "error", result.ok ? "" : result.message);
+    }, PUSH_DEBOUNCE_MS);
   }
 
   applyRemote(remoteState) {

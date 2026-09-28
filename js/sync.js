@@ -69,6 +69,10 @@ export async function syncUserSettings(userId) {
 }
 
 // --- planner state, scoped per user ---
+
+// Returns an explicit outcome instead of null-for-everything. A failed read and
+// an account with no row look identical otherwise, and the caller used to treat
+// both as "server is empty" and push the local copy over the top of real data.
 export async function fetchRemoteState(userId) {
   const { data, error } = await supabase
     .from("planner_state")
@@ -77,9 +81,10 @@ export async function fetchRemoteState(userId) {
     .maybeSingle();
   if (error) {
     console.warn("sync: fetch failed", error.message);
-    return null;
+    return { status: "error", message: error.message, state: null };
   }
-  return data ? data.data : null;
+  if (!data) return { status: "empty", state: null };
+  return { status: "ok", state: data.data };
 }
 
 export async function pushRemoteState(userId, state) {
@@ -89,10 +94,14 @@ export async function pushRemoteState(userId, state) {
       { user_id: userId, data: state, updated_at: new Date().toISOString() },
       { onConflict: "user_id" }
     );
-  if (error) console.warn("sync: push failed", error.message);
+  if (error) {
+    console.warn("sync: push failed", error.message);
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
 }
 
-export function subscribeRemote(userId, onChange) {
+export function subscribeRemote(userId, onChange, onStatus) {
   return supabase
     .channel(`planner_state_${userId}`)
     .on(
@@ -102,7 +111,9 @@ export function subscribeRemote(userId, onChange) {
         if (payload.new && payload.new.data) onChange(payload.new.data);
       }
     )
-    .subscribe();
+    // Reconnects are silent otherwise, and anything changed while the socket was
+    // down never arrives - the caller re-reads on this signal.
+    .subscribe((status) => { if (onStatus) onStatus(status); });
 }
 
 // --- telegram linking ---

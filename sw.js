@@ -1,13 +1,13 @@
-const CACHE_NAME = "task-planner-v12";
+const CACHE_NAME = "task-planner-v13";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=11",
-  "./js/app.js?v=11",
-  "./js/state.js?v=11",
-  "./js/storage.js?v=11",
-  "./js/dates.js?v=11",
-  "./js/sync.js?v=11",
+  "./css/style.css?v=12",
+  "./js/app.js?v=12",
+  "./js/state.js?v=12",
+  "./js/storage.js?v=12",
+  "./js/dates.js?v=12",
+  "./js/sync.js?v=12",
   "./manifest.json",
   "./icons/icon-192.png?v=6",
   "./icons/icon-512.png?v=6",
@@ -30,8 +30,21 @@ self.addEventListener("activate", (event) => {
   self.clients.claim();
 });
 
+// Only this app's own static files may be cached. Auth, REST, Realtime and Edge
+// Function calls must always hit the network: serving one of those from cache
+// can show another account's data or silently replay a stale answer.
+function isCacheable(request) {
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return false;
+  if (url.pathname.includes("/auth/") || url.pathname.includes("/rest/")) return false;
+  if (url.pathname.includes("/functions/") || url.pathname.includes("/realtime/")) return false;
+  return true;
+}
+
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  if (!isCacheable(event.request)) return; // straight to the network, untouched
+
   event.respondWith(
     caches.match(event.request).then((cached) => {
       const network = fetch(event.request)

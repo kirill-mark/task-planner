@@ -152,11 +152,17 @@ async function loadState(userId: string) {
   return data?.data || { sections: [], groups: [], tasks: [], updatedAt: 0 };
 }
 
+// Throws on failure on purpose: the caller must not report "Добавил ✅" for a
+// write the database refused.
 async function saveState(userId: string, state: any) {
   state.updatedAt = Date.now();
-  await supabase
+  const { error } = await supabase
     .from("planner_state")
     .upsert({ user_id: userId, data: state, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
+  if (error) {
+    console.error("saveState failed:", error.message);
+    throw new Error(`не удалось сохранить: ${error.message}`);
+  }
 }
 
 // A brand-new account can reach the bot before it has any groups.
@@ -842,6 +848,9 @@ Deno.serve(async (req) => {
     const update = await req.json();
 
     if (update.callback_query) {
+      // Also captured so a failure inside the handler reaches the user instead
+      // of leaving the button spinning with nothing said.
+      chatId = update.callback_query.message?.chat?.id ?? null;
       await handleCallback(update.callback_query);
       return new Response("ok");
     }
