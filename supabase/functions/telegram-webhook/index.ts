@@ -4,6 +4,10 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
+// Shared with Telegram via setWebhook(secret_token). The function is deployed
+// without JWT verification, so without this anyone knowing the URL could post
+// a forged update.
+const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "";
 
 const ASCII_ONLY = /^[\x20-\x7E]*$/;
 const badSecrets: string[] = [];
@@ -827,6 +831,12 @@ async function handleMessage(message: any) {
 }
 
 Deno.serve(async (req) => {
+  // Checked before the body is even parsed, so a forged request costs nothing.
+  if (WEBHOOK_SECRET && req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
+    console.error("telegram-webhook: rejected request with a wrong or missing secret token");
+    return new Response("forbidden", { status: 403 });
+  }
+
   let chatId: number | null = null;
   try {
     const update = await req.json();
