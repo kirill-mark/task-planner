@@ -198,8 +198,13 @@ begin
   perform mark_lock_user(p_user);
 
   -- Правки новой модели от пользователя до переключения невозможны (запись
-  -- закрыта для legacy); если журнал не пуст — что-то пошло не так, стоп.
-  select count(*) into v_ops from mark_operations where user_id = p_user and source <> 'migration';
+  -- закрыта для legacy), а сделанные до отката он уже выгрузил в planner_state.
+  -- Если после последнего отката в журнале что-то есть — пересборка стёрла бы
+  -- это, стоп.
+  select count(*) into v_ops from mark_operations
+  where user_id = p_user and source <> 'migration'
+    and created_at > coalesce((select max(taken_at) from mark_legacy_snapshots
+                               where user_id = p_user and reason = 'before-rollback'), '-infinity');
   if v_ops > 0 then
     raise exception 'в новой модели уже есть операции пользователя (%), пересборка стёрла бы их', v_ops;
   end if;
