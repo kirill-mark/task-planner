@@ -108,3 +108,32 @@ Deno.test("дата с числом — не время", async () => {
   const { timeMentioned } = await import("./intent.ts");
   for (const t of ["до 5 октября", "в 3-го декабря", "перенеси на 2 октября", "с 1 января"]) assert(!timeMentioned(t), t);
 });
+
+Deno.test("день недели без «следующей» — ближайший; сегодняшний и явный «следующий» не трогаются", async () => {
+  const add = (date: string) => model({ intent: "add", tasks: [{ title: "Звонок", date, time: "09:00" }] });
+  let p = await parseMessage("позвонить Ольге в среду в 9", ctx(), add("2026-10-07"));
+  assert(p.kind === "add"); assertEquals(p.drafts[0].date, "2026-09-30");
+  p = await parseMessage("позвонить Ольге в следующую среду", ctx(), add("2026-10-07"));
+  assert(p.kind === "add"); assertEquals(p.drafts[0].date, "2026-10-07");
+  p = await parseMessage("во вторник созвон", ctx(), add("2026-10-06"));
+  assert(p.kind === "add"); assertEquals(p.drafts[0].date, "2026-10-06");
+  p = await parseMessage("перенеси встречу на пятницу", ctx(), model({ intent: "move", targets: [1], date: "2026-10-09" }));
+  assert(p.kind === "move"); assertEquals(p.date, "2026-10-02");
+  p = await parseMessage("в пятницу сдать макеты", ctx(), add("2026-10-02"));
+  assert(p.kind === "add"); assertEquals(p.drafts[0].date, "2026-10-02");
+});
+
+Deno.test("дата из текста важнее даты модели; несколько выражений — по порядку", async () => {
+  const add = (tasks: unknown[]) => model({ intent: "add", tasks });
+  let p = await parseMessage("перенеси смету на завтра", ctx(), model({ intent: "move", targets: [1], date: "2026-10-01" }));
+  assert(p.kind === "move"); assertEquals(p.date, "2026-09-30");
+  p = await parseMessage("обед с командой в пятницу в 13:30", ctx(), add([{ title: "Обед", date: "2026-10-07", time: "13:30" }]));
+  assert(p.kind === "add"); assertEquals(p.drafts[0].date, "2026-10-02");
+  p = await parseMessage("сегодня вечером разобрать почту", ctx(), add([{ title: "Почта", date: "" }]));
+  assert(p.kind === "add"); assertEquals([p.drafts[0].date, p.drafts[0].time], ["2026-09-29", ""]);
+  p = await parseMessage("в среду и в четверг тренировка в 19", ctx(), add([{ title: "Тренировка", date: "2026-10-01", time: "19:00" }, { title: "Тренировка", date: "2026-10-02", time: "19:00" }]));
+  assert(p.kind === "add"); assertEquals(p.drafts.map((x) => x.date), ["2026-09-30", "2026-10-01"]);
+  // одно выражение на несколько поручений: дата только там, где её поставила модель
+  p = await parseMessage("купить хлеб и завтра позвонить маме", ctx(), add([{ title: "Хлеб", date: "" }, { title: "Маме", date: "2026-10-01" }]));
+  assert(p.kind === "add"); assertEquals(p.drafts.map((x) => x.date), ["", "2026-09-30"]);
+});

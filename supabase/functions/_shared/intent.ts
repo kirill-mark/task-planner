@@ -11,6 +11,7 @@
 //     задач отбрасываются, а не сохраняются.
 
 import { validDate, validTime } from "./time.ts";
+import { datePhrases } from "./dates.ts";
 
 export type GroupInfo = { id: string; name: string; sectionName: string };
 export type TaskRef = { id: string; title: string; notes?: string; date?: string; time?: string; dateMode?: string; completed?: boolean };
@@ -64,13 +65,14 @@ export function buildParsePrompt(ctx: ParseContext, candidates: TaskRef[]): stri
     "Правила:",
     "- несколько поручений в одном сообщении — несколько элементов tasks;",
     "- title — коротко, без даты и времени; подробности — в notes;",
-    "- date заполняй только если день назван явно («завтра», «в пятницу», «15 октября»); иначе пустая строка;",
-    "- «в пятницу», «до пятницы», «к пятнице» — ближайшая такая дата из календаря, не раньше сегодня; «через неделю» — сегодня + 7 дней;",
+    "- date заполняй, если день назван явно («сегодня», «завтра», «в пятницу», «15 октября»); иначе пустая строка. «Сегодня вечером» — дата сегодня, время пустое;",
+    "- «в пятницу», «до пятницы», «к пятнице» — ближайшая такая дата из календаря после сегодня; «через неделю» — сегодня + 7 дней;",
+    "- невозможное время («25:00») не повод для unclear: создай задачу с пустым time;",
     "- time — только если время названо явно; «утром», «вечером», «днём» без часов — пустая строка;",
     "- dateMode: due — срок («до пятницы», «к среде»), on — привязано к дню («в пятницу в 11», «во вторник встреча»);",
     "- groupId выбирай только если группа ясна из смысла; если не уверен — пустая строка;",
-    "- targets: номера всех задач, которые подходят под описание; если подходят несколько — перечисли все;",
-    "- если просят удалить или изменить, но задача не указана однозначно и нет подходящих — intent unclear.",
+    "- targets: номера всех задач, которые подходят под описание; если подходят несколько — перечисли все, пользователь выберет сам, это не повод для unclear;",
+    "- intent unclear — только если сообщение бессмысленно или просят удалить/изменить, а подходящих задач нет совсем.",
   ].join("\n\n");
 }
 
@@ -120,7 +122,62 @@ export async function parseMessage(
   } catch {
     throw new Error("модель вернула не JSON");
   }
-  return normalizeParse(json, ctx, candidates);
+  return resolveDates(normalizeParse(json, ctx, candidates), text, ctx.today);
+}
+
+// Дата, названная в тексте однозначно, важнее даты модели (см. _shared/dates.ts).
+//   * Одно выражение и одна задача или перенос — дата из выражения.
+//   * Выражений столько же, сколько задач, — по порядку текста, если только
+//     модель не дала те же даты в другом порядке.
+//   * Одно выражение и несколько задач — исправляются только задачи, которым
+//     модель поставила дату: к каким поручениям относится день, решает она.
+export function resolveDates(p: Parsed, text: string, today: string): Parsed {
+  const phrases = datePhrases(text, today);
+  if (!phrases.length) return p;
+  const set = new Set(phrases.map((x) => x.date));
+  if (p.kind === "move") return phrases.length === 1 ? { ...p, date: phrases[0].date } : p;
+  if (p.kind !== "add") return p;
+  if (phrases.length === p.drafts.length) {
+    // те же даты в другом порядке — порядок модели; иначе — по порядку текста
+    const same = [...p.drafts.map((d) => d.date)].sort().join() === [...phrases.map((x) => x.date)].sort().join();
+    return same ? p : { ...p, drafts: p.drafts.map((d, i) => ({ ...d, date: phrases[i].date })) };
+  }
+  const drafts = p.drafts.map((d) => (phrases.length === 1 && d.date && !set.has(d.date) ? { ...d, date: phrases[0].date } : d));
+  return { ...p, drafts };
+}
+
+// «В среду», сказанное во вторник, — завтра, а модель нередко ставит среду
+// следующей недели. Если день недели назван без «следующей», дата, отстоящая
+// ровно на неделю от ближайшего такого дня, возвращается к ближайшему. Когда
+// ближайший — сегодня, решение модели не трогаем: «в среду» в среду чаще
+// значит следующую.
+const WEEKDAYS: [RegExp, number][] = [
+  [/понедельник/, 1], [/вторник/, 2], [/сред[аыуе]/, 3], [/четверг/, 4],
+  [/пятниц/, 5], [/суббот/, 6], [/воскресень/, 0],
+];
+
+export function mentionedWeekdays(text: string): Set<number> {
+  const t = norm(text);
+  if (/следующ|через недел|на той неделе/.test(t)) return new Set();
+  return new Set(WEEKDAYS.filter(([re]) => re.test(t)).map(([, wd]) => wd));
+}
+
+export function nearestWeekday(date: string, wds: Set<number>, today: string): string {
+  if (!wds.size || !validDate(date)) return date;
+  const base = Date.parse(today + "T00:00:00Z");
+  const t = Date.parse(date + "T00:00:00Z"), wd = new Date(t).getUTCDay();
+  if (!wds.has(wd)) return date;
+  const ahead = (wd - new Date(base).getUTCDay() + 7) % 7;
+  if (ahead === 0 || t !== base + (ahead + 7) * 86400000) return date;
+  return new Date(base + ahead * 86400000).toISOString().slice(0, 10);
+}
+
+export function nearestWeekdays(p: Parsed, text: string, today: string): Parsed {
+  const wds = mentionedWeekdays(text);
+  const fix = (d: string) => nearestWeekday(d, wds, today);
+  if (p.kind === "add") return { ...p, drafts: p.drafts.map((d) => ({ ...d, date: fix(d.date) })) };
+  if (p.kind === "move") return { ...p, date: fix(p.date) };
+  return p;
 }
 
 // ------------------------------------------------------------------ правка --

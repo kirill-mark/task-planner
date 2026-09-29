@@ -16,7 +16,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validDate, validTime } from "../_shared/time.ts";
-import { selectCandidates, timeMentioned, type TaskRef } from "../_shared/intent.ts";
+import { mentionedWeekdays, nearestWeekday, selectCandidates, timeMentioned, type TaskRef } from "../_shared/intent.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -196,6 +196,7 @@ Deno.serve(async (req) => {
       model = r.model;
       out = JSON.parse(r.content.match(/\{[\s\S]*\}/)?.[0] || r.content);
     } catch (e: any) {
+      await admin.from("mark_health_events").insert({ source: "assistant", kind: e?.code === "limit" ? "provider_limit" : "provider", detail: String(e?.message || e).slice(0, 200) });
       // лимит или сбой провайдера — задачи работают, черновик сообщения у клиента не теряется
       return json({ error: e?.code === "limit" ? "limit" : "provider", message: String(e?.message || e) }, e?.code === "limit" ? 429 : 502);
     }
@@ -203,13 +204,16 @@ Deno.serve(async (req) => {
     // --- проверка плана ---
     const groups = new Set<string>(state.groups.map((g: any) => g.id));
     const allowTime = timeMentioned(message);
+    // «в среду» во вторник — завтра, а не через неделю (как в боте)
+    const wds = mentionedWeekdays(message);
+    const dateFix = (k: string, v: any) => k.endsWith("_date") && typeof v === "string" ? nearestWeekday(v, wds, today) : v;
     const byNum = (n: any) => Number.isInteger(Number(n)) ? ctxTasks[Number(n) - 1] : undefined;
     const drafts: any[] = [];
     const rejected: string[] = [];
     for (const a of Array.isArray(out?.actions) ? out.actions.slice(0, 20) : []) {
       if (a?.type === "add") {
         const fields: any = {};
-        for (const k of TASK_FIELDS) if (k in a) { const [ok, v] = cleanField(k, a[k], groups); if (ok && v !== null) fields[k] = v; }
+        for (const k of TASK_FIELDS) if (k in a) { const [ok, v] = cleanField(k, dateFix(k, a[k]), groups); if (ok && v !== null) fields[k] = v; }
         if (!fields.title) { rejected.push("задача без названия"); continue; }
         if (!allowTime) { delete fields.planned_time; delete fields.due_time; }
         if (fields.planned_time && !fields.planned_date) delete fields.planned_time;
@@ -226,7 +230,7 @@ Deno.serve(async (req) => {
         for (const [k, v] of Object.entries(a.changes)) {
           if (!TASK_FIELDS.includes(k)) continue;
           if (!allowTime && k.endsWith("_time") && v) continue;
-          const [ok, val] = cleanField(k, v, groups);
+          const [ok, val] = cleanField(k, dateFix(k, v), groups);
           const same = k.endsWith("_time") ? hhmm(val) === hhmm(t[k]) : JSON.stringify(val) === JSON.stringify(t[k] ?? null);
           if (ok && !same) fields[k] = val;
         }
