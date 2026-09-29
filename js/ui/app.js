@@ -76,6 +76,7 @@ const ui = {
   manage: null,      // { form: null|{kind,id,name,color,section_id} }
   confirm: null,     // { title, text, ok, danger, moveOptions, moveTo, onOk }
   showDone: false,
+  more: {},          // «Показать ещё»: ключ списка → сколько добавлено
   calMonth: today0.slice(0, 7),
   selectedDate: today0,
   saved: {},         // key → { cls, text } — «Сохраняется / Сохранено / Не удалось»
@@ -498,6 +499,7 @@ const actions = {
   },
   "move-today": (el) => moveToToday(el.dataset.id),
   "toggle-done": () => { ui.showDone = !ui.showDone; render(); },
+  "show-more": (el) => { ui.more[el.dataset.key] = (ui.more[el.dataset.key] || 0) + Number(el.dataset.step || 50); render(); },
   "cal-prev": () => { shiftMonth(-1); },
   "cal-next": () => { shiftMonth(1); },
   "cal-today": () => { selectDate(todayIso()); render(); },
@@ -903,6 +905,9 @@ DESKTOP.addEventListener("change", () => render());
 
 // День и «сейчас» меняются сами: раз в минуту — перерисовка (ввод не теряется).
 setInterval(() => { if (session) render(); }, 60000);
+
+// Замеры и отладка — только на локальном стенде разработчика, не в опубликованной версии.
+if (location.hostname === "localhost" || location.hostname === "127.0.0.1") window.__mark = { store, render, ui };
 
 render();
 tryTelegramAutoLogin();

@@ -507,10 +507,12 @@ export function renderTasks(ctx0) {
     const list = tasksOfDay(rows, today);
     const late = overdue(rows, today, nowMin);
     body = (late.length ? `<div class="alert"><div class="grow"><b>Просрочено · ${late.length}</b><span class="muted">Не переносится само — решите по каждой задаче</span></div><a class="btn small" href="#/tasks?view=overdue">Разобрать</a></div>` : "") +
-      card(list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { when: whenOfDay(t, today), selected: t.id === selectedId })).join("")}</div>` : emptyDay(today), `Сегодня · ${longDate(today)}`);
+      (() => { const pg = paged(ctx, "today", list, 100);
+        return card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { when: whenOfDay(t, today), selected: t.id === selectedId })).join("")}</div>${pg.more}` : emptyDay(today), `Сегодня · ${longDate(today)}`); })();
   } else if (view === "inbox") {
     const list = inbox(rows);
-    body = card(list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>`
+    const pg = paged(ctx, "inbox", list);
+    body = card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>${pg.more}`
       : '<div class="empty">Входящие пусты: у всех задач есть дата и группа.</div>', "Входящие", "Задачи без даты или без группы — разберите: назначьте день или группу");
   } else if (view === "week") {
     const list = nextDays(rows, today);
@@ -519,19 +521,22 @@ export function renderTasks(ctx0) {
       const d = [t.planned_date, t.due_date].filter((x) => x && x >= today).sort()[0];
       (byDay[d] ||= []).push(t);
     }
-    body = Object.keys(byDay).sort().map((d) => card(`<div class="task-list">${byDay[d].map((t) => taskRow(ctx, t, { when: whenOfDay(t, d), selected: t.id === selectedId })).join("")}</div>`, relativeDay(d, today) + (d === today ? "" : ""), longDate(d))).join("")
+    body = Object.keys(byDay).sort().map((d) => { const pg = paged(ctx, "week:" + d, byDay[d]);
+      return card(`<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { when: whenOfDay(t, d), selected: t.id === selectedId })).join("")}</div>${pg.more}`, relativeDay(d, today), longDate(d)); }).join("")
       || card('<div class="empty">На ближайшие 7 дней задач нет.</div>', "Ближайшие 7 дней");
   } else if (view === "overdue") {
     const list = overdue(rows, today, nowMin);
-    body = card(list.length ? `<div class="task-list">${list.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
+    const pg = paged(ctx, "overdue", list);
+    body = card(list.length ? `<div class="task-list">${pg.shown.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
       <div class="chips" style="padding:0 0 10px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button>
-      <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>`
+      <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>${pg.more}`
       : '<div class="empty">Просроченных задач нет.</div>', "Просроченные", "Ничего не переносится автоматически");
   } else if (view === "trash") {
     body = renderTrash(ctx, q);
   } else if (view === "done") {
-    const list = rows.tasks.filter((t) => t.completed).sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || ""))).slice(0, 200);
-    body = card(list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>` : '<div class="empty">Завершённых задач пока нет.</div>', "Завершённые");
+    const list = rows.tasks.filter((t) => t.completed).sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || "")));
+    const pg = paged(ctx, "done", list);
+    body = card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>${pg.more}` : '<div class="empty">Завершённых задач пока нет.</div>', "Завершённые");
   } else {
     body = renderGrouped(ctx, params.section || null, selectedId);
   }
@@ -569,6 +574,16 @@ function renderTrash(ctx, q) {
     : '<div class="empty">Корзина пуста.</div>', "Корзина", `Удалённое хранится ${tr.keep_days || 30} дней`);
 }
 
+// Постраничный вывод длинных списков (раздел 15: 10 000 задач не должны
+// тормозить): первые step, затем «Показать ещё» — по ключу списка.
+function paged(ctx, key, list, step = 50) {
+  const n = (ctx.ui.more?.[key] || 0) + step;
+  const shown = list.slice(0, n);
+  const rest = list.length - shown.length;
+  const more = rest > 0 ? `<button type="button" class="btn small quiet" style="align-self:flex-start" data-action="show-more" data-key="${esc(key)}" data-step="${step}">Показать ещё ${Math.min(rest, step)} из ${rest}</button>` : "";
+  return { shown, more };
+}
+
 function card(inner, title, meta) {
   return `<section class="card">${title ? `<div class="card-head"><h2>${esc(title)}</h2>${meta ? `<span class="meta">${esc(meta)}</span>` : ""}</div>` : ""}${inner}</section>`;
 }
@@ -585,20 +600,26 @@ function renderGrouped(ctx, sectionFilter, selectedId) {
   const inboxNoGroup = rows.tasks.filter((t) => !t.group_id && (showDone || isOpen(t)));
   if (!sectionFilter && inboxNoGroup.length) {
     out += `<section class="card"><div class="group-head"><h2>Входящие</h2><span class="path">без группы</span><span class="right">${inboxNoGroup.length}</span></div>
-      <div class="task-list">${inboxNoGroup.sort(dayOrder).map((t) => taskRow(ctx, t, { showPath: false, selected: t.id === selectedId })).join("")}</div></section>`;
+      ${(() => { const pg = paged(ctx, "g:inbox", inboxNoGroup.sort(dayOrder), 20); return `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { showPath: false, selected: t.id === selectedId })).join("")}</div>${pg.more}`; })()}</section>`;
   }
-  for (const s of sections) {
-    for (const g of rows.groups.filter((x) => x.section_id === s.id)) {
+  // группы — тоже порциями: сотня групп по двадцать задач — это 2000 строк сразу
+  const allGroups = sections.flatMap((sec) => rows.groups.filter((x) => x.section_id === sec.id).map((g) => ({ s: sec, g })));
+  const gp = paged(ctx, "groups", allGroups, 15);
+  for (const { s, g } of gp.shown) {
+    {
       const all = rows.tasks.filter((t) => t.group_id === g.id);
-      const list = all.filter((t) => showDone || isOpen(t)).sort(sortForList);
+      const list0 = all.filter((t) => showDone || isOpen(t)).sort(sortForList);
+      const pg = paged(ctx, "g:" + g.id, list0, 10);
+      const list = pg.shown;
       const done = all.filter((t) => t.completed).length;
       out += `<section class="card" aria-label="${esc(g.name)}">
         <div class="group-head"><span class="sq" style="background:${esc(s.color)}"></span><span class="path">${esc(s.name)} /</span><h2>${esc(g.name)}</h2><span class="right">${done} / ${all.length}</span></div>
-        ${list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { showPath: false, selected: t.id === selectedId })).join("")}</div>` : '<div class="empty">Открытых задач нет.</div>'}
+        ${list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { showPath: false, selected: t.id === selectedId })).join("")}</div>${pg.more}` : '<div class="empty">Открытых задач нет.</div>'}
         <button type="button" class="btn small quiet" style="align-self:flex-start" data-action="new-task" data-group="${esc(g.id)}">${icons.plus(16)}Задача в «${esc(g.name)}»</button>
       </section>`;
     }
   }
+  if (gp.more) out += gp.more.replace(/Показать ещё/, "Показать ещё группы:");
   const orphanGroups = rows.groups.filter((g) => !rows.sections.some((s) => s.id === g.section_id));
   for (const g of sectionFilter ? [] : orphanGroups) {
     const list = rows.tasks.filter((t) => t.group_id === g.id && (showDone || isOpen(t))).sort(sortForList);

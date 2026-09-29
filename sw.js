@@ -1,4 +1,4 @@
-const CACHE_NAME = "task-planner-v20";
+const CACHE_NAME = "task-planner-v21";
 const APP_SHELL = [
   "./",
   "./index.html",

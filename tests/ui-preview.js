@@ -32,7 +32,20 @@ const rows = {
   ].map((t) => ({ notes: "", planned_date: null, planned_time: null, due_date: null, due_time: null, duration_minutes: null, priority: "normal", completed: false, position: 0, ...t })),
 };
 
-const ui = { quick: "", editor: null, manage: null, confirm: null, showDone: false, calMonth: today.slice(0, 7), selectedDate: today, saved: {}, profile: {}, linkCode: null, telegramMsg: "", auth: { mode: "signin" } };
+// ?n=10000 — контрольный объём раздела 15: 10 000 задач, 100 групп, 20 разделов.
+const N = Number(q.get("n") || 0);
+if (N) {
+  rows.sections = Array.from({ length: 20 }, (_, i) => ({ id: "S" + i, name: "Раздел " + (i + 1), color: ["#7FA7D9", "#6ED6A0", "#F2B861", "#E0698E"][i % 4], position: i }));
+  rows.groups = Array.from({ length: 100 }, (_, i) => ({ id: "G" + i, section_id: "S" + (i % 20), name: "Группа " + (i + 1), position: i }));
+  rows.tasks = Array.from({ length: N }, (_, i) => ({
+    id: "T" + i, title: `Задача номер ${i} про ${["отчёт", "созвон", "смету", "съёмку", "договор"][i % 5]}`, notes: i % 7 ? "" : "подробности",
+    group_id: i % 50 === 0 ? null : "G" + (i % 100), planned_date: i % 3 ? d((i % 60) - 20) : null, planned_time: i % 4 === 0 ? "1" + (i % 9) + ":00:00" : null,
+    due_date: i % 5 === 0 ? d((i % 40) - 10) : null, due_time: null, duration_minutes: i % 6 === 0 ? 60 : null, priority: "normal",
+    completed: i % 3 === 0, position: i,
+  }));
+}
+
+const ui = { more: {}, quick: "", editor: null, manage: null, confirm: null, showDone: false, calMonth: today.slice(0, 7), selectedDate: today, saved: {}, profile: {}, linkCode: null, telegramMsg: "", auth: { mode: "signin" } };
 const session = { user: { email: "kirill@example.com", user_metadata: { display_name: "Кирилл" } } };
 const status = { state: q.get("status") || "synced", lastSyncedAt: Date.now(), unconfirmed: q.get("status") === "saving" ? 2 : 0, conflicts: [], failed: [] };
 const DESKTOP = window.matchMedia("(min-width: 1024px)");
@@ -44,6 +57,11 @@ function route() {
 }
 
 function render() {
+  const t0 = performance.now();
+  try { renderInner(); } finally { window.__lastRender = performance.now() - t0; }
+}
+
+function renderInner() {
   const r = route();
   if (r.name === "auth") { document.getElementById("app").innerHTML = renderAuth(ui.auth); return; }
   const ctx = { rows, status, today, nowMin: 10 * 60, route: r, ui, session,
@@ -64,6 +82,7 @@ document.addEventListener("click", (e) => {
   else if (a === "toggle") { const t = rows.tasks.find((x) => x.id === el.dataset.id); t.completed = !t.completed; }
   else if (a === "pick-date") { ui.selectedDate = el.dataset.date; ui.calMonth = el.dataset.date.slice(0, 7); }
   else if (a === "toggle-done") ui.showDone = !ui.showDone;
+  else if (a === "show-more") ui.more[el.dataset.key] = (ui.more[el.dataset.key] || 0) + Number(el.dataset.step || 50);
   else if (a === "manage") ui.manage = { form: null };
   else if (a === "new-section") ui.manage.form = { kind: "section", name: "", color: "#6ED6A0" };
   else if (a === "close-manage") ui.manage = null;
@@ -72,6 +91,8 @@ document.addEventListener("click", (e) => {
 render();
 });
 document.addEventListener("submit", (e) => e.preventDefault());
+window.__render = render;
+window.__ui = ui;
 window.addEventListener("hashchange", render);
 DESKTOP.addEventListener("change", render);
 if (q.get("edit")) { const t = rows.tasks.find((x) => x.id === q.get("edit")); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
