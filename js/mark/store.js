@@ -146,6 +146,7 @@ export class ModelStore {
     if (this.engine) { this.engine.close(); this.engine = null; }
     this.userId = null;
     this.starterChecked = false;
+    this.signature = null;
     this.rows = { sections: [], groups: [], tasks: [] };
     this.state = { sections: [], groups: [], tasks: [] };
     this.setStatus({ state: "idle", message: "", lastSyncedAt: null, unconfirmed: 0 });
@@ -163,13 +164,20 @@ export class ModelStore {
     this.supabase.auth.onAuthStateChange((event) => { if (event === "TOKEN_REFRESHED") run("token"); });
   }
 
+  // Интерфейс перерисовывается целиком, и перерисовка стирает недописанный
+  // текст в открытой форме. Поэтому слушатели зовутся только когда данные
+  // действительно изменились, а не на каждую сверку.
   applyView(view) {
     this.rows = view;
-    this.state = {
+    const next = {
       sections: view.sections.map((s) => ({ id: s.id, name: s.name, color: s.color })),
       groups: view.groups.map((g) => ({ id: g.id, name: g.name, color: g.color, sectionId: g.section_id })),
       tasks: view.tasks.map(toLegacyTask),
     };
+    const signature = JSON.stringify(next);
+    if (signature === this.signature) return;
+    this.signature = signature;
+    this.state = next;
     this.listeners.forEach((fn) => fn(this.state));
   }
 

@@ -125,7 +125,9 @@ export class SyncEngine {
     else if (this.net === "outdated") state = "outdated";
     else if (this.net === "offline") state = "offline";
     else if (this.net === "error") state = "error";
-    else if (unconfirmed > 0 || this.running) state = "saving";
+    // фоновая сверка без неотправленных правок статус не меняет: иначе он
+    // мигал бы на каждый фокус и событие Realtime
+    else if (unconfirmed > 0) state = "saving";
     else if (this.net === "ok") state = "synced";
     else state = "loading";
     return {
