@@ -2,3 +2,4 @@ supabase/.temp/
 
 # macOS
 .DS_Store
+tests/.session.json

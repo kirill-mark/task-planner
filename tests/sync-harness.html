@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MARK — стенд синхронизации</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 13px/1.5 ui-monospace, Menlo, monospace; margin: 16px; background: Canvas; color: CanvasText; }
+    pre { white-space: pre-wrap; }
+    input, button { font: inherit; padding: 6px 8px; margin: 0 6px 6px 0; }
+  </style>
+</head>
+<body>
+  <h1>Стенд A11 / A13</h1>
+  <p>Сценарии запускаются из консоли: <code>await H.a11()</code>, <code>await H.a13Prepare()</code> и т.д.
+    Сессия берётся из <code>tests/.session.json</code> или из формы входа ниже.</p>
+  <form id="login" hidden>
+    <input name="email" type="email" placeholder="email" autocomplete="username" required />
+    <input name="password" type="password" placeholder="пароль" autocomplete="current-password" required />
+    <button>Войти</button>
+  </form>
+  <pre id="out"></pre>
+  <script type="module" src="./sync-harness.js"></script>
+</body>
+</html>
