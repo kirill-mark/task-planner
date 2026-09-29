@@ -29,10 +29,12 @@ function rememberMode(userId, mode) {
 }
 
 // null — сервер не ответил; решение тогда принимается по последнему известному.
+// Нет записи — новая модель: все аккаунты переключены, новые создаются в ней,
+// а legacy бывает только явным состоянием после отката.
 async function serverMode(userId) {
   const { data, error } = await supabase.from("mark_account_mode").select("mode").eq("user_id", userId).maybeSingle();
   if (error) return null;
-  return data?.mode === "v2" ? "v2" : "legacy";
+  return data?.mode === "legacy" ? "legacy" : "v2";
 }
 
 class StoreSwitch {
@@ -72,9 +74,9 @@ class StoreSwitch {
 
   async attachUser(userId) {
     this.attachingFor = userId;
-    // Без ответа сервера — последняя известная модель этого аккаунта. Если её
-    // нет, прежнее хранилище: оно само не пишет, пока не прочитает сервер (D02).
-    const mode = (await serverMode(userId)) || rememberedMode(userId) || "legacy";
+    // Без ответа сервера — последняя известная модель этого аккаунта, иначе
+    // новая: её очередь сама ничего не пишет, пока не сверится с сервером.
+    const mode = (await serverMode(userId)) || rememberedMode(userId) || "v2";
     if (this.attachingFor !== userId) return;
     rememberMode(userId, mode);
     this.mode = mode;

@@ -56,7 +56,7 @@ const V2 = {
 const opsOf = (db: any) => db.calls.filter((c: Call) => c.rpc === "mark_apply_operations").flatMap((c: Call) => c.args.p_ops);
 
 Deno.test("legacy: ошибка чтения бросается, а не даёт пустой планировщик", async () => {
-  const db = fakeDb({ mode: null, legacyError: true });
+  const db = fakeDb({ mode: "legacy", legacyError: true });
   await assertRejects(() => loadPlanner(db, "u"), Error, "не удалось прочитать");
 });
 
@@ -80,6 +80,13 @@ Deno.test("v2: чтение в прежней форме задачи", async ()
   assertEquals(st.tasks[0], { id: "t1", title: "Отчёт", notes: "", date: "2026-10-01", time: "18:00", dateMode: "due", groupId: "work", completed: false, createdAt: Date.parse("2026-09-01T10:00:00Z") });
   assertEquals(st.tasks[1].dateMode, "on");
   assertEquals(st.groups[0].sectionId, "general");
+});
+
+Deno.test("нет записи о режиме — новая модель", async () => {
+  const db = fakeDb({ mode: null, v2: V2 });
+  const st = await loadPlanner(db, "u");
+  assertEquals(st.tasks.length, 2);
+  assert(db.calls.some((c: Call) => c.rpc === "mark_get_state"));
 });
 
 Deno.test("v2: без изменений — ни одной операции", async () => {

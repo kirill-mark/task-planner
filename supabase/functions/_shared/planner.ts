@@ -28,7 +28,8 @@ const loaded = new WeakMap<object, Loaded>();
 export async function accountMode(db: SupabaseClient, userId: string): Promise<Mode> {
   const { data, error } = await db.from("mark_account_mode").select("mode").eq("user_id", userId).maybeSingle();
   if (error) throw new Error(`не удалось узнать модель аккаунта: ${error.message}`);
-  return data?.mode === "v2" ? "v2" : "legacy";
+  // нет записи — новая модель; legacy бывает только явным, после отката
+  return data?.mode === "legacy" ? "legacy" : "v2";
 }
 
 const hhmm = (t: string | null) => (t ? String(t).slice(0, 5) : "");
