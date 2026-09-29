@@ -1,13 +1,18 @@
-const CACHE_NAME = "task-planner-v13";
+const CACHE_NAME = "task-planner-v14";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./css/style.css?v=12",
-  "./js/app.js?v=12",
-  "./js/state.js?v=12",
-  "./js/storage.js?v=12",
-  "./js/dates.js?v=12",
-  "./js/sync.js?v=12",
+  "./css/style.css?v=13",
+  "./js/app.js?v=13",
+  "./js/state.js?v=13",
+  "./js/storage.js?v=13",
+  "./js/dates.js?v=13",
+  "./js/sync.js?v=13",
+  "./js/store.js?v=13",
+  "./js/mark/store.js",
+  "./js/mark/engine.js",
+  "./js/mark/localdb.js",
+  "./js/mark/transport.js",
   "./manifest.json",
   "./icons/icon-192.png?v=6",
   "./icons/icon-512.png?v=6",
@@ -16,7 +21,10 @@ const APP_SHELL = [
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL))
+    // cache: "reload" — мимо HTTP-кэша браузера: иначе новый воркер мог
+    // закрепить в своём кэше прошлую версию index.html и старые ссылки.
+    caches.open(CACHE_NAME).then((cache) =>
+      cache.addAll(APP_SHELL.map((url) => new Request(url, { cache: "reload" }))))
   );
   self.skipWaiting();
 });

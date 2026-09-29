@@ -649,3 +649,20 @@ body {
 .sync-status.ok { color: var(--accent); }
 .sync-status.warn { color: var(--danger); }
 .sync-status.wait { color: var(--text-dim); }
+
+/* Конфликты и отказы новой модели: обе версии рядом, выбор за пользователем */
+.sync-issues { margin: 0 24px 12px; }
+.sync-issues ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sync-issue {
+  background: var(--surface);
+  border: 1px solid var(--danger);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+.sync-issue-title { margin-bottom: 6px; }
+.sync-issue-diff { border-collapse: collapse; margin-bottom: 8px; width: 100%; }
+.sync-issue-diff th, .sync-issue-diff td { text-align: left; padding: 2px 8px 2px 0; vertical-align: top; overflow-wrap: anywhere; }
+.sync-issue-diff th { color: var(--text-dim); font-weight: 500; }
+.sync-issue-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 600px) { .sync-issues { margin: 0 16px 12px; } }

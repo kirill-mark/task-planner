@@ -166,7 +166,7 @@ export class SyncEngine {
       if (op.type === "delete") {
         map.delete(op.entity_id);
       } else if (op.type === "create") {
-        map.set(op.entity_id, { ...DEFAULTS[op.entity], ...cur, ...op.changes, id: op.entity_id, _pending: true });
+        map.set(op.entity_id, { ...DEFAULTS[op.entity], created_at: op.local_at, ...cur, ...op.changes, id: op.entity_id, _pending: true });
       } else if (cur) {
         const next = { ...cur, ...op.changes, _pending: true };
         if (op.entity === "task" && "completed" in op.changes) {
@@ -195,7 +195,8 @@ export class SyncEngine {
     return rev;
   }
 
-  async enqueue(entity, type, entityId, changes = {}) {
+  // meta — пометки клиента об операции; на сервер не уходят.
+  async enqueue(entity, type, entityId, changes = {}, meta = undefined) {
     if (!ENTITY_STORES[entity]) throw new Error(`unknown entity ${entity}`);
     const op = {
       operation_id: newId(),
@@ -208,6 +209,7 @@ export class SyncEngine {
       attempts: 0,
       // часы устройства — только для показа; порядок задаёт seq очереди
       local_at: new Date().toISOString(),
+      ...(meta ? { meta } : {}),
     };
     const saved = await this.db.appendOp(op);
     this.outbox.push(saved);

@@ -1,14 +1,14 @@
-import { store } from "./state.js?v=12";
-import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=12";
+import { store } from "./store.js?v=13";
+import { hasSeenWelcome, markWelcomeSeen } from "./storage.js?v=13";
 import {
   todayISO, addDays, weekDates, formatDayLabel, formatShort,
   weekDayName, isToday,
-} from "./dates.js?v=12";
+} from "./dates.js?v=13";
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
   telegramMiniAppSignIn, getSession, syncUserSettings,
-} from "./sync.js?v=12";
+} from "./sync.js?v=13";
 
 const ui = {
   view: "list",       // 'list' | 'week' | 'day' | 'profile'
@@ -122,15 +122,27 @@ function firstNameOf(sess) {
 // наличие интернета — поэтому состояние приходит из store, а не угадывается.
 let syncStatus = { state: "idle", message: "", lastSyncedAt: null };
 
+function savingText(n) {
+  if (!n) return "Сохраняю…";
+  const mod10 = n % 10, mod100 = n % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? "изменение"
+    : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "изменения" : "изменений";
+  return `Сохраняю ${n} ${word}`;
+}
+
 function renderSyncStatus() {
   const map = {
     idle: null,
     loading: { text: "Загрузка…", cls: "wait" },
-    saving: { text: "Сохраняю…", cls: "wait" },
+    saving: { text: savingText(syncStatus.unconfirmed), cls: "wait" },
     synced: { text: "Синхронизировано", cls: "ok" },
     pending: { text: "Сохранено локально", cls: "wait" },
     offline: { text: "Нет связи с сервером", cls: "warn" },
     error: { text: "Не удалось сохранить", cls: "warn" },
+    failed: { text: "Не удалось сохранить", cls: "warn" },
+    conflict: { text: "Нужно разрешить конфликт", cls: "warn" },
+    auth: { text: "Войдите снова — изменения сохранены", cls: "warn" },
+    outdated: { text: "Обновите приложение, локальные изменения сохранены", cls: "warn" },
   };
   const s = map[syncStatus.state];
   if (!s) return "";
@@ -138,6 +150,56 @@ function renderSyncStatus() {
     ? `Последняя сверка: ${new Date(syncStatus.lastSyncedAt).toLocaleTimeString("ru-RU")}`
     : syncStatus.message || "";
   return `<span class="sync-status ${s.cls}" title="${escapeHtml(title)}">${s.text}</span>`;
+}
+
+// Конфликт и отказ не решаются молча (раздел 12 ТЗ): показываются обе версии,
+// выбор за пользователем. Приходят только из новой модели.
+const FIELD_LABELS = {
+  title: "название", notes: "заметка", completed: "выполнено", group_id: "группа",
+  planned_date: "дата «на»", planned_time: "время «на»", due_date: "срок «до»", due_time: "время «до»",
+  name: "название", color: "цвет", section_id: "раздел", position: "порядок", priority: "приоритет",
+};
+
+function fieldValue(key, v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (key === "completed") return v ? "да" : "нет";
+  if (key === "group_id") return store.groupById(v)?.name || v;
+  if (key.endsWith("_time")) return String(v).slice(0, 5);
+  return String(v);
+}
+
+function renderSyncIssues() {
+  const conflicts = syncStatus.conflicts || [];
+  const failed = syncStatus.failed || [];
+  if (!conflicts.length && !failed.length) return "";
+  const kind = { task: "Задача", group: "Группа", section: "Раздел" };
+  const nameOf = (op) => {
+    const cur = op.result?.current;
+    const local = op.entity === "task" ? store.state.tasks.find((t) => t.id === op.entity_id)
+      : op.entity === "group" ? store.groupById(op.entity_id) : store.sectionById(op.entity_id);
+    return cur?.title || cur?.name || local?.title || local?.name || op.changes?.title || op.changes?.name || "без названия";
+  };
+  const diffRows = (op) => Object.entries(op.changes || {}).map(([k, mine]) => `
+      <tr><td>${escapeHtml(FIELD_LABELS[k] || k)}</td>
+        <td>${escapeHtml(fieldValue(k, mine))}</td>
+        <td>${op.result?.current ? escapeHtml(fieldValue(k, op.result.current[k])) : "?"}</td></tr>`).join("");
+  const item = (op, isConflict) => `
+    <li class="sync-issue">
+      <div class="sync-issue-title">${kind[op.entity] || "Объект"} «${escapeHtml(nameOf(op))}»:
+        ${isConflict
+          ? (op.type === "delete" ? "удаление расходится с версией на сервере" : "изменена на другом устройстве")
+          : "сервер не принял изменение" + (op.result?.reason ? ` (${escapeHtml(op.result.reason)})` : "")}</div>
+      ${isConflict && op.type !== "delete" && Object.keys(op.changes || {}).length ? `
+        <table class="sync-issue-diff"><tr><th></th><th>Здесь</th><th>На сервере</th></tr>${diffRows(op)}</table>` : ""}
+      <div class="sync-issue-actions">
+        ${isConflict ? `<button type="button" data-action="keep-mine" data-seq="${op.seq}">Оставить моё</button>` : ""}
+        <button type="button" data-action="discard-mine" data-seq="${op.seq}">${isConflict ? "Взять с сервера" : "Отменить изменение"}</button>
+      </div>
+    </li>`;
+  return `
+    <section class="sync-issues">
+      <ul>${conflicts.map((op) => item(op, true)).join("")}${failed.map((op) => item(op, false)).join("")}</ul>
+    </section>`;
 }
 
 function renderGreeting() {
@@ -721,6 +783,7 @@ function render() {
       ${renderSyncStatus()}
     </header>
     ${renderGreeting()}
+    ${renderSyncIssues()}
     <div class="app-body">
       <aside class="sidebar">${renderSidebar()}</aside>
       <main class="content">
@@ -745,6 +808,8 @@ root.addEventListener("click", (e) => {
     ui.showWelcome = false;
     render();
   }
+  else if (action === "keep-mine") store.keepMine(Number(el.dataset.seq));
+  else if (action === "discard-mine") store.discard(Number(el.dataset.seq));
   else if (action === "toggle-task") store.toggleTask(el.dataset.id);
   else if (action === "delete-task") store.deleteTask(el.dataset.id);
   else if (action === "edit-task") { ui.editingTaskId = el.dataset.id; render(); }
@@ -916,7 +981,8 @@ root.addEventListener("submit", (e) => {
 
 store.subscribe(render);
 store.onStatus((s) => {
-  const changed = s.state !== syncStatus.state;
+  const changed = s.state !== syncStatus.state || s.unconfirmed !== syncStatus.unconfirmed
+    || (s.conflicts?.length || 0) !== (syncStatus.conflicts?.length || 0);
   syncStatus = s;
   if (changed && session && !ui.showWelcome) render();
 });
