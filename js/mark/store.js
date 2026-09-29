@@ -29,6 +29,10 @@ const STARTER = {
 
 const hhmm = (t) => (t ? String(t).slice(0, 5) : "");
 
+// Поля задачи, которые принимает контракт записи (mark_apply_operations).
+const TASK_FIELDS = ["title", "notes", "group_id", "planned_date", "planned_time", "due_date", "due_time",
+  "timezone", "duration_minutes", "priority", "completed", "position"];
+
 function localTimezone() {
   try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch { return null; }
 }
@@ -174,7 +178,9 @@ export class ModelStore {
       groups: view.groups.map((g) => ({ id: g.id, name: g.name, color: g.color, sectionId: g.section_id })),
       tasks: view.tasks.map(toLegacyTask),
     };
-    const signature = JSON.stringify(next);
+    // сигнатура — по строкам новой модели: иначе правка поля, которого нет в
+    // старой форме (длительность, приоритет, второй срок), до экрана не дошла бы
+    const signature = JSON.stringify(view);
     if (signature === this.signature) return;
     this.signature = signature;
     this.state = next;
@@ -309,6 +315,86 @@ export class ModelStore {
   sectionById(id) {
     return this.state.sections.find((s) => s.id === id);
   }
+
+  // ------------------------------------------ новая форма (интерфейс v2) --
+  //
+  // Поля — как в новой модели: planned_date/planned_time, due_date/due_time,
+  // duration_minutes, priority. Отправляются только изменившиеся; пояс
+  // события ставится вместе со временем и только тогда.
+
+  taskFieldsFor(fields, timezone) {
+    const out = {};
+    for (const k of TASK_FIELDS) if (k in fields) out[k] = fields[k] === "" ? null : fields[k];
+    if ("title" in out) out.title = String(out.title || "").trim().slice(0, 200);
+    if ("notes" in out) out.notes = String(out.notes || "");
+    for (const [d, t] of [["planned_date", "planned_time"], ["due_date", "due_time"]]) {
+      if (d in out && !out[d] && t in out) out[t] = null; // время без даты не хранится
+      if (out[t]) out[t] = hhmm(out[t]);
+    }
+    const timed = (out.planned_time ?? null) || (out.due_time ?? null);
+    if ("planned_time" in out || "due_time" in out) out.timezone = timed ? (timezone || localTimezone()) : null;
+    return out;
+  }
+
+  createTaskV2(fields, { timezone } = {}) {
+    if (!this.engine) return null;
+    const id = crypto.randomUUID();
+    const f = this.taskFieldsFor({ planned_time: null, due_time: null, ...fields }, timezone);
+    this.engine.createTask({ id, ...f, position: f.position ?? this.nextPosition(this.rows.tasks) });
+    return id;
+  }
+
+  updateTaskV2(id, fields, { timezone } = {}) {
+    const t = this.rows.tasks.find((x) => x.id === id);
+    if (!t || !this.engine) return;
+    const next = this.taskFieldsFor(fields, timezone);
+    const changes = diff(t, next);
+    if (!Object.keys(changes).some((k) => k.endsWith("_date") || k.endsWith("_time"))) delete changes.timezone;
+    if (Object.keys(changes).length) this.engine.updateTask(id, changes);
+  }
+
+  setCompleted(id, completed) {
+    const t = this.rows.tasks.find((x) => x.id === id);
+    if (t && this.engine && !!t.completed !== !!completed) this.engine.completeTask(id, !!completed);
+  }
+
+  createGroupV2({ name, section_id, color }) {
+    if (!this.engine) return null;
+    const id = crypto.randomUUID();
+    this.engine.createGroup({ id, name: name.trim().slice(0, 80), section_id: section_id || null,
+      color: color || GROUP_COLORS[this.rows.groups.length % GROUP_COLORS.length], position: this.nextPosition(this.rows.groups) });
+    return id;
+  }
+
+  createSectionV2({ name, color }) {
+    if (!this.engine) return null;
+    const id = crypto.randomUUID();
+    this.engine.createSection({ id, name: name.trim().slice(0, 80),
+      color: color || GROUP_COLORS[this.rows.sections.length % GROUP_COLORS.length], position: this.nextPosition(this.rows.sections) });
+    return id;
+  }
+
+  // Удаление группы или раздела (раздел 3 ТЗ): задачи по умолчанию переносятся
+  // в указанную группу; без неё — удаляются вместе со структурой.
+  async deleteGroupV2(id, { moveTo = null } = {}) {
+    if (!this.engine) return;
+    for (const t of this.rows.tasks.filter((x) => x.group_id === id)) {
+      if (moveTo) await this.engine.updateTask(t.id, { group_id: moveTo });
+      else await this.engine.deleteTask(t.id);
+    }
+    await this.engine.deleteGroup(id);
+  }
+
+  async deleteSectionV2(id, { moveTo = null } = {}) {
+    if (!this.engine) return;
+    for (const g of this.rows.groups.filter((x) => x.section_id === id)) {
+      if (moveTo && moveTo.section) await this.engine.updateGroup(g.id, { section_id: moveTo.section });
+      else await this.deleteGroupV2(g.id, { moveTo: moveTo?.group || null });
+    }
+    await this.engine.deleteSection(id);
+  }
+
+  syncNow() { return this.engine?.sync("manual"); }
 
   // ------------------------------------------------------------ конфликты --
 

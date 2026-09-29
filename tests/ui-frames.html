@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>MARK — ширины из ТЗ</title>
+  <style>
+    body { margin: 0; padding: 16px; background: #2a2f35; font: 13px system-ui, sans-serif; color: #fff; display: flex; gap: 16px; align-items: flex-start; }
+    figure { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+    iframe { border: 0; background: #fff; }
+    .bad { color: #ff9a9a; }
+  </style>
+</head>
+<body>
+  <script>
+    // Раздел 4: ширины 360, 390, 430, 768; горизонтальной прокрутки быть не должно.
+    const q = new URLSearchParams(location.search);
+    const route = q.get("route") || "home";
+    const theme = q.get("theme") || "dark";
+    const widths = (q.get("w") || "360,390,430,768").split(",").map(Number);
+    const h = Number(q.get("h") || 844);
+    for (const w of widths) {
+      const fig = document.createElement("figure");
+      const cap = document.createElement("figcaption");
+      cap.textContent = w + " px";
+      const f = document.createElement("iframe");
+      f.width = w; f.height = h;
+      f.src = `ui-preview.html?theme=${theme}&${q.get("extra") || ""}#/${route}`;
+      f.onload = () => setTimeout(() => {
+        const d = f.contentDocument.documentElement;
+        const over = d.scrollWidth - f.contentWindow.innerWidth;
+        cap.textContent = `${w} px · ${over > 0 ? "прокрутка вбок " + over + " px" : "без прокрутки вбок"}`;
+        if (over > 0) cap.className = "bad";
+        document.title = [...document.querySelectorAll("figcaption")].map((c) => c.textContent).join(" | ");
+      }, 500);
+      fig.append(cap, f);
+      document.body.append(fig);
+    }
+  </script>
+</body>
+</html>
