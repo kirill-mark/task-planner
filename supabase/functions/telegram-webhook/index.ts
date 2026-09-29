@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { loadPlanner, savePlanner } from "../_shared/planner.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -143,25 +144,22 @@ type Task = {
   createdAt: number;
 };
 
+// Which model the account lives in is decided on the server (see
+// _shared/planner.ts). A failed read throws instead of returning an empty
+// planner: saving that empty planner with one new task on top used to be able
+// to wipe everything else.
 async function loadState(userId: string) {
-  const { data } = await supabase
-    .from("planner_state")
-    .select("data")
-    .eq("user_id", userId)
-    .maybeSingle();
-  return data?.data || { sections: [], groups: [], tasks: [], updatedAt: 0 };
+  return loadPlanner(supabase, userId, await timezoneOf(userId));
 }
 
 // Throws on failure on purpose: the caller must not report "Добавил ✅" for a
 // write the database refused.
 async function saveState(userId: string, state: any) {
-  state.updatedAt = Date.now();
-  const { error } = await supabase
-    .from("planner_state")
-    .upsert({ user_id: userId, data: state, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-  if (error) {
-    console.error("saveState failed:", error.message);
-    throw new Error(`не удалось сохранить: ${error.message}`);
+  try {
+    await savePlanner(supabase, userId, state, "bot");
+  } catch (e) {
+    console.error("saveState failed:", e instanceof Error ? e.message : e);
+    throw e;
   }
 }
 

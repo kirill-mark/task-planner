@@ -136,6 +136,7 @@ export class SyncEngine {
       message: this.netMessage,
       lastSyncedAt: this.meta.lastSyncedAt ?? null,
       cursor: this.meta.cursor ?? null,
+      mode: this.serverMode ?? null,
     };
   }
 
@@ -374,17 +375,25 @@ export class SyncEngine {
 
   async pull() {
     const since = this.meta.cursor ?? null;
-    const r = await this.transport.getState(this.userId, since);
+    let r = await this.transport.getState(this.userId, since);
+    // Данные аккаунта пересобраны (переключение модели, откат): курсор от
+    // прежней сборки ничего не значит — берётся полный снимок, а очередь
+    // накладывается поверх него как обычно.
+    if (r.kind === "ok" && !r.state.full && this.meta.epoch != null && r.state.epoch !== this.meta.epoch) {
+      r = await this.transport.getState(this.userId, null);
+    }
     if (r.kind !== "ok") {
       this.setNet(r.kind, r.message || "");
       return r.kind;
     }
     const state = r.state;
+    this.serverMode = state.mode ?? null;
     // Применённые операции уже отражены в прочитанном состоянии: они уходят из
     // очереди той же транзакцией, в которой записываются строки.
     const dropOpSeqs = this.outbox.filter((o) => o.state === "applied").map((o) => o.seq);
     const meta = {
-      cursor: Math.max(state.cursor, since ?? 0),
+      cursor: state.full ? state.cursor : Math.max(state.cursor, since ?? 0),
+      epoch: state.epoch ?? null,
       lastSyncedAt: Date.now(),
       userId: this.userId,
     };

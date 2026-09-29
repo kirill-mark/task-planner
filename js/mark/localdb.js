@@ -21,7 +21,11 @@ function promisify(req) {
   });
 }
 
-export function openLocalDb(name) {
+export async function openLocalDb(name) {
+  return new LocalDb(name, await openRaw(name));
+}
+
+function openRaw(name) {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(name, VERSION);
     req.onupgradeneeded = () => {
@@ -35,7 +39,7 @@ export function openLocalDb(name) {
       }
       if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "key" });
     };
-    req.onsuccess = () => resolve(new LocalDb(req.result));
+    req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error(`local db ${name} is blocked by another tab`));
   });
@@ -51,18 +55,36 @@ export function deleteLocalDb(name) {
 }
 
 class LocalDb {
-  constructor(db) {
+  constructor(name, db) {
+    this.name = name;
+    this.shut = false;
+    this.adopt(db);
+  }
+
+  // Другая вкладка обновляет схему или удаляет базу: соединение уступает,
+  // иначе та вкладка ждала бы вечно. Следующая операция откроет базу заново.
+  adopt(db) {
     this.db = db;
+    this.stale = false;
+    db.onversionchange = () => { db.close(); this.stale = true; };
+    db.onclose = () => { this.stale = true; };
+  }
+
+  async ready() {
+    if (this.shut) throw new Error("local db is closed");
+    if (this.stale) this.adopt(await openRaw(this.name));
   }
 
   close() {
+    this.shut = true;
     this.db.close();
   }
 
   // Результат считается записанным только по oncomplete всей транзакции, а не по
   // успеху отдельного запроса: до этого момента браузер может её откатить.
   // strict просит дождаться сброса на диск там, где браузер это различает.
-  transact(stores, mode, fn) {
+  async transact(stores, mode, fn) {
+    await this.ready();
     return new Promise((resolve, reject) => {
       const tx = this.db.transaction(stores, mode, { durability: "strict" });
       let result;

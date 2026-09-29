@@ -181,6 +181,7 @@ export class ModelStore {
       unconfirmed: s.unconfirmed,
       conflicts: s.conflicts,
       failed: s.failed,
+      mode: s.mode,
     });
     if (s.state === "synced") this.ensureStarter();
     // Стартовую структуру уже создало другое устройство — это не конфликт

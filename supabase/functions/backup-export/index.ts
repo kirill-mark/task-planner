@@ -30,7 +30,35 @@ const TABLES = [
   "link_codes",
   "sent_notifications",
   "telegram_pending_actions",
+  // новая модель: после переключения аккаунта источник истины здесь
+  "mark_account_mode",
+  "mark_sections",
+  "mark_groups",
+  "mark_tasks",
+  "mark_operations",
+  "mark_legacy_snapshots",
+  "mark_migration_runs",
+  "mark_migration_quarantine",
 ];
+
+// Первичный ключ каждой таблицы: без устойчивого порядка страницы могли бы
+// потерять или повторить строку на стыке.
+const ORDER_BY: Record<string, string[]> = {
+  planner_state: ["id"],
+  user_settings: ["user_id"],
+  telegram_links: ["telegram_chat_id"],
+  link_codes: ["code"],
+  sent_notifications: ["id"],
+  telegram_pending_actions: ["telegram_chat_id"],
+  mark_account_mode: ["user_id"],
+  mark_sections: ["user_id", "id"],
+  mark_groups: ["user_id", "id"],
+  mark_tasks: ["user_id", "id"],
+  mark_operations: ["operation_id"],
+  mark_legacy_snapshots: ["id"],
+  mark_migration_runs: ["id"],
+  mark_migration_quarantine: ["id"],
+};
 
 async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -78,11 +106,26 @@ Deno.serve(async (req) => {
     const snapshot: Record<string, unknown> = {};
     const counts: Record<string, number> = {};
 
+    // Постранично: API отдаёт не больше 1000 строк за запрос, и копия большой
+    // таблицы (журнал операций, отправленные уведомления) иначе обрезалась бы
+    // молча. Итог сверяется с точным числом строк.
+    const PAGE = 1000;
     for (const table of TABLES) {
-      const { data, error } = await supabase.from(table).select("*");
-      if (error) throw new Error(`${table}: ${error.message}`);
-      snapshot[table] = data;
-      counts[table] = (data || []).length;
+      // число строк — до выгрузки: добавленное во время неё проверку не ломает
+      const { count, error: countErr } = await supabase.from(table).select("*", { count: "exact", head: true });
+      if (countErr) throw new Error(`${table}: ${countErr.message}`);
+      const rows: unknown[] = [];
+      for (let from = 0; ; from += PAGE) {
+        let q = supabase.from(table).select("*");
+        for (const col of ORDER_BY[table] || []) q = q.order(col, { ascending: true });
+        const { data, error } = await q.range(from, from + PAGE - 1);
+        if (error) throw new Error(`${table}: ${error.message}`);
+        rows.push(...(data || []));
+        if (!data || data.length < PAGE) break;
+      }
+      if (count !== null && count > rows.length) throw new Error(`${table}: выгружено ${rows.length} из ${count}`);
+      snapshot[table] = rows;
+      counts[table] = rows.length;
     }
 
     // Identity without credentials: enough to know who existed, not to log in.

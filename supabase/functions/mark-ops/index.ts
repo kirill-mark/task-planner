@@ -58,6 +58,11 @@ Deno.serve(async (req) => {
       p_ops: ops,
     });
     if (error) {
+      // аккаунт ещё живёт в старой модели: клиент должен перейти на неё, а не
+      // повторять запись
+      if (error.message.includes("account_not_switched")) {
+        return json({ error: "account_not_switched", message: "account_not_switched" }, 409);
+      }
       console.error("mark-ops: apply failed", error.message);
       return json({ error: "apply_failed", message: error.message }, 500);
     }

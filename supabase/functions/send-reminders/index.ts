@@ -7,6 +7,7 @@
 // deliver the same message twice.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { loadPlanner } from "../_shared/planner.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -135,12 +136,15 @@ Deno.serve(async (req) => {
         local = localParts("Europe/Moscow", now); // unknown tz stored: don't skip the user
       }
 
-      const { data: stateRow } = await supabase
-        .from("planner_state")
-        .select("data")
-        .eq("user_id", userId)
-        .maybeSingle();
-      const tasks: Task[] = stateRow?.data?.tasks || [];
+      // Из той модели, в которой живёт аккаунт. Не прочитали — пропускаем
+      // этого пользователя в этот запуск, а не считаем, что задач нет.
+      let tasks: Task[];
+      try {
+        tasks = (await loadPlanner(supabase, userId, tz)).tasks || [];
+      } catch (e) {
+        console.error("reminders: read failed for", userId, e instanceof Error ? e.message : e);
+        continue;
+      }
       const open = tasks.filter((t) => !t.completed);
 
       // --- morning digest ---
