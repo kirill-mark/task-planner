@@ -17,6 +17,7 @@ import { loadPlanner, savePlanner, restoreTask } from "../_shared/planner.ts";
 import { validDate, validTime } from "../_shared/time.ts";
 import { buildEditPrompt, normalizeEdit, parseMessage, type Draft, type GroupInfo, type ParseContext, type TaskRef } from "../_shared/intent.ts";
 import { buttonLabel, esc, relDay, splitMessage, taskCard, transcriptBlock } from "../_shared/botfmt.ts";
+import { callParseModel, calendarFrom } from "../_shared/groq.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -164,19 +165,8 @@ function localDate(tz: string, offsetDays = 0): string {
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-const WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
 
-// Небольшая модель путает дни недели — ей даётся готовый календарь.
-function calendarHint(tz: string, days = 21): string {
-  const [y, m, d] = localDate(tz).split("-").map(Number);
-  const lines: string[] = [];
-  for (let i = 0; i < days; i++) {
-    const dt = new Date(Date.UTC(y, m - 1, d + i));
-    const label = i === 0 ? " (сегодня)" : i === 1 ? " (завтра)" : i === 2 ? " (послезавтра)" : "";
-    lines.push(`${dt.toISOString().slice(0, 10)} — ${WEEKDAYS[dt.getUTCDay()]}${label}`);
-  }
-  return lines.join("\n");
-}
+const calendarHint = (tz: string) => calendarFrom(localDate(tz));
 
 type Ctx = {
   userId: string;
@@ -230,23 +220,8 @@ function parseCtx(ctx: Ctx): ParseContext {
   };
 }
 
-async function callModel(system: string, user: string): Promise<string> {
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: JSON.stringify({
-      model: "openai/gpt-oss-20b",
-      max_tokens: 900,
-      reasoning_effort: "low",
-      response_format: { type: "json_object" },
-      messages: [{ role: "system", content: system }, { role: "user", content: user }],
-    }),
-    signal: withTimeout(),
-  });
-  const json = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(`Groq: ${json?.error?.message || res.status}`);
-  return json?.choices?.[0]?.message?.content || "";
-}
+// один и тот же вызов модели — в боте и в контрольной оценке разбора
+const callModel = (system: string, user: string) => callParseModel(system, user, GROQ_API_KEY);
 
 async function transcribeVoice(fileId: string): Promise<string> {
   const fileJson = await (await fetch(api(`getFile?file_id=${fileId}`), { signal: withTimeout() })).json();
@@ -530,9 +505,10 @@ async function handleMessage(message: any) {
   let parsed;
   try {
     parsed = await parseMessage(input, parseCtx(ctx), callModel);
-  } catch (e) {
+  } catch (e: any) {
     console.error("parse failed:", e instanceof Error ? e.message : e);
-    parsed = { kind: "unclear" as const, reason: "сбой разбора" };
+    // лимит ИИ-провайдера — это не «непонятное сообщение»: так и сказать
+    parsed = { kind: "unclear" as const, reason: e?.status === 429 ? "сервис распознавания сейчас перегружен — нажмите «Повторить» через минуту" : "сбой разбора" };
   }
 
   if (parsed.kind === "unclear") {
