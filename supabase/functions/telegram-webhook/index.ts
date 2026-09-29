@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { loadPlanner, savePlanner } from "../_shared/planner.ts";
+import { validDate, validTime } from "../_shared/time.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -64,7 +65,7 @@ async function sendMessage(
   text: string,
   opts: { html?: boolean; keyboard?: Keyboard | ReplyKeyboard } = {}
 ) {
-  await fetch(api("sendMessage"), {
+  const res = await fetch(api("sendMessage"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -75,6 +76,9 @@ async function sendMessage(
     }),
     signal: withTimeout(),
   });
+  // Telegram answers 200 with ok:false too; either way the user saw nothing.
+  const body = await res.json().catch(() => null);
+  if (!res.ok || !body?.ok) console.error("sendMessage failed", res.status, body?.description);
 }
 
 async function editMessage(chatId: number, messageId: number, text: string) {
@@ -418,6 +422,57 @@ async function handleCallback(cb: any) {
     return;
   }
 
+  // --- a message the bot could not parse, kept as a draft ---
+  if (action === "draft") {
+    const { data: draft } = await supabase
+      .from("telegram_pending_actions")
+      .select("action, payload, created_at")
+      .eq("telegram_chat_id", chatId)
+      .maybeSingle();
+    if (draft?.action !== "draft" || typeof draft.payload !== "string") {
+      await answerCallback(cb.id, "Черновик уже неактуален");
+      await editMessage(chatId, messageId, "Черновик уже обработан или заменён новым сообщением.");
+      return;
+    }
+    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+    const text = draft.payload as string;
+
+    if (arg === "cancel") {
+      await answerCallback(cb.id, "Отменено");
+      await editMessage(chatId, messageId, `Черновик удалён, ничего не сохранено:\n<s>${escapeHtml(text.slice(0, 300))}</s>`);
+      return;
+    }
+    if (arg === "retry") {
+      await answerCallback(cb.id, "Пробую ещё раз");
+      await editMessage(chatId, messageId, `🔁 Разбираю ещё раз:\n«${escapeHtml(text.slice(0, 300))}»`);
+      await handleMessage({ chat: { id: chatId }, from: cb.from, text });
+      return;
+    }
+    if (arg === "asis") {
+      const state = await loadState(link.user_id);
+      const tz = await timezoneOf(link.user_id);
+      const groups = ensureGroups(state);
+      const task: Task = {
+        id: crypto.randomUUID(),
+        title: text.trim().slice(0, 200),
+        notes: "",
+        date: localDate(tz),
+        time: "",
+        dateMode: "due",
+        groupId: groups[0].id,
+        completed: false,
+        createdAt: Date.now(),
+      };
+      state.tasks = [...(state.tasks || []), task];
+      await saveState(link.user_id, state);
+      await answerCallback(cb.id, "Добавлено");
+      await editMessage(chatId, messageId, taskCard(task, "Добавил как есть ✅"));
+      return;
+    }
+    await answerCallback(cb.id);
+    return;
+  }
+
   const state = await loadState(link.user_id);
   const tz = await timezoneOf(link.user_id);
 
@@ -550,23 +605,36 @@ async function handleMessage(message: any) {
       );
       return;
     }
-    const { data: codeRow } = await supabase
-      .from("link_codes")
-      .select("*")
-      .eq("code", code)
-      .eq("used", false)
-      .maybeSingle();
-    if (!codeRow) {
-      await sendMessage(chatId, "Код недействителен или уже использован. Сгенерируй новый в приложении.");
+    // Checked, spent and linked in one database transaction: the code lives ten
+    // minutes, an account keeps one chat, and a chat linked to someone else's
+    // account is never moved silently.
+    const { data: redeemed, error: redeemErr } = await supabase.rpc("mark_redeem_link_code", {
+      p_code: code, p_chat_id: chatId, p_username: username,
+    });
+    if (redeemErr) throw new Error(`не удалось привязать: ${redeemErr.message}`);
+    const status = redeemed?.status;
+    if (status === "invalid" || status === "expired") {
+      await sendMessage(
+        chatId,
+        status === "expired"
+          ? "Срок действия кода истёк — он живёт 10 минут. Сгенерируй новый в приложении."
+          : "Код недействителен или уже использован. Сгенерируй новый в приложении."
+      );
       return;
     }
-    await supabase
-      .from("telegram_links")
-      .upsert({ telegram_chat_id: chatId, user_id: codeRow.user_id, telegram_username: username });
-    await supabase.from("link_codes").update({ used: true }).eq("code", code);
+    if (status === "chat_taken") {
+      await sendMessage(
+        chatId,
+        "Этот Telegram уже привязан к другому аккаунту MARK. Чтобы привязать его сюда, " +
+          "сначала отвяжи его в том аккаунте: «Личный кабинет» → Telegram → «Отвязать»."
+      );
+      return;
+    }
     await sendMessage(
       chatId,
-      "Готово! Аккаунт привязан ✅ Теперь просто присылай мне задачи текстом или голосом — или пользуйся кнопками снизу.",
+      (status === "already" ? "Этот чат уже привязан к аккаунту ✅" : "Готово! Аккаунт привязан ✅") +
+        (redeemed?.replaced ? " Прежний чат от аккаунта отвязан." : "") +
+        " Теперь просто присылай мне задачи текстом или голосом — или пользуйся кнопками снизу.",
       { keyboard: mainKeyboard() }
     );
     return;
@@ -730,7 +798,7 @@ async function handleMessage(message: any) {
       title: parsedAdd.title || inputText.slice(0, 100),
       notes: parsedAdd.notes || "",
       date: targetDate, // the plan's date wins over anything the model inferred
-      time: /^\d{2}:\d{2}$/.test(parsedAdd.time || "") ? parsedAdd.time! : "",
+      time: validTime(parsedAdd.time) ? parsedAdd.time : "",
       dateMode: parsedAdd.dateMode === "on" ? "on" : "due",
       groupId: groups.some((g: any) => g.id === parsedAdd.groupId) ? parsedAdd.groupId! : groups[0].id,
       completed: false,
@@ -765,11 +833,15 @@ async function handleMessage(message: any) {
     }
 
     const patch = await applyEditWithGroq(inputText, task, groupInfo, tz);
-    task.title = patch.title || task.title;
-    task.notes = patch.notes ?? task.notes;
-    task.date = /^\d{4}-\d{2}-\d{2}$/.test(patch.date || "") ? patch.date! : task.date;
-    task.time = /^\d{2}:\d{2}$/.test(patch.time || "") ? patch.time! : "";
-    task.dateMode = patch.dateMode === "on" ? "on" : "due";
+    // A field missing or malformed in the model's answer is left as it was:
+    // absence is not an instruction to clear (D06). Time is cleared only when
+    // the user plainly asked for it.
+    if (typeof patch.title === "string" && patch.title.trim()) task.title = patch.title.trim().slice(0, 200);
+    if (typeof patch.notes === "string") task.notes = patch.notes;
+    if (validDate(patch.date)) task.date = patch.date;
+    if (validTime(patch.time)) task.time = patch.time;
+    else if (patch.time === "" && /(без|убер|убра|удал|сним)\S*\s+(\S+\s+)?врем/i.test(inputText)) task.time = "";
+    if (patch.dateMode === "on" || patch.dateMode === "due") task.dateMode = patch.dateMode;
     if (groups.some((g: any) => g.id === patch.groupId)) task.groupId = patch.groupId!;
 
     await saveState(userId, state);
@@ -786,10 +858,44 @@ async function handleMessage(message: any) {
     .slice(-30);
 
   let parsed: Intent = {};
+  let parseFailed = false;
   try {
     parsed = await parseIntentWithGroq(inputText, groupInfo, openTasks, tz);
   } catch (parseErr) {
-    console.error("parseIntentWithGroq failed, falling back to plain add:", parseErr);
+    console.error("parseIntentWithGroq failed:", parseErr instanceof Error ? parseErr.message : parseErr);
+    parseFailed = true;
+  }
+  const usable =
+    parsed.intent === "delete" || parsed.intent === "done" ||
+    (parsed.intent === "add" && typeof parsed.title === "string" && parsed.title.trim() !== "");
+
+  // A failed parse used to add the raw text as a new task - "удали встречу"
+  // became a task called "удали встречу" (D06). Now nothing is written: the text
+  // waits as a draft and the user decides.
+  if (parseFailed || !usable) {
+    await supabase.from("telegram_pending_actions").upsert({
+      telegram_chat_id: chatId,
+      action: "draft",
+      task_id: null,
+      payload: inputText.slice(0, 2000),
+      created_at: new Date().toISOString(),
+    });
+    await sendMessage(
+      chatId,
+      `Не смог разобрать сообщение — задача не создана, текст сохранён черновиком:\n\n«${escapeHtml(inputText.slice(0, 300))}»`,
+      {
+        html: true,
+        keyboard: {
+          inline_keyboard: [[
+            { text: "🔁 Повторить", callback_data: "draft:retry" },
+            { text: "➕ Добавить как есть", callback_data: "draft:asis" },
+          ], [
+            { text: "✖️ Отмена", callback_data: "draft:cancel" },
+          ]],
+        },
+      }
+    );
+    return;
   }
 
   // --- delete / done by plain text ---
@@ -817,8 +923,8 @@ async function handleMessage(message: any) {
     id: crypto.randomUUID(),
     title: parsed.title || inputText.slice(0, 100),
     notes: parsed.notes || "",
-    date: parsed.date || localDate(tz),
-    time: /^\d{2}:\d{2}$/.test(parsed.time || "") ? parsed.time! : "",
+    date: validDate(parsed.date) ? parsed.date : localDate(tz),
+    time: validTime(parsed.time) ? parsed.time : "",
     dateMode: parsed.dateMode === "on" ? "on" : "due",
     groupId: groups.some((g: any) => g.id === parsed.groupId) ? parsed.groupId! : groups[0].id,
     completed: false,
@@ -834,6 +940,15 @@ async function handleMessage(message: any) {
   });
 }
 
+async function finishUpdate(updateId: number | null, status: "done" | "failed", error?: string) {
+  if (updateId === null) return;
+  const { error: err } = await supabase
+    .from("telegram_updates")
+    .update({ status, error: error ? error.slice(0, 300) : null, finished_at: new Date().toISOString() })
+    .eq("update_id", updateId);
+  if (err) console.error("update finish failed", err.message);
+}
+
 Deno.serve(async (req) => {
   // Checked before the body is even parsed, so a forged request costs nothing.
   if (WEBHOOK_SECRET && req.headers.get("x-telegram-bot-api-secret-token") !== WEBHOOK_SECRET) {
@@ -842,23 +957,47 @@ Deno.serve(async (req) => {
   }
 
   let chatId: number | null = null;
+  let updateId: number | null = null;
   try {
     const update = await req.json();
+
+    // Telegram redelivers an update it did not see answered in time. The first
+    // delivery is claimed in the database; a repeat is acknowledged and not
+    // processed again (D07).
+    if (typeof update.update_id === "number") {
+      updateId = update.update_id;
+      const { data: fresh, error: claimErr } = await supabase.rpc("mark_claim_telegram_update", {
+        p_update_id: update.update_id,
+        p_chat_id: update.message?.chat?.id ?? update.callback_query?.message?.chat?.id ?? null,
+        p_kind: update.callback_query ? "callback" : update.message ? "message" : "other",
+      });
+      if (claimErr) console.error("update claim failed, processing anyway:", claimErr.message);
+      else if (fresh === false) {
+        console.log("telegram-webhook: repeated update", update.update_id, "skipped");
+        return new Response("ok");
+      }
+    }
 
     if (update.callback_query) {
       // Also captured so a failure inside the handler reaches the user instead
       // of leaving the button spinning with nothing said.
       chatId = update.callback_query.message?.chat?.id ?? null;
       await handleCallback(update.callback_query);
+      await finishUpdate(updateId, "done");
       return new Response("ok");
     }
-    if (!update.message) return new Response("ok");
+    if (!update.message) {
+      await finishUpdate(updateId, "done");
+      return new Response("ok");
+    }
 
     chatId = update.message.chat.id;
     await handleMessage(update.message);
+    await finishUpdate(updateId, "done");
     return new Response("ok");
   } catch (e) {
     console.error(e);
+    await finishUpdate(updateId, "failed", e instanceof Error ? e.message : String(e));
     if (chatId) {
       const msg = e instanceof Error ? e.message : String(e);
       try {

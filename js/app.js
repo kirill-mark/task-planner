@@ -7,7 +7,7 @@ import {
 import {
   onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
-  telegramMiniAppSignIn, getSession, syncUserSettings,
+  telegramMiniAppSignIn, getSession, reconcileTimezone, setAccountTimezone,
 } from "./sync.js?v=13";
 
 const ui = {
@@ -29,8 +29,9 @@ let authMessage = "";
 let authBusy = false;
 let profileNameMsg = "";
 let profilePasswordMsg = "";
-let telegramLink = null;      // { telegram_username, linked_at } | null
-let telegramLinkChecked = false;
+// loading | linked | none | error — a failed check is not "not linked" (D10)
+let telegramState = { status: "loading", link: null, message: "" };
+let telegramActionMsg = "";
 let telegramPendingCode = null; // { code, url } while waiting for user to open the bot
 let tgAutoLoginDone = false;
 let telegramChannel = null;
@@ -711,6 +712,13 @@ function renderProfileScreen() {
         ${profilePasswordMsg ? `<div class="profile-msg">${escapeHtml(profilePasswordMsg)}</div>` : ""}
       </form>
       <div class="profile-section">
+        <label class="field-label">Часовой пояс напоминаний</label>
+        <div class="profile-static">${escapeHtml(tzPrompt?.account || tzAccount || "—")}</div>
+        ${tzPrompt ? `<div class="tz-prompt-actions">
+          <button type="button" data-action="tz-use-device">Перейти на ${escapeHtml(tzPrompt.device)}</button>
+          <button type="button" class="add-form-cancel" data-action="tz-keep-account">Оставить</button></div>` : ""}
+      </div>
+      <div class="profile-section">
         <label class="field-label">Telegram</label>
         ${renderTelegramBlock()}
       </div>
@@ -718,26 +726,75 @@ function renderProfileScreen() {
     </div>`;
 }
 
+// ---------- Account timezone (D09) ----------
+
+let tzPrompt = null; // { account, device } when this device's zone differs
+let tzMsg = "";
+let tzAccount = null; // the zone reminders use, once known
+
+function tzChoiceKey(userId) { return `mark:tz-choice:${userId}`; }
+
+// A choice is remembered per device for this exact pair of zones, so the
+// question comes back only when something actually changes.
+function rememberTimezoneChoice(userId, prompt) {
+  try { localStorage.setItem(tzChoiceKey(userId), `${prompt.account}|${prompt.device}`); } catch { /* ask again next time */ }
+}
+
+async function checkTimezone(userId) {
+  const r = await reconcileTimezone(userId);
+  if (!session || session.user.id !== userId) return;
+  if (r.account) tzAccount = r.account;
+  if (r.status !== "differs") { tzPrompt = null; return; }
+  let chosen = null;
+  try { chosen = localStorage.getItem(tzChoiceKey(userId)); } catch { /* no memory */ }
+  if (chosen === `${r.account}|${r.device}`) { tzPrompt = null; return; }
+  tzPrompt = { account: r.account, device: r.device };
+  render();
+}
+
+function renderTimezonePrompt() {
+  if (!tzPrompt) return tzMsg ? `<div class="tz-prompt tz-done">${escapeHtml(tzMsg)}</div>` : "";
+  return `
+    <section class="tz-prompt" role="status">
+      <div>Напоминания приходят по поясу <b>${escapeHtml(tzPrompt.account)}</b>, а это устройство сейчас в <b>${escapeHtml(tzPrompt.device)}</b>.</div>
+      <div class="tz-prompt-actions">
+        <button type="button" data-action="tz-use-device">Перейти на ${escapeHtml(tzPrompt.device)}</button>
+        <button type="button" class="add-form-cancel" data-action="tz-keep-account">Оставить ${escapeHtml(tzPrompt.account)}</button>
+      </div>
+    </section>`;
+}
+
 async function loadTelegramLink() {
-  telegramLink = await fetchTelegramLink(session.user.id);
-  telegramLinkChecked = true;
-  if (telegramLink) telegramPendingCode = null;
+  telegramState = { status: "loading", link: null, message: "" };
+  render();
+  telegramState = await fetchTelegramLink(session.user.id);
+  if (telegramState.status === "linked") telegramPendingCode = null;
   render();
   if (!telegramChannel) {
     telegramChannel = subscribeTelegramLink(session.user.id, async () => {
-      telegramLink = await fetchTelegramLink(session.user.id);
-      if (telegramLink) telegramPendingCode = null;
+      telegramState = await fetchTelegramLink(session.user.id);
+      if (telegramState.status === "linked") { telegramPendingCode = null; telegramActionMsg = ""; }
       render();
     });
   }
 }
 
 function renderTelegramBlock() {
-  if (telegramLink) {
-    const who = telegramLink.telegram_username ? `@${escapeHtml(telegramLink.telegram_username)}` : "аккаунт привязан";
+  const msg = telegramActionMsg ? `<div class="profile-msg">${escapeHtml(telegramActionMsg)}</div>` : "";
+  if (telegramState.status === "loading") {
+    return `<div class="profile-static">Проверяю связь с Telegram…</div>`;
+  }
+  if (telegramState.status === "error") {
+    return `
+      <div class="profile-static">Не удалось проверить связь с Telegram. Привязка, если она была, не пострадала.</div>
+      <button type="button" class="add-form-cancel" data-action="retry-telegram" style="margin-top:8px;">Проверить ещё раз</button>${msg}`;
+  }
+  if (telegramState.status === "linked") {
+    const link = telegramState.link;
+    const who = link.telegram_username ? `@${escapeHtml(link.telegram_username)}` : "аккаунт привязан";
     return `
       <div class="profile-static">Подключено: ${who}</div>
-      <button type="button" class="add-form-cancel" data-action="unlink-telegram" style="margin-top:8px;">Отвязать</button>`;
+      <button type="button" class="add-form-cancel" data-action="unlink-telegram" style="margin-top:8px;">Отвязать</button>${msg}`;
   }
   if (telegramPendingCode) {
     return `
@@ -747,9 +804,10 @@ function renderTelegramBlock() {
           <button type="button">Открыть @markplanner_bot</button>
         </a>
         <p class="empty-hint">Или пришли боту в чате: <code>/start ${telegramPendingCode.code}</code></p>
+        <p class="empty-hint">Код действует 10 минут.</p>
       </div>`;
   }
-  return `<button type="button" data-action="link-telegram">Подключить Telegram</button>`;
+  return `<button type="button" data-action="link-telegram">Подключить Telegram</button>${msg}`;
 }
 
 // ---------- Root render ----------
@@ -783,6 +841,7 @@ function render() {
       ${renderSyncStatus()}
     </header>
     ${renderGreeting()}
+    ${renderTimezonePrompt()}
     ${renderSyncIssues()}
     <div class="app-body">
       <aside class="sidebar">${renderSidebar()}</aside>
@@ -868,17 +927,45 @@ root.addEventListener("click", (e) => {
     ui.view = "list";
     render();
   } else if (action === "logout") {
+    telegramState = { status: "loading", link: null, message: "" };
+    telegramActionMsg = "";
+    tzPrompt = null;
+    tzMsg = "";
+    tzAccount = null;
     if (telegramChannel) { telegramChannel.unsubscribe(); telegramChannel = null; }
     signOut();
   } else if (action === "link-telegram") {
     (async () => {
+      telegramActionMsg = "";
       telegramPendingCode = await createLinkCode(session.user.id);
+      if (!telegramPendingCode) telegramActionMsg = "Не удалось создать код привязки. Проверь связь и попробуй ещё раз.";
       render();
     })();
   } else if (action === "unlink-telegram") {
     (async () => {
-      await unlinkTelegram(session.user.id);
-      telegramLink = null;
+      telegramActionMsg = "";
+      const ok = await unlinkTelegram(session.user.id);
+      if (ok) telegramState = { status: "none", link: null, message: "" };
+      else telegramActionMsg = "Не удалось отвязать Telegram — связка осталась. Попробуй ещё раз.";
+      render();
+    })();
+  } else if (action === "retry-telegram") {
+    loadTelegramLink();
+  } else if (action === "tz-use-device" || action === "tz-keep-account") {
+    const prompt = tzPrompt;
+    if (!prompt) return;
+    const chosen = action === "tz-use-device" ? prompt.device : prompt.account;
+    (async () => {
+      const result = await setAccountTimezone(session.user.id, chosen);
+      if (result.ok) {
+        rememberTimezoneChoice(session.user.id, prompt);
+        tzPrompt = null;
+        tzAccount = chosen;
+        tzMsg = `Часовой пояс аккаунта: ${chosen}`;
+        setTimeout(() => { tzMsg = ""; render(); }, 6000);
+      } else {
+        tzMsg = "Не удалось сохранить часовой пояс. Попробуй ещё раз.";
+      }
       render();
     })();
   }
@@ -996,7 +1083,7 @@ onAuthChange((newSession) => {
   if (isLoggedIn && (!wasLoggedIn || store.userId !== newSession.user.id)) {
     ui.showWelcome = !hasSeenWelcome(newSession.user.id);
     store.attachUser(newSession.user.id);
-    syncUserSettings(newSession.user.id);
+    checkTimezone(newSession.user.id);
   } else if (!isLoggedIn && wasLoggedIn) {
     store.detachUser();
     ui.view = "list";

@@ -53,19 +53,45 @@ export async function updatePassword(password) {
   return supabase.auth.updateUser({ password });
 }
 
-// --- per-user settings (timezone drives when reminders fire) ---
-export async function syncUserSettings(userId) {
-  let timezone;
+// --- account timezone (drives when reminders fire) ---
+
+export function deviceTimezone() {
   try {
-    timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
   } catch {
-    timezone = null;
+    return null;
   }
-  if (!timezone) return;
+}
+
+// Every sign-in used to write this device's timezone into the account, so two
+// devices in different zones kept overwriting each other - and the reminder
+// times with them (D09). Now the device's zone is written only into an account
+// that has none; otherwise the caller learns about the difference and asks.
+export async function reconcileTimezone(userId) {
+  const device = deviceTimezone();
+  const { data, error } = await supabase
+    .from("user_settings")
+    .select("timezone, timezone_source")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) return { status: "error", message: error.message };
+  if (!data) {
+    if (!device) return { status: "unknown" };
+    const { error: insErr } = await supabase
+      .from("user_settings")
+      .insert({ user_id: userId, timezone: device, timezone_source: "device", updated_at: new Date().toISOString() });
+    return insErr ? { status: "error", message: insErr.message } : { status: "set", account: device, device };
+  }
+  if (!device || data.timezone === device) return { status: "same", account: data.timezone, device };
+  return { status: "differs", account: data.timezone, device, source: data.timezone_source };
+}
+
+export async function setAccountTimezone(userId, timezone) {
   const { error } = await supabase
     .from("user_settings")
-    .upsert({ user_id: userId, timezone, updated_at: new Date().toISOString() }, { onConflict: "user_id" });
-  if (error) console.warn("settings: sync failed", error.message);
+    .update({ timezone, timezone_source: "confirmed", updated_at: new Date().toISOString() })
+    .eq("user_id", userId);
+  return error ? { ok: false, message: error.message } : { ok: true };
 }
 
 // --- planner state, scoped per user ---
@@ -119,13 +145,17 @@ export function subscribeRemote(userId, onChange, onStatus) {
 // --- telegram linking ---
 const TELEGRAM_BOT_USERNAME = "markplanner_bot";
 
+// Cryptographically random (R4): Math.random is predictable. 32 symbols divide
+// 256 evenly, so taking a byte modulo 32 introduces no bias. The code also
+// lives only ten minutes - the database sets that, not this client.
 function randomCode() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  let code = "";
-  for (let i = 0; i < 8; i++) code += chars[Math.floor(Math.random() * chars.length)];
-  return code;
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return Array.from(bytes, (b) => chars[b % chars.length]).join("");
 }
 
+// An explicit outcome: a failed read must not look like "not linked" and offer
+// to link again (D10).
 export async function fetchTelegramLink(userId) {
   const { data, error } = await supabase
     .from("telegram_links")
@@ -134,9 +164,9 @@ export async function fetchTelegramLink(userId) {
     .maybeSingle();
   if (error) {
     console.warn("telegram: fetch link failed", error.message);
-    return null;
+    return { status: "error", message: error.message };
   }
-  return data;
+  return data ? { status: "linked", link: data } : { status: "none" };
 }
 
 export async function createLinkCode(userId) {

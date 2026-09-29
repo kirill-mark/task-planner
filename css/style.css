@@ -666,3 +666,16 @@ body {
 .sync-issue-diff th { color: var(--text-dim); font-weight: 500; }
 .sync-issue-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 @media (max-width: 600px) { .sync-issues { margin: 0 16px 12px; } }
+
+/* Часовой пояс устройства отличается от пояса аккаунта: вопрос, а не перезапись */
+.tz-prompt {
+  margin: 0 24px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.85rem;
+}
+.tz-prompt.tz-done { color: var(--text-dim); }
+.tz-prompt-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+@media (max-width: 600px) { .tz-prompt { margin: 0 16px 12px; } }

@@ -2,12 +2,16 @@
 //   - a morning digest with today's tasks,
 //   - an evening digest with tomorrow's tasks,
 //   - a per-task reminder 30 minutes before a task's own time.
-// Everything is evaluated in each user's own timezone, and every send is
-// recorded in sent_notifications so a retry or an overlapping run can't
-// deliver the same message twice.
+// Everything is evaluated in each user's own timezone. Every send is claimed in
+// sent_notifications first, so overlapping runs can't deliver it twice, and is
+// marked sent only once Telegram confirms it (D08): an explicit refusal
+// releases the claim for the next run, a lost reply is marked unknown rather
+// than retried blindly. A late run still catches up - digests within an hour,
+// reminders until the task starts.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { loadPlanner } from "../_shared/planner.ts";
+import { reminderWindow, validDate, validTime } from "../_shared/time.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -19,7 +23,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 const MORNING_HOUR = 9;   // digest with today's plan
 const EVENING_HOUR = 21;  // preview of tomorrow
 const REMINDER_LEAD_MIN = 30;
-const WINDOW_MIN = 5;     // cron cadence: how wide a match window we accept
+const DIGEST_CATCH_UP_MIN = 60; // a digest may still go out this late after its hour
 
 type Task = {
   id: string;
@@ -35,15 +39,28 @@ function escapeHtml(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-async function sendMessage(chatId: number, text: string, keyboard?: unknown) {
-  const res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup: keyboard }),
-    signal: AbortSignal.timeout(15000),
-  });
-  if (!res.ok) console.error("telegram send failed", chatId, await res.text());
-  return res.ok;
+// sent — Telegram confirmed; refused — it answered with an error, so nothing was
+// delivered and a retry is safe; unknown — no answer, it may or may not have
+// arrived, so a retry could duplicate it.
+type SendResult = "sent" | "refused" | "unknown";
+
+async function sendMessage(chatId: number, text: string, keyboard?: unknown): Promise<{ result: SendResult; detail?: string }> {
+  let res: Response;
+  try {
+    res = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: "HTML", reply_markup: keyboard }),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e) {
+    return { result: "unknown", detail: String(e instanceof Error ? e.message : e).slice(0, 200) };
+  }
+  const body = await res.json().catch(() => null);
+  if (res.ok && body?.ok) return { result: "sent" };
+  const detail = `${res.status} ${body?.description || ""}`.trim().slice(0, 200);
+  console.error("telegram send failed", chatId, detail);
+  return { result: res.status >= 500 ? "unknown" : "refused", detail };
 }
 
 // Lets the digest be acted on straight from the chat; the webhook handles these.
@@ -91,17 +108,50 @@ function digestText(heading: string, tasks: Task[], emptyLine: string): string {
   return `${heading}\n\n${sorted.map(formatTaskLine).join("\n")}`;
 }
 
-// Returns true when the send was recorded (i.e. it had not been sent yet).
+// Returns true when this run owns the notification (nobody claimed it yet).
 async function claim(userId: string, kind: string, ref: string, localDate: string): Promise<boolean> {
   const { error } = await supabase
     .from("sent_notifications")
-    .insert({ user_id: userId, kind, ref, local_date: localDate });
+    .insert({ user_id: userId, kind, ref, local_date: localDate, status: "processing" });
   if (error) {
-    if (error.code === "23505") return false; // unique violation: already sent
+    if (error.code === "23505") return false; // unique violation: already claimed
     console.error("claim failed", error);
     return false;
   }
   return true;
+}
+
+// Sends a claimed notification and records the outcome.
+async function deliver(
+  userId: string, kind: string, ref: string, localDate: string,
+  chatId: number, text: string, keyboard?: unknown,
+): Promise<boolean> {
+  if (!(await claim(userId, kind, ref, localDate))) return false;
+  const { result, detail } = await sendMessage(chatId, text, keyboard);
+  const key = { user_id: userId, kind, ref, local_date: localDate };
+  if (result === "refused") {
+    // nothing was delivered: release the claim so the next run can retry
+    const { error } = await supabase.from("sent_notifications").delete().match(key);
+    if (error) console.error("release failed", error);
+    return false;
+  }
+  const { error } = await supabase
+    .from("sent_notifications")
+    .update({ status: result, detail: detail || null, sent_at: new Date().toISOString() })
+    .match(key);
+  if (error) console.error("mark failed", error);
+  return result === "sent";
+}
+
+// Reminders were keyed by task id alone before; one already sent under the old
+// key must not go out again right after this deploy.
+async function sentUnderOldKey(userId: string, taskId: string, localDate: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("sent_notifications")
+    .select("id")
+    .match({ user_id: userId, kind: "task", ref: taskId, local_date: localDate })
+    .maybeSingle();
+  return !!data;
 }
 
 Deno.serve(async (req) => {
@@ -128,12 +178,13 @@ Deno.serve(async (req) => {
         .eq("user_id", userId)
         .maybeSingle();
 
-      const tz = settings?.timezone || "Europe/Moscow";
+      let tz = settings?.timezone || "Europe/Moscow";
       let local;
       try {
         local = localParts(tz, now);
       } catch {
-        local = localParts("Europe/Moscow", now); // unknown tz stored: don't skip the user
+        tz = "Europe/Moscow"; // unknown tz stored: don't skip the user
+        local = localParts(tz, now);
       }
 
       // Из той модели, в которой живёт аккаунт. Не прочитали — пропускаем
@@ -151,54 +202,56 @@ Deno.serve(async (req) => {
       const morningTarget = MORNING_HOUR * 60;
       if (
         (settings?.morning_digest ?? true) &&
-        local.minutes >= morningTarget && local.minutes < morningTarget + WINDOW_MIN
+        local.minutes >= morningTarget && local.minutes < morningTarget + DIGEST_CATCH_UP_MIN
       ) {
-        if (await claim(userId, "morning", "digest", local.date)) {
-          const todays = open.filter((t) => t.date === local.date);
-          const text = digestText(
-            "☀️ <b>План на сегодня</b>",
-            todays,
-            "На сегодня задач нет — можно спокойно выдохнуть."
-          );
-          if (await sendMessage(chatId, text, planKeyboard(local.date))) sent++;
-        }
+        const todays = open.filter((t) => t.date === local.date);
+        const text = digestText(
+          "☀️ <b>План на сегодня</b>",
+          todays,
+          "На сегодня задач нет — можно спокойно выдохнуть."
+        );
+        if (await deliver(userId, "morning", "digest", local.date, chatId, text, planKeyboard(local.date))) sent++;
       }
 
       // --- evening digest (tomorrow's plan) ---
       const eveningTarget = EVENING_HOUR * 60;
       if (
         (settings?.evening_digest ?? true) &&
-        local.minutes >= eveningTarget && local.minutes < eveningTarget + WINDOW_MIN
+        local.minutes >= eveningTarget && local.minutes < eveningTarget + DIGEST_CATCH_UP_MIN
       ) {
-        if (await claim(userId, "evening", "digest", local.date)) {
-          const tomorrow = addDays(local.date, 1);
-          const next = open.filter((t) => t.date === tomorrow);
-          const text = digestText(
-            "🌙 <b>Что запланировано на завтра</b>",
-            next,
-            "На завтра пока ничего не запланировано."
-          );
-          if (await sendMessage(chatId, text, planKeyboard(tomorrow))) sent++;
-        }
+        const tomorrow = addDays(local.date, 1);
+        const next = open.filter((t) => t.date === tomorrow);
+        const text = digestText(
+          "🌙 <b>Что запланировано на завтра</b>",
+          next,
+          "На завтра пока ничего не запланировано."
+        );
+        if (await deliver(userId, "evening", "digest", local.date, chatId, text, planKeyboard(tomorrow))) sent++;
       }
 
-      // --- per-task reminders, 30 minutes before ---
+      // --- per-task reminders, 30 minutes before the task's own moment ---
+      // The moment comes from the task's date, time and the account timezone,
+      // so a task at 00:10 is reminded at 23:40 the day before (A29).
       if (settings?.task_reminders ?? true) {
+        const nowMs = now.getTime();
         for (const task of open) {
-          if (task.date !== local.date || !task.time) continue;
-          const [h, m] = task.time.split(":").map(Number);
-          if (Number.isNaN(h) || Number.isNaN(m)) continue;
-          const fireAt = h * 60 + m - REMINDER_LEAD_MIN;
-          if (local.minutes < fireAt || local.minutes >= fireAt + WINDOW_MIN) continue;
-
-          if (await claim(userId, "task", task.id, local.date)) {
-            const text =
-              `⏰ <b>Через ${REMINDER_LEAD_MIN} минут</b>\n\n` +
-              `<b>Задача:</b> ${escapeHtml(task.title)}\n` +
-              `<b>Время:</b> ${task.time}` +
-              (task.notes ? `\n<b>Описание:</b> ${escapeHtml(task.notes)}` : "");
-            if (await sendMessage(chatId, text)) sent++;
+          if (!validDate(task.date) || !validTime(task.time)) continue;
+          let win;
+          try {
+            win = reminderWindow(task.date, task.time, tz, REMINDER_LEAD_MIN);
+          } catch {
+            continue;
           }
+          if (nowMs < win.fireAt || nowMs >= win.eventAt) continue;
+          if (await sentUnderOldKey(userId, task.id, task.date)) continue;
+
+          const text =
+            `⏰ <b>Через ${Math.max(1, Math.round((win.eventAt - nowMs) / 60000))} мин</b>\n\n` +
+            `<b>Задача:</b> ${escapeHtml(task.title)}\n` +
+            `<b>Время:</b> ${task.time}` +
+            (task.notes ? `\n<b>Описание:</b> ${escapeHtml(task.notes)}` : "");
+          // the key includes the moment: a task moved to another time gets its own reminder
+          if (await deliver(userId, "task", `${task.id}@${task.date}T${task.time}`, task.date, chatId, text)) sent++;
         }
       }
     }
