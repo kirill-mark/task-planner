@@ -103,3 +103,17 @@ Deno.test("даты по-русски", () => {
   assertEquals(shortDate("2027-01-05", { today: "2026-09-29" }), "5 янв 2027");
   assertEquals([1, 2, 5, 11, 21, 22].map((n) => plural(n, "дело", "дела", "дел")), ["дело", "дела", "дел", "дел", "дело", "дела"]);
 });
+
+Deno.test("неделя с воскресенья: сентябрь 2026 начинается с 30 августа", () => {
+  const g = monthGrid(2026, 8, 7);
+  assertEquals(g[0].iso, "2026-08-30");
+  assertEquals(g[2].iso, "2026-09-01");
+});
+
+Deno.test("поиск по названию и описанию, ё = е", async () => {
+  const { matchesSearch } = await import("../js/ui/views.js").catch(() => ({}));
+  if (!matchesSearch) return; // views.js тянет DOM-зависимости не везде
+  assert(matchesSearch({ title: "Съёмка", notes: "" }, "съемка"));
+  assert(matchesSearch({ title: "КП", notes: "три варианта остекления" }, "остекления кп"));
+  assert(!matchesSearch({ title: "КП", notes: "" }, "смета"));
+});

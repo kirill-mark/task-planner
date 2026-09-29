@@ -50,6 +50,10 @@ const MONTHS_SHORT = ["янв", "фев", "мар", "апр", "мая", "июн"
 
 export const WEEK_HEADER = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
+export function weekHeader(weekStart = 1) {
+  return weekStart === 7 ? ["Вс", ...WEEK_HEADER.slice(0, 6)] : WEEK_HEADER;
+}
+
 export function weekdayOf(iso) {
   return WEEKDAYS[parseIso(iso).getDay()];
 }

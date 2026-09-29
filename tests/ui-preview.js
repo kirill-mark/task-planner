@@ -76,4 +76,6 @@ window.addEventListener("hashchange", render);
 DESKTOP.addEventListener("change", render);
 if (q.get("edit")) { const t = rows.tasks.find((x) => x.id === q.get("edit")); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
 if (q.get("manage")) ui.manage = { form: null };
+if (q.get("layout")) { ui.layoutDraft = { desktop: [{ type: "summary", col: "main" }, { type: "plan", col: "main" }, { type: "calendar", col: "side" }, { type: "upcoming", col: "side" }], phone: [{ type: "summary" }, { type: "upcoming" }, { type: "calendar" }, { type: "plan" }, { type: "progress" }] }; }
+if (q.get("focus")) ui.focusPick = true;
 render();

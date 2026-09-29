@@ -206,7 +206,8 @@ export class SyncEngine {
       entity,
       type,
       entity_id: entityId,
-      base_revision: type === "create" ? null : this.expectedRevision(entity, entityId),
+      // восстановление из корзины версию не сверяет: удалённое и так не менялось
+      base_revision: type === "create" || type === "restore" ? null : this.expectedRevision(entity, entityId),
       changes,
       state: "pending",
       attempts: 0,
@@ -233,6 +234,7 @@ export class SyncEngine {
   updateTask(id, changes) { return this.enqueue("task", "update", id, changes); }
   completeTask(id, completed = true) { return this.enqueue("task", "update", id, { completed }); }
   deleteTask(id) { return this.enqueue("task", "delete", id); }
+  restoreTask(id) { return this.enqueue("task", "restore", id); }
 
   async createGroup(fields) {
     const id = fields.id || newId();

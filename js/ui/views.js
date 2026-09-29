@@ -5,7 +5,7 @@
 //        tz, isDesktop }
 
 import { esc, plural, longDate, shortDate, relativeDay, hhmm, minutesOf, timeOf, durationText,
-  WEEK_HEADER, monthTitle, addDays, parseIso, capitalize } from "./lib.js";
+  weekHeader, monthTitle, addDays, parseIso, capitalize } from "./lib.js";
 import { tasksOfDay, dayProgress, overdue, overdueKind, inbox, nextDays, upcoming, monthMarks,
   monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder } from "./derive.js";
 import { icons, blob } from "./icons.js";
@@ -24,7 +24,16 @@ export const VIEWS = [
   { id: "week", label: "7 дней" },
   { id: "overdue", label: "Просроченные" },
   { id: "done", label: "Завершённые" },
+  { id: "trash", label: "Корзина" },
 ];
+
+// Поиск по названиям и описаниям; «ё» и «е» не различаются.
+export function matchesSearch(t, q) {
+  const norm = (x) => String(x || "").toLowerCase().replace(/ё/g, "е");
+  const words = norm(q).split(/\s+/).filter(Boolean);
+  const hay = norm(t.title) + " " + norm(t.notes);
+  return words.every((w) => hay.includes(w));
+}
 
 // ------------------------------------------------------------------ общее --
 
@@ -88,7 +97,7 @@ export function renderShell(ctx, content) {
       <div class="nav-list">${NAV.map(navItem).join("")}</div>
       <div class="nav-list">
         <div class="nav-label">Представления</div>
-        ${sub("inbox", "Входящие", c.inbox)}${sub("today", "Сегодня", c.today)}${sub("week", "Ближайшие 7 дней", c.week)}${sub("overdue", "Просроченные", c.overdue, true)}${sub("done", "Завершённые", 0)}
+        ${sub("inbox", "Входящие", c.inbox)}${sub("today", "Сегодня", c.today)}${sub("week", "Ближайшие 7 дней", c.week)}${sub("overdue", "Просроченные", c.overdue, true)}${sub("done", "Завершённые", 0)}${sub("trash", "Корзина", 0)}
       </div>
       <div class="nav-list">
         <div class="nav-label">Разделы</div>
@@ -161,8 +170,12 @@ function renderConflict(ctx, op, isConflict) {
     <b>${kind} «${esc(name)}»: ${esc(why)}</b>
     ${isConflict && rows ? `<div class="conflict-grid" style="margin-top:6px"><span></span><span class="h">Здесь</span><span class="h">На сервере</span>${rows}</div>` : ""}
     <div class="chips" style="margin-top:8px">
-      ${isConflict ? `<button type="button" class="btn small" data-action="keep-mine" data-seq="${op.seq}">Оставить моё</button>` : ""}
-      <button type="button" class="btn small quiet" data-action="discard-mine" data-seq="${op.seq}">${isConflict ? "Взять с сервера" : "Отменить изменение"}</button>
+      ${isConflict && cur?.deleted_at ? `
+        <button type="button" class="btn small" data-action="restore-apply" data-seq="${op.seq}">Восстановить и применить</button>
+        ${op.entity === "task" ? `<button type="button" class="btn small" data-action="save-new" data-seq="${op.seq}">Сохранить как новую</button>` : ""}
+        <button type="button" class="btn small quiet" data-action="discard-mine" data-seq="${op.seq}">Оставить удалённой</button>`
+      : `${isConflict ? `<button type="button" class="btn small" data-action="keep-mine" data-seq="${op.seq}">Оставить моё</button>` : ""}
+        <button type="button" class="btn small quiet" data-action="discard-mine" data-seq="${op.seq}">${isConflict ? "Взять с сервера" : "Отменить изменение"}</button>`}
     </div></div></section>`;
 }
 
@@ -282,7 +295,7 @@ function renderPlanToday(ctx) {
 
 function renderMiniMonth(ctx) {
   const [y, m] = ctx.ui.calMonth.split("-").map(Number);
-  const grid = monthGrid(y, m - 1);
+  const grid = monthGrid(y, m - 1, ctx.settings.week_start);
   const marks = monthMarks(ctx.rows, grid[0].iso, grid[grid.length - 1].iso);
   const sel = ctx.ui.selectedDate || ctx.today;
   const count = marks[sel]?.count || 0;
@@ -293,7 +306,7 @@ function renderMiniMonth(ctx) {
         <button type="button" class="icon-btn small" data-action="cal-next" aria-label="Следующий месяц">${icons.right(16)}</button>
       </div></div>
     <div class="cal-grid">
-      ${WEEK_HEADER.map((w) => `<span class="cal-wd">${w}</span>`).join("")}
+      ${weekHeader(ctx.settings.week_start).map((w) => `<span class="cal-wd">${w}</span>`).join("")}
       ${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel)).join("")}
     </div>
     <a href="#/calendar?date=${sel}" class="row" style="justify-content:space-between;border-top:1px solid var(--divider);padding-top:10px;font-size:14px">
@@ -339,29 +352,147 @@ function renderWeekStrip(ctx) {
     }).join("")}</div></section>`;
 }
 
+// ----------------------------------------------------- рабочий стол (раздел 5) --
+
+export const WIDGETS = {
+  summary: "Сводка дня",
+  plan: "План на сегодня",
+  upcoming: "Ближайшие дела",
+  calendar: "Календарь",
+  focus: "Фокус дня",
+  progress: "Прогресс",
+  overdue: "Просроченное",
+  inbox: "Входящие",
+};
+
+// Первые четыре включены по умолчанию; порядок телефона — из раздела 5:
+// сводка → ближайшие → календарь → прогресс.
+export function defaultLayout(kind) {
+  return kind === "desktop"
+    ? [{ type: "summary", col: "main" }, { type: "plan", col: "main" }, { type: "calendar", col: "side" }, { type: "upcoming", col: "side" }]
+    : [{ type: "summary" }, { type: "upcoming" }, { type: "calendar" }, { type: "plan" }, { type: "progress" }];
+}
+
+export function layoutOf(ctx) {
+  const kind = ctx.isDesktop ? "desktop" : "phone";
+  const saved = ctx.ui.layoutDraft?.[kind] || ctx.settings.home_layout?.[kind];
+  const list = Array.isArray(saved) && saved.length ? saved.filter((w) => WIDGETS[w.type]) : defaultLayout(kind);
+  return { kind, list };
+}
+
+function renderFocus(ctx) {
+  const f = ctx.settings.focus;
+  const ids = f?.date === ctx.today ? f.ids || [] : [];
+  const tasks = ids.map((id) => ctx.rows.tasks.find((t) => t.id === id)).filter(Boolean);
+  const picking = ctx.ui.focusPick;
+  const candidates = tasksOfDay(ctx.rows, ctx.today).filter(isOpen).concat(overdue(ctx.rows, ctx.today, ctx.nowMin)).filter((t, i, a) => a.findIndex((x) => x.id === t.id) === i);
+  return `<section class="card" aria-label="Фокус дня">
+    <div class="card-head"><h2>Фокус дня</h2><button type="button" class="btn small quiet" data-action="focus-pick">${picking ? "Готово" : tasks.length ? "Изменить" : "Выбрать"}</button></div>
+    ${picking ? `<span class="muted" style="font-size:13px">До трёх задач, на которых сосредоточиться сегодня.</span>
+      <div class="task-list">${candidates.map((t) => `<label class="switch-row"><span class="grow"><span>${esc(t.title)}</span></span>
+        <input type="checkbox" class="switch" data-action="focus-toggle" data-id="${esc(t.id)}" ${ids.includes(t.id) ? "checked" : ""} ${!ids.includes(t.id) && ids.length >= 3 ? "disabled" : ""}></label>`).join("") || '<div class="empty">На сегодня открытых задач нет.</div>'}</div>`
+    : tasks.length ? `<div class="task-list">${tasks.map((t) => taskRow(ctx, t)).join("")}</div>`
+    : '<div class="empty">Выберите до трёх главных задач дня.</div>'}
+  </section>`;
+}
+
+function renderProgressWidget(ctx) {
+  const p = dayProgress(ctx.rows, ctx.today);
+  const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+  return `<section class="card" aria-label="Прогресс" style="padding:12px 16px">
+    <div class="row"><span class="muted" style="font-size:13px;white-space:nowrap">Сегодня ${p.done} из ${p.total}</span>
+      <span style="flex:1;height:6px;border-radius:3px;background:var(--divider);overflow:hidden" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="Выполнено сегодня"><span style="display:block;height:100%;width:${pct}%;background:var(--accent)"></span></span></div>
+  </section>`;
+}
+
+function renderOverdueWidget(ctx) {
+  const list = overdue(ctx.rows, ctx.today, ctx.nowMin);
+  return `<section class="card" aria-label="Просроченное">
+    <div class="card-head"><h2>Просроченное</h2><span class="meta" style="color:${list.length ? "var(--danger)" : "var(--text-dim)"}">${list.length}</span></div>
+    ${list.length ? `<div class="task-list">${list.slice(0, 5).map((t) => `${taskRow(ctx, t)}
+      <div class="chips" style="padding:0 0 8px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">Перенести на сегодня</button>
+      <button type="button" class="btn small quiet" data-action="toggle" data-id="${esc(t.id)}">Завершить</button>
+      <button type="button" class="btn small quiet" data-action="delete-task" data-id="${esc(t.id)}">В корзину</button></div>`).join("")}</div>
+      ${list.length > 5 ? `<a href="#/tasks?view=overdue" style="font-size:14px">Все ${list.length}</a>` : ""}` : '<div class="empty">Просроченного нет.</div>'}
+  </section>`;
+}
+
+function renderInboxWidget(ctx) {
+  const list = inbox(ctx.rows);
+  return `<section class="card" aria-label="Входящие">
+    <div class="card-head"><h2>Входящие</h2><a href="#/tasks?view=inbox" style="font-size:14px">Разобрать</a></div>
+    ${list.length ? `<div class="task-list">${list.slice(0, 5).map((t) => taskRow(ctx, t)).join("")}</div>` : '<div class="empty">Входящие пусты.</div>'}
+  </section>`;
+}
+
+function widgetHtml(ctx, type) {
+  switch (type) {
+    case "summary": return renderSummaryCard(ctx);
+    case "plan": return renderPlanToday(ctx);
+    case "upcoming": return renderUpcoming(ctx);
+    case "calendar": return ctx.isDesktop ? renderMiniMonth(ctx) : renderWeekStrip(ctx);
+    case "focus": return renderFocus(ctx);
+    case "progress": return renderProgressWidget(ctx);
+    case "overdue": return renderOverdueWidget(ctx);
+    case "inbox": return renderInboxWidget(ctx);
+    default: return "";
+  }
+}
+
+// В режиме настройки у каждого виджета — «Выше», «Ниже», колонка и «Скрыть»:
+// перестановка без перетаскивания (раздел 5).
+function editFrame(ctx, w, i, n, inner) {
+  if (!ctx.ui.layoutDraft) return inner;
+  return `<div class="widget-edit">
+    <div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:6px">
+      <b style="font-size:14px">${esc(WIDGETS[w.type])}</b>
+      <div class="chips">
+        <button type="button" class="btn small" data-action="w-move" data-i="${i}" data-dir="-1" ${i === 0 ? "disabled" : ""} aria-label="Выше">↑ Выше</button>
+        <button type="button" class="btn small" data-action="w-move" data-i="${i}" data-dir="1" ${i === n - 1 ? "disabled" : ""} aria-label="Ниже">↓ Ниже</button>
+        ${ctx.isDesktop ? `<button type="button" class="btn small" data-action="w-col" data-i="${i}">${w.col === "side" ? "← В основную колонку" : "В боковую колонку →"}</button>` : ""}
+        <button type="button" class="btn small danger" data-action="w-hide" data-i="${i}">Скрыть</button>
+      </div></div>
+    <div class="widget-preview" aria-hidden="true">${inner}</div></div>`;
+}
+
 export function renderHome(ctx) {
   const name = firstName(ctx.session);
-  const p = dayProgress(ctx.rows, ctx.today);
+  const { kind, list } = layoutOf(ctx);
+  const editing = !!ctx.ui.layoutDraft;
   const head = `<header class="page-head"><div style="display:flex;flex-direction:column;gap:4px">
       <span class="eyebrow">${esc(longDate(ctx.today))}</span>
       <h1>${esc(greeting(ctx.nowMin))}${name ? ", " + esc(name) : ""}</h1></div>
-      <span class="hide-desktop">${statusButton(ctx.status)}</span></header>`;
+      <div class="row" style="gap:8px">
+        ${editing ? "" : `<button type="button" class="btn small quiet" data-action="layout-edit">Настроить</button>`}
+        <span class="hide-desktop">${statusButton(ctx.status)}</span></div></header>`;
+  const quick = renderQuickAdd(ctx, ctx.isDesktop ? "Новая задача — Enter добавит её во «Входящие»" : "Новая задача — во «Входящие»");
+  const editBar = editing ? `<section class="alert info" role="status"><div class="grow"><b>Настройка главной — ${kind === "desktop" ? "для компьютера" : "для телефона"}</b>
+      <span class="muted">Удаление виджета не удаляет задачи. Раскладка сохранится в аккаунте.</span>${ctx.ui.layoutMsg ? `<span class="form-msg bad">${esc(ctx.ui.layoutMsg)}</span>` : ""}</div>
+      <div class="chips"><button type="button" class="btn small primary" data-action="layout-save">Готово</button>
+      <button type="button" class="btn small quiet" data-action="layout-cancel">Отмена</button>
+      <button type="button" class="btn small quiet" data-action="layout-reset">По умолчанию</button></div></section>` : "";
+  const hidden = Object.keys(WIDGETS).filter((t) => !list.some((w) => w.type === t && !w.hidden));
+  const library = editing && hidden.length ? `<section class="card" aria-label="Библиотека виджетов"><div class="card-head"><h2>Добавить виджет</h2></div>
+      <div class="chips">${hidden.map((t) => `<button type="button" class="chip-btn" data-action="w-add" data-type="${t}">+ ${esc(WIDGETS[t])}</button>`).join("")}</div></section>` : "";
+  const shown = list.map((w, i) => ({ w, i })).filter(({ w }) => !w.hidden);
+  const render = (items) => items.map(({ w, i }) => editFrame(ctx, w, i, list.length, widgetHtml(ctx, w.type))).join("");
   if (!ctx.isDesktop) {
-    return `${head}${renderNotices(ctx)}${renderQuickAdd(ctx, "Новая задача — во «Входящие»")}${renderSummaryCard(ctx)}
-      ${renderUpcoming(ctx)}${renderWeekStrip(ctx)}${renderPlanToday(ctx)}
-      <div class="row" style="padding:0 4px"><span class="muted" style="font-size:13px;white-space:nowrap">Сегодня ${p.done} из ${p.total}</span>
-        <span style="flex:1;height:4px;border-radius:2px;background:var(--divider);overflow:hidden"><span style="display:block;height:100%;width:${p.total ? Math.round((p.done / p.total) * 100) : 0}%;background:var(--accent)"></span></span></div>`;
+    return `${head}${renderNotices(ctx)}${editBar}${quick}${render(shown)}${library}`;
   }
-  return `${head}${renderNotices(ctx)}
+  const main = shown.filter(({ w }) => w.col !== "side"), side = shown.filter(({ w }) => w.col === "side");
+  return `${head}${renderNotices(ctx)}${editBar}
     <div class="grid-home">
-      <div class="col">${renderSummaryCard(ctx)}${renderQuickAdd(ctx, "Новая задача — Enter добавит её во «Входящие»")}${renderPlanToday(ctx)}</div>
-      <div class="col">${renderMiniMonth(ctx)}${renderUpcoming(ctx)}</div>
-    </div>`;
+      <div class="col">${quick}${render(main)}</div>
+      <div class="col">${render(side)}</div>
+    </div>${library}`;
 }
 
 // -------------------------------------------------------------------- задачи --
 
-export function renderTasks(ctx) {
+export function renderTasks(ctx0) {
+  const q = (ctx0.ui.search || "").trim();
+  // поиск сужает текущее представление, поэтому сочетается с датой, разделом и группой
+  const ctx = q ? { ...ctx0, rows: { ...ctx0.rows, tasks: ctx0.rows.tasks.filter((t) => matchesSearch(t, q)) } } : ctx0;
   const { rows, today, nowMin } = ctx;
   const params = ctx.route.params;
   const view = params.view || (params.section || params.group ? "all" : "all");
@@ -395,6 +526,8 @@ export function renderTasks(ctx) {
       <div class="chips" style="padding:0 0 10px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button>
       <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>`
       : '<div class="empty">Просроченных задач нет.</div>', "Просроченные", "Ничего не переносится автоматически");
+  } else if (view === "trash") {
+    body = renderTrash(ctx, q);
   } else if (view === "done") {
     const list = rows.tasks.filter((t) => t.completed).sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || ""))).slice(0, 200);
     body = card(list.length ? `<div class="task-list">${list.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>` : '<div class="empty">Завершённых задач пока нет.</div>', "Завершённые");
@@ -406,6 +539,9 @@ export function renderTasks(ctx) {
     <header class="page-head"><h1>Задачи</h1>
       <div class="row" style="gap:8px"><button type="button" class="btn small" data-action="manage">Разделы и группы</button>${ctx.isDesktop ? "" : statusButton(ctx.status)}</div></header>
     <div class="chips scroll" role="tablist" aria-label="Представления">${tabs}</div>
+    <label class="quick-add" style="min-height:44px"><span aria-hidden="true">${icons.search(18)}</span>
+      <input type="search" data-key="search" data-draft="search" value="${esc(ctx.ui.search || "")}" aria-label="Поиск по названиям и описаниям" placeholder="Поиск по названиям и описаниям" autocomplete="off">
+      ${q ? `<button type="button" class="btn small quiet" data-action="clear-search">Сбросить</button>` : ""}</label>
     ${renderNotices(ctx)}
     ${renderQuickAdd(ctx, view === "today" ? "Новая задача на сегодня" : "Новая задача — Enter добавит её во «Входящие»")}
     <div class="col">${body}</div>`;
@@ -413,6 +549,23 @@ export function renderTasks(ctx) {
     return `<div class="layout-split"><div class="col">${main}</div><aside class="editor">${renderEditorPanel(ctx)}</aside></div>`;
   }
   return main;
+}
+
+function renderTrash(ctx, q) {
+  const tr = ctx.trash || { status: "loading" };
+  if (tr.status === "loading") return card('<div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:40%"></div>', "Корзина");
+  if (tr.status === "error") return card(`<div class="empty">Не удалось загрузить корзину — ничего не потеряно.<button type="button" class="btn small" data-action="reload-trash">Повторить</button></div>`, "Корзина");
+  const list = tr.tasks.filter((t) => !q || matchesSearch(t, q));
+  const until = (t) => {
+    const d = new Date(t.deleted_at);
+    d.setDate(d.getDate() + (tr.keep_days || 30));
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  };
+  return card(list.length ? `<div class="task-list">${list.map((t) => `<div class="task">
+      <div class="task-body"><span class="task-title">${esc(t.title)}</span>
+        <span class="task-meta"><span>${esc(pathOf(ctx.rows, t).label)}</span><span>удалится окончательно ${esc(shortDate(until(t), { today: ctx.today }))}</span></span></div>
+      <button type="button" class="btn small" data-action="restore-task" data-id="${esc(t.id)}">Восстановить</button></div>`).join("")}</div>`
+    : '<div class="empty">Корзина пуста.</div>', "Корзина", `Удалённое хранится ${tr.keep_days || 30} дней`);
 }
 
 function card(inner, title, meta) {
@@ -467,12 +620,12 @@ function sortForList(a, b) {
 
 export function renderCalendar(ctx) {
   const [y, m] = ctx.ui.calMonth.split("-").map(Number);
-  const grid = monthGrid(y, m - 1);
+  const grid = monthGrid(y, m - 1, ctx.settings.week_start);
   const marks = monthMarks(ctx.rows, grid[0].iso, grid[grid.length - 1].iso);
   const sel = ctx.ui.selectedDate || ctx.today;
   const legend = ctx.rows.sections.map((s) => `<span class="row" style="gap:6px"><span class="sq" style="background:${esc(s.color)};width:6px;height:6px"></span>${esc(s.name)}</span>`).join("");
   const month = `<section class="card cal-big" aria-label="Месяц">
-      <div class="cal-grid">${WEEK_HEADER.map((w) => `<span class="cal-wd">${w}</span>`).join("")}${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel, true)).join("")}</div>
+      <div class="cal-grid">${weekHeader(ctx.settings.week_start).map((w) => `<span class="cal-wd">${w}</span>`).join("")}${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel, true)).join("")}</div>
       <div class="row muted" style="flex-wrap:wrap;gap:14px;font-size:12px">${legend}<span style="margin-left:auto">Точки — есть открытые дела, не часы занятости</span></div>
     </section>`;
   return `<header class="page-head">
@@ -731,6 +884,27 @@ export function renderProfile(ctx) {
           <div class="kv"><span>В очереди на устройстве</span><span>${n} ${plural(n, "изменение", "изменения", "изменений")}</span></div>
         </div>
         <button type="button" class="btn small" style="align-self:flex-start" data-action="sync-now">${icons.sync()}Сверить сейчас</button>
+      </section>
+
+      <section class="card" aria-label="Планирование">
+        <div class="card-head"><h2>Планирование</h2>${msg("planning")}</div>
+        <div class="two">
+          <label class="field"><span>Начало рабочего дня</span><input class="input" type="time" data-setting-input="workday_start" value="${esc(hhmm(s.workday_start))}"></label>
+          <label class="field"><span>Конец рабочего дня</span><input class="input" type="time" data-setting-input="workday_end" value="${esc(hhmm(s.workday_end))}"></label>
+        </div>
+        <label class="field"><span>Буфер между делами</span><select class="select" data-setting-input="buffer_minutes">${[0, 5, 10, 15, 30].map((v) => `<option value="${v}" ${Number(s.buffer_minutes) === v ? "selected" : ""}>${v ? v + " мин" : "без буфера"}</option>`).join("")}</select></label>
+        <div class="field"><span>Неделя начинается</span><div class="seg" role="radiogroup" aria-label="Первый день недели">
+          ${[[1, "с понедельника"], [7, "с воскресенья"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${Number(s.week_start) === v}" data-action="set-week-start" data-value="${v}">${l}</button>`).join("")}</div></div>
+        <div class="field"><span>Задача без названной даты</span><div class="seg" role="radiogroup" aria-label="Куда попадает задача без даты">
+          ${[["inbox", "во «Входящие»"], ["today", "на сегодня"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${s.new_task_date === v}" data-action="set-new-task-date" data-value="${v}">${l}</button>`).join("")}</div></div>
+        <span class="muted" style="font-size:13px">Рабочие часы и буфер используются в расчёте свободного времени календаря.</span>
+      </section>
+
+      <section class="card" aria-label="Данные">
+        <div class="card-head"><h2>Данные</h2></div>
+        <span class="soft" style="font-size:14px">Все ваши разделы, группы и задачи. JSON — полная копия с версией схемы; CSV — список задач для таблиц.</span>
+        <div class="chips"><button type="button" class="btn small" data-action="export-json">Скачать JSON</button><button type="button" class="btn small" data-action="export-csv">Скачать CSV</button>
+          <a class="btn small quiet" href="#/tasks?view=trash">Корзина</a></div>
       </section>
 
       <section class="card" aria-label="Выход">

@@ -125,10 +125,11 @@ export function monthMarks(rows, fromIso, toIso) {
   return marks;
 }
 
-// Сетка месяца с понедельника: 5–6 недель, дни соседних месяцев помечены.
-export function monthGrid(year, monthIndex) {
+// Сетка месяца: 5–6 недель с выбранного первого дня (1 — понедельник,
+// 7 — воскресенье), дни соседних месяцев помечены.
+export function monthGrid(year, monthIndex, weekStart = 1) {
   const first = new Date(year, monthIndex, 1);
-  const shift = (first.getDay() + 6) % 7; // понедельник — 0
+  const shift = weekStart === 7 ? first.getDay() : (first.getDay() + 6) % 7;
   const start = new Date(year, monthIndex, 1 - shift);
   const last = new Date(year, monthIndex + 1, 0);
   const cells = Math.ceil((shift + last.getDate()) / 7) * 7;

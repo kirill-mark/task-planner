@@ -396,6 +396,38 @@ export class ModelStore {
 
   syncNow() { return this.engine?.sync("manual"); }
 
+  // ------------------------------------------------------------- корзина --
+
+  async fetchTrash() {
+    const { data, error } = await this.supabase.rpc("mark_get_trash", { p_user: this.userId });
+    if (error) return { ok: false, message: error.message };
+    return { ok: true, ...data };
+  }
+
+  restoreTask(id) { return this.engine?.restoreTask(id); }
+
+  // A14: правка задачи, которую тем временем удалили. Пользователь выбирает
+  // явно — вернуть задачу и применить правку поверх или оставить удалённой и
+  // сохранить правку новой задачей.
+  async restoreAndReapply(seq) {
+    const op = this.engine?.outbox.find((o) => o.seq === seq);
+    if (!op) return;
+    await this.engine.discardOp(seq);
+    await this.engine.enqueue(op.entity, "restore", op.entity_id);
+    if (op.type === "update") await this.engine.enqueue(op.entity, "update", op.entity_id, op.changes);
+  }
+
+  async saveAsNew(seq) {
+    const op = this.engine?.outbox.find((o) => o.seq === seq);
+    if (!op || op.entity !== "task") return;
+    const cur = op.result?.current || {};
+    await this.engine.discardOp(seq);
+    const fields = {};
+    for (const k of TASK_FIELDS) if (k !== "position" && cur[k] !== undefined) fields[k] = cur[k];
+    Object.assign(fields, op.changes, { completed: false });
+    this.createTaskV2(fields, { timezone: fields.timezone });
+  }
+
   // ------------------------------------------------------------ конфликты --
 
   discard(seq) { return this.engine?.discardOp(seq); }

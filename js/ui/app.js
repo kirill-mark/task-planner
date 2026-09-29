@@ -15,7 +15,7 @@ import { ModelStore } from "../mark/store.js";
 import { todayIso, hhmm, deviceTimezone, plural } from "./lib.js";
 import { overdueKind } from "./derive.js";
 import {
-  renderShell, renderHome, renderTasks, renderCalendar, renderAssistant, renderProfile,
+  layoutOf, defaultLayout, renderShell, renderHome, renderTasks, renderCalendar, renderAssistant, renderProfile,
   renderAuth, renderSplash, syncLabel,
 } from "./views.js";
 
@@ -33,6 +33,7 @@ let status = store.status;
 let telegram = { status: "loading", link: null };
 let telegramChannel = null;
 let tz = { prompt: null, device: deviceTimezone() };
+let trash = { status: "loading", tasks: [] };
 
 const settings = {
   theme: readTheme(),
@@ -40,12 +41,26 @@ const settings = {
   morning_digest: true,
   evening_digest: true,
   task_reminders: true,
-  workday: { start: "10:00", end: "19:00" },
+  workday: { start: "10:00", end: "19:00", buffer: 0 },
+  workday_start: "10:00",
+  workday_end: "19:00",
+  buffer_minutes: 0,
+  week_start: 1,
+  new_task_date: "inbox",
 };
+
+function syncWorkday() {
+  settings.workday = { start: hhmm(settings.workday_start), end: hhmm(settings.workday_end), buffer: Number(settings.buffer_minutes) || 0 };
+}
 
 const today0 = todayIso();
 const ui = {
   quick: "",
+  search: "",
+  layoutDraft: null, // { phone|desktop: [...] } в режиме настройки главной
+  layoutKind: null,
+  layoutMsg: "",
+  focusPick: false,
   editor: null,      // { id|null, draft, error }
   manage: null,      // { form: null|{kind,id,name,color,section_id} }
   confirm: null,     // { title, text, ok, danger, moveOptions, moveTo, onOk }
@@ -94,6 +109,7 @@ window.addEventListener("hashchange", () => {
   route = parseRoute();
   if (route.name === "calendar" && route.params.date) selectDate(route.params.date);
   if (route.name === "profile" && telegram.status === "loading") loadTelegram();
+  if (route.name === "tasks" && route.params.view === "trash") loadTrash();
   if (route.name !== "tasks" && ui.editor && DESKTOP.matches) ui.editor = null;
   render();
   window.scrollTo(0, 0);
@@ -118,7 +134,7 @@ function nowMinutes() {
 function context() {
   return {
     rows, status, today: todayIso(), nowMin: nowMinutes(), route, ui, session, settings,
-    telegram, tz, isDesktop: DESKTOP.matches,
+    telegram, tz, trash, isDesktop: DESKTOP.matches,
   };
 }
 
@@ -158,6 +174,7 @@ function setDraft(path, value) {
   else if (head === "confirm" && ui.confirm) ui.confirm.moveTo = value;
   else if (head === "profile") ui.profile[rest[0]] = value;
   else if (head === "auth") ui.auth[rest[0]] = value;
+  else if (head === "search") { ui.search = value; render(); }
 }
 
 // ------------------------------------------------------------------ данные --
@@ -193,11 +210,15 @@ async function checkAccountMode(userId) {
 
 async function loadSettings(userId) {
   const { data, error } = await supabase.from("user_settings")
-    .select("timezone, theme, morning_digest, evening_digest, task_reminders").eq("user_id", userId).maybeSingle();
+    .select("timezone, theme, morning_digest, evening_digest, task_reminders, workday_start, workday_end, buffer_minutes, week_start, new_task_date, home_layout, home_layout_version, focus").eq("user_id", userId).maybeSingle();
   if (error || !session || session.user.id !== userId) return;
   if (data) {
     settings.timezone = data.timezone;
     for (const k of ["morning_digest", "evening_digest", "task_reminders"]) settings[k] = data[k] ?? true;
+    for (const k of ["workday_start", "workday_end", "buffer_minutes", "week_start", "new_task_date", "home_layout", "home_layout_version", "focus"]) {
+      if (data[k] !== undefined && data[k] !== null) settings[k] = data[k];
+    }
+    syncWorkday();
     if (data.theme && data.theme !== settings.theme) { settings.theme = data.theme; applyTheme(data.theme); }
   }
   render();
@@ -222,6 +243,15 @@ async function checkTimezone(userId) {
   let chosen = null;
   try { chosen = localStorage.getItem("mark:tz-choice:" + userId); } catch { /* спросим снова */ }
   tz.prompt = r.status === "differs" && chosen !== `${r.account}|${r.device}` ? { account: r.account, device: r.device } : null;
+  render();
+}
+
+async function loadTrash() {
+  if (!session || !store.userId) return;
+  trash = { ...trash, status: trash.tasks.length ? "ok" : "loading" };
+  render();
+  const r = await store.fetchTrash();
+  trash = r.ok ? { status: "ok", tasks: r.tasks || [], keep_days: r.keep_days } : { status: "error", tasks: [] };
   render();
 }
 
@@ -255,6 +285,7 @@ onAuthChange((next) => {
     checkTimezone(userId);
     telegram = { status: "loading", link: null };
     if (route.name === "profile") loadTelegram();
+    if (route.name === "tasks" && route.params.view === "trash") setTimeout(loadTrash, 500);
   } else if (!next && prevId) {
     store.detachUser();
     rows = store.rows;
@@ -331,7 +362,8 @@ function quickAdd(title) {
   const fields = { title };
   // Без названной даты — во «Входящие»; в контексте дня — на этот день.
   if (route.name === "tasks" && route.params.view === "today") fields.planned_date = todayIso();
-  if (route.name === "calendar") fields.planned_date = ui.selectedDate;
+  else if (route.name === "calendar") fields.planned_date = ui.selectedDate;
+  else if (settings.new_task_date === "today") fields.planned_date = todayIso();
   store.createTaskV2(fields, { timezone: settings.timezone });
   ui.quick = "";
   render();
@@ -419,6 +451,7 @@ const actions = {
     if (el.dataset.date) defaults.planned_date = el.dataset.date;
     else if (route.name === "calendar") defaults.planned_date = ui.selectedDate;
     else if (route.name === "tasks" && route.params.view === "today") defaults.planned_date = todayIso();
+    else if (settings.new_task_date === "today") defaults.planned_date = todayIso();
     if (el.dataset.group) defaults.group_id = el.dataset.group;
     openEditor(null, defaults);
   },
@@ -448,6 +481,45 @@ const actions = {
   },
   "sync-now": () => store.syncNow(),
   "keep-mine": (el) => store.keepMine(Number(el.dataset.seq)),
+  "restore-apply": (el) => store.restoreAndReapply(Number(el.dataset.seq)),
+  "save-new": (el) => store.saveAsNew(Number(el.dataset.seq)),
+  "restore-task": async (el) => {
+    await store.restoreTask(el.dataset.id);
+    trash = { ...trash, tasks: trash.tasks.filter((t) => t.id !== el.dataset.id) };
+    render();
+    setTimeout(loadTrash, 2500);
+  },
+  "reload-trash": () => loadTrash(),
+  "clear-search": () => { ui.search = ""; render(); },
+  "set-week-start": (el) => { settings.week_start = Number(el.dataset.value); saveSetting("week_start", { week_start: settings.week_start }, "planning"); },
+  "set-new-task-date": (el) => { settings.new_task_date = el.dataset.value; saveSetting("new_task_date", { new_task_date: settings.new_task_date }, "planning"); },
+  "export-json": () => exportJson(),
+  "layout-edit": () => {
+    const { kind, list } = layoutOf(context());
+    ui.layoutDraft = { [kind]: list.map((w) => ({ ...w })) };
+    ui.layoutKind = kind;
+    ui.layoutMsg = "";
+    render();
+  },
+  "layout-cancel": () => { ui.layoutDraft = null; render(); },
+  "layout-reset": () => { ui.layoutDraft = { [ui.layoutKind]: defaultLayout(ui.layoutKind) }; render(); },
+  "w-move": (el) => {
+    const l = ui.layoutDraft[ui.layoutKind], i = Number(el.dataset.i), j = i + Number(el.dataset.dir);
+    if (j < 0 || j >= l.length) return;
+    [l[i], l[j]] = [l[j], l[i]];
+    render();
+  },
+  "w-col": (el) => { const w = ui.layoutDraft[ui.layoutKind][Number(el.dataset.i)]; w.col = w.col === "side" ? "main" : "side"; render(); },
+  "w-hide": (el) => { ui.layoutDraft[ui.layoutKind][Number(el.dataset.i)].hidden = true; render(); },
+  "w-add": (el) => {
+    const l = ui.layoutDraft[ui.layoutKind];
+    const existing = l.find((w) => w.type === el.dataset.type);
+    if (existing) existing.hidden = false; else l.push({ type: el.dataset.type, col: "main" });
+    render();
+  },
+  "layout-save": () => saveLayout(),
+  "focus-pick": () => { ui.focusPick = !ui.focusPick; render(); },
+  "export-csv": () => exportCsv(),
   "discard-mine": (el) => store.discard(Number(el.dataset.seq)),
   "tz-use-device": () => chooseTimezone(tz.prompt?.device),
   "tz-keep": () => chooseTimezone(tz.prompt?.account),
@@ -491,6 +563,83 @@ const actions = {
   },
   "auth-toggle": () => { ui.auth.mode = ui.auth.mode === "signin" ? "signup" : "signin"; ui.auth.error = ""; ui.auth.message = ""; render(); },
 };
+
+// ---------------------------------------------------- рабочий стол, фокус --
+
+// Сохраняется поверх той версии, от которой меняли: одновременная правка с
+// другого устройства не стирается молча, а показывается (раздел 5).
+async function saveLayout() {
+  const kind = ui.layoutKind;
+  const layout = { ...(settings.home_layout || {}), [kind]: ui.layoutDraft[kind] };
+  const { data, error } = await supabase.rpc("mark_save_home_layout", { p_layout: layout, p_expected: settings.home_layout_version || 0 });
+  if (error) { ui.layoutMsg = "Не удалось сохранить раскладку. Проверьте связь и попробуйте ещё раз."; render(); return; }
+  if (data.status === "conflict") {
+    settings.home_layout = data.layout;
+    settings.home_layout_version = data.version;
+    ui.layoutMsg = "Раскладку только что изменили на другом устройстве — показана она. Повторите свои изменения поверх неё.";
+    ui.layoutDraft = { [kind]: (data.layout?.[kind] || defaultLayout(kind)).map((w) => ({ ...w })) };
+    render();
+    return;
+  }
+  settings.home_layout = layout;
+  settings.home_layout_version = data.version;
+  ui.layoutDraft = null;
+  render();
+}
+
+async function toggleFocus(id, on) {
+  const today = todayIso();
+  const cur = settings.focus?.date === today ? [...(settings.focus.ids || [])] : [];
+  const ids = on ? [...new Set([...cur, id])].slice(0, 3) : cur.filter((x) => x !== id);
+  settings.focus = { date: today, ids };
+  render();
+  await saveSetting("focus", { focus: settings.focus }, "focus");
+}
+
+// ---------------------------------------------------------------- экспорт --
+
+function download(name, type, text) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+const clean = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith("_") && k !== "user_id" && k !== "seq"));
+
+function exportJson() {
+  const data = {
+    format: "mark-export",
+    schema_version: 1,
+    exported_at: new Date().toISOString(),
+    account: session.user.email,
+    note: "Состояние, подтверждённое сервером, плюс изменения этого устройства, ещё не отправленные.",
+    sections: rows.sections.map(clean),
+    groups: rows.groups.map(clean),
+    tasks: rows.tasks.map(clean),
+  };
+  download(`mark-${todayIso()}.json`, "application/json", JSON.stringify(data, null, 2));
+}
+
+function exportCsv() {
+  const cell = (v) => {
+    const s = v === null || v === undefined ? "" : String(v);
+    return /[",;\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const head = ["Название", "Описание", "Раздел", "Группа", "Запланировано на", "Время", "Выполнить до", "Время дедлайна", "Длительность, мин", "Приоритет", "Выполнено", "Выполнено в"];
+  const lines = rows.tasks.map((t) => {
+    const g = rows.groups.find((x) => x.id === t.group_id);
+    const sct = g ? rows.sections.find((x) => x.id === g.section_id) : null;
+    return [t.title, t.notes, sct?.name || "", g?.name || "Входящие", t.planned_date, hhmm(t.planned_time), t.due_date, hhmm(t.due_time),
+      t.duration_minutes, { low: "низкий", normal: "обычный", high: "высокий" }[t.priority] || "", t.completed ? "да" : "нет", t.completed_at || ""].map(cell).join(";");
+  });
+  // BOM — чтобы Excel открыл кириллицу без вопросов
+  download(`mark-${todayIso()}.csv`, "text/csv", "\ufeff" + [head.join(";"), ...lines].join("\r\n"));
+}
 
 function shiftMonth(n) {
   const [y, m] = ui.calMonth.split("-").map(Number);
@@ -579,12 +728,29 @@ root.addEventListener("input", (e) => {
 root.addEventListener("change", (e) => {
   const el = e.target;
   if (el.dataset?.draft) setDraft(el.dataset.draft, el.value);
+  if (el.dataset?.action === "focus-toggle") {
+    toggleFocus(el.dataset.id, el.checked);
+    return;
+  }
   if (el.dataset?.action === "set-setting") {
     const key = el.dataset.setting;
     settings[key] = el.checked;
     saveSetting(key, { [key]: el.checked }, "notify");
   } else if (el.dataset?.action === "set-timezone") {
     chooseTimezone(el.value);
+  } else if (el.dataset?.settingInput) {
+    const key = el.dataset.settingInput;
+    const value = key === "buffer_minutes" ? Number(el.value) : el.value;
+    if (!value && key !== "buffer_minutes") return;
+    const next = { ...settings, [key]: value };
+    if (hhmm(next.workday_end) <= hhmm(next.workday_start)) {
+      ui.saved.planning = { cls: "bad", text: "Конец рабочего дня должен быть позже начала" };
+      render();
+      return;
+    }
+    settings[key] = value;
+    syncWorkday();
+    saveSetting(key, { [key]: value }, "planning");
   }
 });
 
