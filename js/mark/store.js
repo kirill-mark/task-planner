@@ -396,6 +396,25 @@ export class ModelStore {
 
   syncNow() { return this.engine?.sync("manual"); }
 
+  // Черновики помощника, подтверждённые пользователем. Правки идут с версией,
+  // от которой помощник их предложил (раздел 8).
+  async applyAssistantDrafts(drafts, { timezone } = {}) {
+    if (!this.engine) return [];
+    const created = [];
+    for (const d of drafts) {
+      if (d.type === "create") {
+        created.push(this.createTaskV2(d.fields, { timezone }));
+      } else if (d.type === "delete") {
+        await this.engine.enqueue("task", "delete", d.id, {}, undefined, { baseRevision: d.base_revision });
+      } else if (d.type === "update") {
+        const changes = this.taskFieldsFor(d.fields, timezone);
+        if (!Object.keys(changes).some((k) => k.endsWith("_date") || k.endsWith("_time"))) delete changes.timezone;
+        await this.engine.enqueue("task", "update", d.id, changes, undefined, { baseRevision: d.base_revision });
+      }
+    }
+    return created;
+  }
+
   // ------------------------------------------------------------- корзина --
 
   async fetchTrash() {

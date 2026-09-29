@@ -97,3 +97,14 @@ Deno.test("A27: длинная сводка режется по строкам, 
   assert(parts.every((p) => p.length <= 3900));
   assertEquals(parts.join("\n"), text);
 });
+
+Deno.test("время названо — можно; не названо — модель его не подставляет", async () => {
+  const { timeMentioned } = await import("./intent.ts");
+  for (const t of ["созвон в 11", "в 10:00", "к 15 часам", "до 18:00", "утром", "вечером", "через 20 минут", "в 9 утра"]) assert(timeMentioned(t), t);
+  for (const t of ["перенеси на пятницу", "поставь длительность 1 час", "добавь задачу без даты", "на 2 октября"]) assert(!timeMentioned(t), t);
+});
+
+Deno.test("дата с числом — не время", async () => {
+  const { timeMentioned } = await import("./intent.ts");
+  for (const t of ["до 5 октября", "в 3-го декабря", "перенеси на 2 октября", "с 1 января"]) assert(!timeMentioned(t), t);
+});

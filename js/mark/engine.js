@@ -199,7 +199,10 @@ export class SyncEngine {
   }
 
   // meta — пометки клиента об операции; на сервер не уходят.
-  async enqueue(entity, type, entityId, changes = {}, meta = undefined) {
+  // opts.baseRevision — версия, от которой человек видел объект, когда её дал
+  // не он сам, а, например, черновик помощника: изменение на другом устройстве
+  // после показа черновика даст конфликт, а не молчаливую перезапись.
+  async enqueue(entity, type, entityId, changes = {}, meta = undefined, opts = {}) {
     if (!ENTITY_STORES[entity]) throw new Error(`unknown entity ${entity}`);
     const op = {
       operation_id: newId(),
@@ -207,7 +210,8 @@ export class SyncEngine {
       type,
       entity_id: entityId,
       // восстановление из корзины версию не сверяет: удалённое и так не менялось
-      base_revision: type === "create" || type === "restore" ? null : this.expectedRevision(entity, entityId),
+      base_revision: type === "create" || type === "restore" ? null
+        : opts.baseRevision != null ? opts.baseRevision : this.expectedRevision(entity, entityId),
       changes,
       state: "pending",
       attempts: 0,

@@ -12,8 +12,9 @@ import {
   subscribeTelegramLink, reconcileTimezone, setAccountTimezone,
 } from "../sync.js?v=13";
 import { ModelStore } from "../mark/store.js";
-import { todayIso, hhmm, deviceTimezone, plural } from "./lib.js";
-import { overdueKind } from "./derive.js";
+import { todayIso, hhmm, deviceTimezone, plural, addDays } from "./lib.js";
+import { overdueKind, dayLoad } from "./derive.js";
+import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../mark/transport.js";
 import {
   layoutOf, defaultLayout, renderShell, renderHome, renderTasks, renderCalendar, renderAssistant, renderProfile,
   renderAuth, renderSplash, syncLabel,
@@ -53,6 +54,9 @@ const settings = {
   quiet_enabled: false,
   quiet_start: "23:00",
   quiet_end: "08:00",
+  assistant_consent_at: null,
+  assistant_brief: true,
+  assistant_confirm_all: false,
 };
 
 function syncWorkday() {
@@ -67,6 +71,7 @@ const ui = {
   layoutKind: null,
   layoutMsg: "",
   focusPick: false,
+  assistant: { chat: [], input: "", busy: false },
   editor: null,      // { id|null, draft, error }
   manage: null,      // { form: null|{kind,id,name,color,section_id} }
   confirm: null,     // { title, text, ok, danger, moveOptions, moveTo, onOk }
@@ -182,6 +187,7 @@ function setDraft(path, value) {
   else if (head === "profile") ui.profile[rest[0]] = value;
   else if (head === "auth") ui.auth[rest[0]] = value;
   else if (head === "search") { ui.search = value; render(); }
+  else if (head === "assistantInput") ui.assistant.input = value;
 }
 
 // ------------------------------------------------------------------ данные --
@@ -228,13 +234,13 @@ async function checkAccountMode(userId) {
 
 async function loadSettings(userId) {
   const { data, error } = await supabase.from("user_settings")
-    .select("timezone, theme, morning_digest, evening_digest, task_reminders, workday_start, workday_end, buffer_minutes, week_start, new_task_date, home_layout, home_layout_version, focus, morning_time, evening_time, reminder_lead, quiet_enabled, quiet_start, quiet_end").eq("user_id", userId).maybeSingle();
+    .select("timezone, theme, morning_digest, evening_digest, task_reminders, workday_start, workday_end, buffer_minutes, week_start, new_task_date, home_layout, home_layout_version, focus, morning_time, evening_time, reminder_lead, quiet_enabled, quiet_start, quiet_end, assistant_consent_at, assistant_brief, assistant_confirm_all").eq("user_id", userId).maybeSingle();
   if (error || !session || session.user.id !== userId) return;
   if (data) {
     settings.timezone = data.timezone;
     for (const k of ["morning_digest", "evening_digest", "task_reminders"]) settings[k] = data[k] ?? true;
     for (const k of ["workday_start", "workday_end", "buffer_minutes", "week_start", "new_task_date", "home_layout", "home_layout_version", "focus",
-      "morning_time", "evening_time", "reminder_lead", "quiet_enabled", "quiet_start", "quiet_end"]) {
+      "morning_time", "evening_time", "reminder_lead", "quiet_enabled", "quiet_start", "quiet_end", "assistant_consent_at", "assistant_brief", "assistant_confirm_all"]) {
       if (data[k] !== undefined && data[k] !== null) settings[k] = data[k];
     }
     syncWorkday();
@@ -299,6 +305,7 @@ onAuthChange((next) => {
   if (next && next.user.id !== prevId) {
     const userId = next.user.id;
     store.attachUser(userId);
+    loadChat(userId);
     checkAccountMode(userId);
     loadSettings(userId);
     checkTimezone(userId);
@@ -309,7 +316,7 @@ onAuthChange((next) => {
     store.detachUser();
     rows = store.rows;
     if (telegramChannel) { telegramChannel.unsubscribe(); telegramChannel = null; }
-    Object.assign(ui, { editor: null, manage: null, confirm: null, quick: "", linkCode: null, telegramMsg: "", saved: {}, profile: {} });
+    Object.assign(ui, { editor: null, manage: null, confirm: null, quick: "", linkCode: null, telegramMsg: "", saved: {}, profile: {}, assistant: { chat: [], input: "", busy: false } });
     tz = { prompt: null, device: deviceTimezone() };
   }
   render();
@@ -537,6 +544,31 @@ const actions = {
     render();
   },
   "layout-save": () => saveLayout(),
+  "assistant-consent": () => { settings.assistant_consent_at = new Date().toISOString(); saveSetting("assistant_consent_at", { assistant_consent_at: settings.assistant_consent_at }, "assistant"); },
+  "assistant-revoke": () => { settings.assistant_consent_at = null; saveSetting("assistant_consent_at", { assistant_consent_at: null }, "assistant"); },
+  "assistant-ask": (el) => askAssistant(el.dataset.text),
+  "assistant-clear": () => {
+    ui.confirm = { title: "Очистить историю помощника?", text: "Диалог удалится с этого устройства. Задачи и настройки не изменятся.", ok: "Очистить", danger: true,
+      onOk: () => { ui.assistant.chat = []; saveChat(); } };
+    render();
+  },
+  "draft-apply": async (el) => {
+    const m = ui.assistant.chat[Number(el.dataset.msg)];
+    if (!m || m.state !== "pending") return;
+    await store.applyAssistantDrafts(m.drafts.filter((d) => !d.skip), { timezone: settings.timezone });
+    m.state = "applied";
+    saveChat();
+    render();
+  },
+  "draft-cancel": (el) => { const m = ui.assistant.chat[Number(el.dataset.msg)]; if (m) { m.state = "cancelled"; saveChat(); render(); } },
+  "draft-undo": (el) => {
+    const m = ui.assistant.chat[Number(el.dataset.msg)];
+    if (!m || m.state !== "auto") return;
+    for (const id of m.created || []) if (id) store.deleteTask(id);
+    m.state = "cancelled";
+    saveChat();
+    render();
+  },
   "focus-pick": () => { ui.focusPick = !ui.focusPick; render(); },
   "export-csv": () => exportCsv(),
   "discard-mine": (el) => store.discard(Number(el.dataset.seq)),
@@ -615,6 +647,78 @@ async function toggleFocus(id, on) {
   await saveSetting("focus", { focus: settings.focus }, "focus");
 }
 
+// ---------------------------------------------------------------- помощник --
+
+// История — на этом устройстве, 30 дней; предпочтения — в аккаунте (раздел 8).
+const CHAT_KEY = (id) => "mark:assistant:" + id;
+const CHAT_DAYS = 30;
+
+function loadChat(userId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(CHAT_KEY(userId)) || "[]");
+    const since = Date.now() - CHAT_DAYS * 86400000;
+    ui.assistant.chat = all.filter((m) => (m.at || 0) > since);
+  } catch { ui.assistant.chat = []; }
+}
+
+function saveChat() {
+  if (!session) return;
+  try { localStorage.setItem(CHAT_KEY(session.user.id), JSON.stringify(ui.assistant.chat.slice(-100))); } catch { /* только в памяти */ }
+}
+
+// Загрузка дня — тем же расчётом, что и календарь: помощник и календарь не расходятся.
+function loadFacts() {
+  const out = {};
+  for (const [key, day] of [["today", todayIso()], ["tomorrow", addDays(todayIso(), 1)]]) {
+    const l = dayLoad(rows, day, settings.workday);
+    out[key] = { date: day, busy: l.busy, unknown: l.unknown, free: l.free, workday: l.workday };
+  }
+  return out;
+}
+
+async function askAssistant(text) {
+  text = String(text || "").trim();
+  const a = ui.assistant;
+  if (!text || a.busy) return;
+  a.chat.push({ role: "user", content: text, at: Date.now() });
+  a.input = "";
+  a.busy = true;
+  render();
+  const history = a.chat.slice(-7, -1).map((m) => ({ role: m.role, content: m.content || "" }));
+  let reply;
+  try {
+    const token = (await supabase.auth.getSession()).data.session?.access_token;
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/mark-assistant`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ message: text, history, facts: loadFacts() }),
+    });
+    const body = await res.json().catch(() => null);
+    if (!res.ok) {
+      const error = res.status === 401 ? "Нужно войти снова."
+        : res.status === 429 ? "Лимит ИИ-провайдера на сейчас исчерпан — попробуйте позже. Задачи работают как обычно."
+        : "Помощник не ответил. Задачи работают как обычно — попробуйте ещё раз.";
+      reply = { role: "assistant", error, at: Date.now() };
+      a.input = text; // черновик сообщения не теряется
+    } else {
+      const drafts = (body.drafts || []).map((d) => ({ ...d, skip: false }));
+      reply = { role: "assistant", content: body.answer || (drafts.length ? "Вот что предлагаю:" : "Готово."), refs: body.refs || [], drafts, rejected: body.rejected || [], state: drafts.length ? "pending" : "none", at: Date.now() };
+      // одна понятная новая задача — сразу, с кнопкой «Отменить» (раздел 8)
+      if (drafts.length === 1 && drafts[0].type === "create" && !settings.assistant_confirm_all) {
+        reply.created = await store.applyAssistantDrafts(drafts, { timezone: settings.timezone });
+        reply.state = "auto";
+      }
+    }
+  } catch {
+    reply = { role: "assistant", error: "Нет связи с помощником. Задачи работают как обычно.", at: Date.now() };
+    a.input = text;
+  }
+  a.busy = false;
+  a.chat.push(reply);
+  saveChat();
+  render();
+}
+
 // ---------------------------------------------------------------- экспорт --
 
 function download(name, type, text) {
@@ -685,6 +789,7 @@ async function chooseTimezone(zone) {
 const submits = {
   "save-task": () => saveEditor(),
   "quick-add": (form) => quickAdd(new FormData(form).get("title") || ""),
+  "assistant-send": (form) => askAssistant(new FormData(form).get("message") || ""),
   "save-structure": () => saveStructure(),
   "confirm-submit": async () => {
     const cf = ui.confirm;
@@ -747,6 +852,11 @@ root.addEventListener("input", (e) => {
 root.addEventListener("change", (e) => {
   const el = e.target;
   if (el.dataset?.draft) setDraft(el.dataset.draft, el.value);
+  if (el.dataset?.action === "draft-pick") {
+    const m = ui.assistant.chat[Number(el.dataset.msg)];
+    if (m?.drafts?.[Number(el.dataset.i)]) { m.drafts[Number(el.dataset.i)].skip = !el.checked; render(); }
+    return;
+  }
   if (el.dataset?.action === "focus-toggle") {
     toggleFocus(el.dataset.id, el.checked);
     return;

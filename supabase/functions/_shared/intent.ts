@@ -150,3 +150,16 @@ export function normalizeEdit(raw: any, ctx: ParseContext) {
   if (raw?.clearTime === true && !patch.time) patch.clearTime = true;
   return patch;
 }
+
+// Время, которое пользователь не называл, не добавляется: модель склонна
+// подставлять его из соседних задач («перенеси на пятницу» → «пт 10:00»).
+export function timeMentioned(text: string): boolean {
+  const t = text.toLowerCase();
+  if (/\d{1,2}[:.]\d{2}/.test(t)) return true;
+  // «в 11», «к 15 часам», «в 9 утра» — но не «до 5 октября»
+  const MONTH = "(?:январ|феврал|март|апрел|ма[йя]|июн|июл|август|сентябр|октябр|ноябр|декабр)";
+  if (new RegExp(`(?<![\\p{L}])(?:в|к|до|с|около)\\s*\\d{1,2}(?!\\d)(?!\\s*(?:-?го\\s*)?${MONTH})`, "u").test(t)) return true;
+  if (/(?<![\p{L}])(?:утр|вечер|дн[её]м|полдень|полноч|ночью)/u.test(t)) return true;
+  return /через\s+\d+\s*(?:мин|час)/u.test(t);
+}
+

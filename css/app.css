@@ -425,3 +425,12 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 /* Настройка главной: рамка виджета с кнопками; сам виджет — только просмотр */
 .widget-edit { border: 1px dashed var(--accent); border-radius: calc(var(--radius-card) + 6px); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .widget-preview { pointer-events: none; opacity: 0.85; }
+
+/* Помощник: диалог и черновики */
+.chat { gap: 14px; }
+.bubble { display: flex; flex-direction: column; gap: 10px; max-width: 92%; font-size: 15px; line-height: 1.5; }
+.bubble.user { align-self: flex-end; background: var(--surface-2); border: 1px solid var(--border); border-radius: 18px 18px 4px 18px; padding: 10px 14px; }
+.bubble.bot { align-self: flex-start; }
+.draft { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--border); border-radius: 14px; padding: 10px 12px; background: var(--bg); font-size: 14px; }
+.draft.danger { border-color: var(--danger-border); }
+.draft input { width: 20px; height: 20px; margin: 1px 0 0; accent-color: var(--accent); flex-shrink: 0; }

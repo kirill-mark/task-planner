@@ -266,6 +266,7 @@ function renderSummaryCard(ctx) {
     <div class="chips">
       <a class="chip-btn" style="display:inline-flex;align-items:center;color:var(--text)" href="#/calendar?date=${ctx.today}">Весь день</a>
       ${s.inbox ? `<a class="chip-btn" style="display:inline-flex;align-items:center;color:var(--text)" href="#/tasks?view=inbox">Входящие · ${s.inbox}</a>` : ""}
+      ${ctx.route.name === "assistant" ? "" : `<a class="chip-btn" style="display:inline-flex;align-items:center;color:var(--accent)" href="#/assistant">Спросить помощника</a>`}
       ${s.late ? `<a class="chip-btn" style="display:inline-flex;align-items:center;color:var(--danger)" href="#/tasks?view=overdue">Просроченное · ${s.late}</a>` : ""}
     </div>
   </section>`;
@@ -680,14 +681,103 @@ function renderDayPanel(ctx, day) {
 
 // ----------------------------------------------------------------- помощник --
 
+const DRAFT_FIELD = {
+  title: "название", notes: "описание", planned_date: "на", planned_time: "время", due_date: "до", due_time: "время дедлайна",
+  duration_minutes: "длительность", group_id: "группа", priority: "приоритет", completed: "выполнено",
+};
+
+function draftValue(ctx, k, v) {
+  if (v === null || v === undefined || v === "") return "—";
+  if (k.endsWith("_date")) return shortDate(v, { weekday: true, today: ctx.today });
+  if (k.endsWith("_time")) return hhmm(v);
+  if (k === "duration_minutes") return durationText(v);
+  if (k === "group_id") return ctx.rows.groups.find((g) => g.id === v)?.name || "—";
+  if (k === "priority") return { low: "низкий", normal: "обычный", high: "высокий" }[v] || v;
+  if (k === "completed") return v ? "да" : "нет";
+  return String(v);
+}
+
+function renderDraft(ctx, d, i, msgIndex, locked) {
+  let body;
+  if (d.type === "create") {
+    const f = d.fields;
+    const bits = [f.planned_date ? `на ${draftValue(ctx, "planned_date", f.planned_date)}${f.planned_time ? " · " + hhmm(f.planned_time) : ""}` : "",
+      f.due_date ? `до ${draftValue(ctx, "due_date", f.due_date)}${f.due_time ? " " + hhmm(f.due_time) : ""}` : "",
+      f.duration_minutes ? durationText(f.duration_minutes) : "", f.group_id ? draftValue(ctx, "group_id", f.group_id) : "Входящие"].filter(Boolean);
+    body = `<b>Новая задача:</b> ${esc(f.title)}<span class="muted" style="font-size:13px">${esc(bits.join(" · "))}</span>`;
+  } else if (d.type === "delete") {
+    body = `<b>Удалить:</b> ${esc(d.before?.title || "")}<span class="muted" style="font-size:13px">уйдёт в корзину на 30 дней</span>`;
+  } else if (d.fields.completed === true && Object.keys(d.fields).length === 1) {
+    body = `<b>Отметить выполненной:</b> ${esc(d.before?.title || "")}`;
+  } else {
+    const rows = Object.entries(d.fields).map(([k, v]) => `<span class="h">${esc(DRAFT_FIELD[k] || k)}</span><span>${esc(draftValue(ctx, k, d.before?.[k]))}</span><span>${esc(draftValue(ctx, k, v))}</span>`).join("");
+    body = `<b>Изменить:</b> ${esc(d.before?.title || "")}<div class="conflict-grid"><span></span><span class="h">Было</span><span class="h">Станет</span>${rows}</div>`;
+  }
+  return `<label class="draft ${d.type === "delete" ? "danger" : ""}">
+    ${locked ? "" : `<input type="checkbox" data-action="draft-pick" data-msg="${msgIndex}" data-i="${i}" ${d.skip ? "" : "checked"} aria-label="Применить это изменение">`}
+    <span style="display:flex;flex-direction:column;gap:4px;min-width:0">${body}</span></label>`;
+}
+
+function renderChatMessage(ctx, m, idx) {
+  if (m.role === "user") return `<div class="bubble user">${esc(m.content)}</div>`;
+  const refs = (m.refs || []).map((id) => ctx.rows.tasks.find((t) => t.id === id)).filter(Boolean);
+  const drafts = m.drafts || [];
+  const locked = m.state === "applied" || m.state === "cancelled" || m.state === "auto";
+  const chosen = drafts.filter((d) => !d.skip).length;
+  return `<div class="bubble bot">
+    ${m.error ? `<span class="form-msg bad">${esc(m.error)}</span>` : `<span style="white-space:pre-line">${esc(m.content)}</span>`}
+    ${refs.length ? `<div class="chips">${refs.map((t) => `<button type="button" class="chip-btn" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div>` : ""}
+    ${drafts.length && m.state === "pending" ? `<span class="eyebrow">Предлагаю — проверьте перед применением</span>` : ""}
+    ${drafts.length ? `<div style="display:flex;flex-direction:column;gap:8px">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked)).join("")}</div>
+      ${m.state === "pending" ? `<div class="chips"><button type="button" class="btn small primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>Применить${drafts.length > 1 ? ` (${chosen})` : ""}</button>
+        <button type="button" class="btn small quiet" data-action="draft-cancel" data-msg="${idx}">Отмена</button></div>`
+      : m.state === "auto" ? `<div class="row"><span class="form-msg ok">Добавлено</span><button type="button" class="btn small quiet" data-action="draft-undo" data-msg="${idx}">Отменить</button></div>`
+      : `<span class="form-msg ${m.state === "applied" ? "ok" : ""}">${m.state === "applied" ? "Применено — изменения ушли в очередь" : "Отменено, ничего не изменено"}</span>`}` : ""}
+    ${m.rejected?.length ? `<span class="muted" style="font-size:12px">Не принято сервером: ${esc(m.rejected.join("; "))}</span>` : ""}
+  </div>`;
+}
+
 export function renderAssistant(ctx) {
-  return `<header class="page-head"><h1>Помощник</h1></header>
+  const s = ctx.settings;
+  const a = ctx.ui.assistant;
+  if (!s.assistant_consent_at) {
+    return `<header class="page-head"><h1>Помощник</h1></header>
+      ${renderNotices(ctx)}
+      <section class="card" aria-label="Включение помощника"><div class="summary">${blob()}<div style="display:flex;flex-direction:column;gap:10px">
+        <span class="summary-title">Помощник планирует день по вашим задачам</span>
+        <span class="summary-text">Собирает день, подсказывает, что дальше, разбирает входящие, находит окно нужной длительности, переносит и добавляет задачи — всё, что меняет данные, только после вашего подтверждения.</span>
+        <span class="summary-text"><b>Что передаётся.</b> Для ответа ваш вопрос, до 60 задач, относящихся к нему (названия, описания, даты), названия групп и расчёт загрузки дня уходят на сервер MARK и ИИ-провайдеру Groq. Весь аккаунт не отправляется; пароль и ключи — никогда. Без помощника всё остальное работает как прежде.</span>
+        <div class="chips"><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button></div>
+      </div></div></section>
+      ${renderSummaryCard(ctx)}`;
+  }
+  const offline = ctx.status?.state === "offline";
+  const stale = ctx.status?.unconfirmed || 0;
+  const chips = ["Собери мне день", "Что дальше?", "Разбери входящие", "Что у меня завтра?", "У меня 2 часа — что успею?"];
+  return `<header class="page-head"><h1>Помощник</h1>
+      <div class="row" style="gap:8px">${a.chat.length ? `<button type="button" class="btn small quiet" data-action="assistant-clear">Очистить историю</button>` : ""}${ctx.isDesktop ? "" : statusButton(ctx.status)}</div></header>
     ${renderNotices(ctx)}
-    <section class="card"><div class="summary">${blob()}<div style="display:flex;flex-direction:column;gap:8px">
-      <span class="summary-title">Помощник скоро появится</span>
-      <span class="summary-text">Он будет собирать день, разбирать входящие и отвечать на вопросы вроде «что успею за два часа?». Всё, что меняет задачи, — только после вашего подтверждения. Пока здесь сводка дня, собранная по вашим задачам без ИИ.</span>
-    </div></div></section>
-    ${renderSummaryCard(ctx)}`;
+    <div class="layout-split">
+      <div class="col">
+        <section class="card chat" aria-label="Диалог" aria-live="polite">
+          ${a.chat.length ? a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("") : `<div class="empty">Спросите о дне или поручите: «перенеси незавершённое на завтра», «добавь созвон в пятницу в 11».</div>`}
+          ${a.busy ? '<div class="bubble bot"><span class="muted">Думаю…</span></div>' : ""}
+        </section>
+        ${offline ? '<div class="alert warn"><div class="grow">Нет сети — помощнику нужна связь. Задачи по-прежнему можно менять вручную.</div></div>'
+          : stale ? `<div class="alert info"><div class="grow">${stale} ${plural(stale, "изменение ещё не отправлено", "изменения ещё не отправлены", "изменений ещё не отправлены")} — ответ может не учитывать их.</div></div>` : ""}
+        <div class="chips">${chips.map((c) => `<button type="button" class="chip-btn" data-action="assistant-ask" data-text="${esc(c)}" ${a.busy || offline ? "disabled" : ""}>${esc(c)}</button>`).join("")}</div>
+        <form class="quick-add" data-action="assistant-send">
+          <input name="message" data-key="assistant" data-draft="assistantInput" value="${esc(a.input)}" maxlength="2000" autocomplete="off" aria-label="Сообщение помощнику" placeholder="Спросите или поручите — черновик не пропадёт">
+          <button type="submit" class="btn small primary" ${a.busy || offline ? "disabled" : ""} aria-label="Отправить">${icons.send(16)}</button>
+        </form>
+      </div>
+      <aside class="col">
+        ${renderSummaryCard(ctx)}
+        <section class="card"><div class="card-head"><h2>Правила</h2></div>
+          <span class="summary-text">Несколько задач, удаление, перенос дедлайна — только после подтверждения. Если задачу изменили на другом устройстве, пока вы смотрели черновик, изменение не применится молча — покажем конфликт.</span>
+          <span class="muted" style="font-size:13px">История диалога хранится на этом устройстве 30 дней.</span></section>
+      </aside>
+    </div>`;
 }
 
 // ------------------------------------------------------------------ редактор --
@@ -909,6 +999,15 @@ export function renderProfile(ctx) {
         <div class="field"><span>Задача без названной даты</span><div class="seg" role="radiogroup" aria-label="Куда попадает задача без даты">
           ${[["inbox", "во «Входящие»"], ["today", "на сегодня"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${s.new_task_date === v}" data-action="set-new-task-date" data-value="${v}">${l}</button>`).join("")}</div></div>
         <span class="muted" style="font-size:13px">Рабочие часы и буфер используются в расчёте свободного времени календаря.</span>
+      </section>
+
+      <section class="card" aria-label="Помощник">
+        <div class="card-head"><h2>Помощник</h2>${msg("assistant")}</div>
+        ${s.assistant_consent_at ? `<div>
+          <label class="switch-row"><span class="grow"><span>Краткие ответы</span><span class="muted" style="font-size:12px">вывод, основание, действие</span></span><input type="checkbox" class="switch" data-action="set-setting" data-setting="assistant_brief" ${s.assistant_brief !== false ? "checked" : ""}></label>
+          <label class="switch-row"><span class="grow"><span>Всегда показывать черновик</span><span class="muted" style="font-size:12px">даже для одной понятной задачи</span></span><input type="checkbox" class="switch" data-action="set-setting" data-setting="assistant_confirm_all" ${s.assistant_confirm_all ? "checked" : ""}></label></div>
+          <button type="button" class="btn small quiet" style="align-self:flex-start" data-action="assistant-revoke">Выключить помощника</button>`
+        : `<span class="soft" style="font-size:14px">Выключен. Включается на экране «Помощник» — там же сказано, какие данные передаются.</span>`}
       </section>
 
       <section class="card" aria-label="Данные">
