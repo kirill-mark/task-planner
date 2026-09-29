@@ -396,6 +396,7 @@ async function handleMessage(message: any) {
       transcript = await transcribeVoice(message.voice.file_id);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
+      await healthEvent("voice", why);
       if (statusMsgId) await editMessage(chatId, statusMsgId, `Не удалось распознать голосовое (${esc(why)}). Задача не создана — повторите или напишите текстом.`);
       return;
     }
@@ -507,6 +508,7 @@ async function handleMessage(message: any) {
     parsed = await parseMessage(input, parseCtx(ctx), callModel);
   } catch (e: any) {
     console.error("parse failed:", e instanceof Error ? e.message : e);
+    await healthEvent(e?.status === 429 ? "provider_limit" : e?.status ? "provider" : "parse", String(e?.message || e));
     // лимит ИИ-провайдера — это не «непонятное сообщение»: так и сказать
     parsed = { kind: "unclear" as const, reason: e?.status === 429 ? "сервис распознавания сейчас перегружен — нажмите «Повторить» через минуту" : "сбой разбора" };
   }
@@ -776,6 +778,13 @@ async function handleCallback(cb: any) {
 }
 
 // ------------------------------------------------------------------ вход --
+
+// Технический след сбоев, которые пользователь видит как понятный статус
+// (раздел 14): только вид и причина, без текста сообщения.
+async function healthEvent(kind: string, detail: string) {
+  const { error } = await supabase.from("mark_health_events").insert({ source: "bot", kind, detail: detail.slice(0, 200) });
+  if (error) console.error("health event failed", error.message);
+}
 
 async function finishUpdate(updateId: number | null, status: "done" | "failed", error?: string) {
   if (updateId === null) return;

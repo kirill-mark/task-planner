@@ -185,6 +185,7 @@ Deno.serve(async (req) => {
         tasks = await loadTasksV2(supabase, userId);
       } catch (e) {
         console.error("reminders: read failed for", userId, e instanceof Error ? e.message : e);
+        await supabase.from("mark_health_events").insert({ source: "reminders", kind: "read", detail: String(e instanceof Error ? e.message : e).slice(0, 200) });
         continue;
       }
       const tomorrow = addDays(local.date, 1);
