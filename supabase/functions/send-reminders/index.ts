@@ -1,7 +1,13 @@
-// Runs on a schedule (pg_cron, every 5 minutes) and sends:
-//   - a morning digest with today's tasks,
-//   - an evening digest with tomorrow's tasks,
-//   - a per-task reminder 30 minutes before a task's own time.
+// Runs every minute (pg_cron) and sends, in each user's own timezone and
+// settings (раздел 10 ТЗ):
+//   - a morning digest: timed events, tasks without time, today's deadlines
+//     and a short overdue block;
+//   - an evening digest with tomorrow's plan;
+//   - a reminder 5/15/30/60 minutes before a task's planned time, or before a
+//     deadline that has a time; a date without a time gets none.
+// Quiet hours move a digest to their end and hold reminders; after them a
+// reminder goes out only if the task is still ahead. Decisions live in
+// _shared/notify.ts and are tested there.
 // Everything is evaluated in each user's own timezone. Every send is claimed in
 // sent_notifications first, so overlapping runs can't deliver it twice, and is
 // marked sent only once Telegram confirms it (D08): an explicit refusal
@@ -10,8 +16,8 @@
 // reminders until the task starts.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { loadPlanner } from "../_shared/planner.ts";
-import { reminderWindow, validDate, validTime } from "../_shared/time.ts";
+import { loadTasksV2 } from "../_shared/planner.ts";
+import { digestDue, eveningDigest, morningDigest, reminderDecision, reminderText, type NSettings } from "../_shared/notify.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -19,25 +25,6 @@ const TELEGRAM_BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
 const CRON_SECRET = Deno.env.get("CRON_SECRET") || "";
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-const MORNING_HOUR = 9;   // digest with today's plan
-const EVENING_HOUR = 21;  // preview of tomorrow
-const REMINDER_LEAD_MIN = 30;
-const DIGEST_CATCH_UP_MIN = 60; // a digest may still go out this late after its hour
-
-type Task = {
-  id: string;
-  title: string;
-  notes?: string;
-  date: string;
-  time?: string;
-  dateMode?: "due" | "on";
-  completed?: boolean;
-};
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
 
 // sent — Telegram confirmed; refused — it answered with an error, so nothing was
 // delivered and a retry is safe; unknown — no answer, it may or may not have
@@ -97,17 +84,6 @@ function addDays(iso: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-function formatTaskLine(t: Task): string {
-  const when = t.time ? ` — ${t.time}` : "";
-  return `• ${escapeHtml(t.title)}${when}`;
-}
-
-function digestText(heading: string, tasks: Task[], emptyLine: string): string {
-  if (!tasks.length) return `${heading}\n\n${emptyLine}`;
-  const sorted = [...tasks].sort((a, b) => (a.time || "").localeCompare(b.time || ""));
-  return `${heading}\n\n${sorted.map(formatTaskLine).join("\n")}`;
-}
-
 // Returns true when this run owns the notification (nobody claimed it yet).
 async function claim(userId: string, kind: string, ref: string, localDate: string): Promise<boolean> {
   const { error } = await supabase
@@ -129,6 +105,13 @@ async function deliver(
   if (!(await claim(userId, kind, ref, localDate))) return false;
   const { result, detail } = await sendMessage(chatId, text, keyboard);
   const key = { user_id: userId, kind, ref, local_date: localDate };
+  if (result === "refused" && /blocked|deactivated|chat not found/i.test(detail || "")) {
+    // бота заблокировали: повторять бессмысленно — доставка останавливается,
+    // кабинет показывает причину; снимается, когда человек снова пишет боту
+    await supabase.from("telegram_links").update({ blocked_at: new Date().toISOString() }).eq("telegram_chat_id", chatId);
+    await supabase.from("sent_notifications").update({ status: "failed", detail: detail || null }).match({ user_id: userId, kind, ref, local_date: localDate });
+    return false;
+  }
   if (result === "refused") {
     // nothing was delivered: release the claim so the next run can retry
     const { error } = await supabase.from("sent_notifications").delete().match(key);
@@ -165,20 +148,22 @@ Deno.serve(async (req) => {
   try {
     const { data: links, error } = await supabase
       .from("telegram_links")
-      .select("telegram_chat_id, user_id");
+      .select("telegram_chat_id, user_id, blocked_at");
     if (error) throw error;
 
     for (const link of links || []) {
       const userId = link.user_id as string;
       const chatId = link.telegram_chat_id as number;
+      // бот заблокирован пользователем — доставка остановлена до его возвращения
+      if (link.blocked_at) continue;
 
-      const { data: settings } = await supabase
+      const { data: st } = await supabase
         .from("user_settings")
-        .select("timezone, morning_digest, evening_digest, task_reminders")
+        .select("timezone, morning_digest, evening_digest, task_reminders, morning_time, evening_time, reminder_lead, quiet_enabled, quiet_start, quiet_end")
         .eq("user_id", userId)
         .maybeSingle();
 
-      let tz = settings?.timezone || "Europe/Moscow";
+      let tz = st?.timezone || "Europe/Moscow";
       let local;
       try {
         local = localParts(tz, now);
@@ -186,84 +171,50 @@ Deno.serve(async (req) => {
         tz = "Europe/Moscow"; // unknown tz stored: don't skip the user
         local = localParts(tz, now);
       }
+      const ns: NSettings = {
+        morning: String(st?.morning_time || "09:00").slice(0, 5),
+        evening: String(st?.evening_time || "21:00").slice(0, 5),
+        lead: [5, 15, 30, 60].includes(st?.reminder_lead) ? st!.reminder_lead : 30,
+        quiet: { enabled: !!st?.quiet_enabled, start: String(st?.quiet_start || "23:00").slice(0, 5), end: String(st?.quiet_end || "08:00").slice(0, 5) },
+      };
 
-      // Из той модели, в которой живёт аккаунт. Не прочитали — пропускаем
-      // этого пользователя в этот запуск, а не считаем, что задач нет.
-      let tasks: Task[];
+      // Не прочитали — пропускаем пользователя в этот запуск, а не считаем,
+      // что задач нет.
+      let tasks: any[];
       try {
-        tasks = (await loadPlanner(supabase, userId, tz)).tasks || [];
+        tasks = await loadTasksV2(supabase, userId);
       } catch (e) {
         console.error("reminders: read failed for", userId, e instanceof Error ? e.message : e);
         continue;
       }
-      const open = tasks.filter((t) => !t.completed);
+      const tomorrow = addDays(local.date, 1);
+      const deliverTo = (kind: string, ref: string, date: string, text: string, kb?: unknown) => deliver(userId, kind, ref, date, chatId, text, kb);
 
-      // --- morning digest ---
-      const morningTarget = MORNING_HOUR * 60;
-      if (
-        (settings?.morning_digest ?? true) &&
-        local.minutes >= morningTarget && local.minutes < morningTarget + DIGEST_CATCH_UP_MIN
-      ) {
-        const todays = open.filter((t) => t.date === local.date);
-        const text = digestText(
-          "☀️ <b>План на сегодня</b>",
-          todays,
-          "На сегодня задач нет — можно спокойно выдохнуть."
-        );
-        if (await deliver(userId, "morning", "digest", local.date, chatId, text, planKeyboard(local.date))) sent++;
+      if ((st?.morning_digest ?? true) && digestDue(local.minutes, ns.morning, ns.quiet)) {
+        if (await deliverTo("morning", "digest", local.date, morningDigest(tasks, local.date, tomorrow), planKeyboard(local.date))) sent++;
+      }
+      if ((st?.evening_digest ?? true) && digestDue(local.minutes, ns.evening, ns.quiet)) {
+        if (await deliverTo("evening", "digest", local.date, eveningDigest(tasks, local.date, tomorrow), planKeyboard(tomorrow))) sent++;
       }
 
-      // --- evening digest (tomorrow's plan) ---
-      const eveningTarget = EVENING_HOUR * 60;
-      if (
-        (settings?.evening_digest ?? true) &&
-        local.minutes >= eveningTarget && local.minutes < eveningTarget + DIGEST_CATCH_UP_MIN
-      ) {
-        const tomorrow = addDays(local.date, 1);
-        const next = open.filter((t) => t.date === tomorrow);
-        const text = digestText(
-          "🌙 <b>Что запланировано на завтра</b>",
-          next,
-          "На завтра пока ничего не запланировано."
-        );
-        if (await deliver(userId, "evening", "digest", local.date, chatId, text, planKeyboard(tomorrow))) sent++;
-      }
-
-      // --- per-task reminders, 30 minutes before the task's own moment ---
-      // The moment comes from the task's date, time and the account timezone,
-      // so a task at 00:10 is reminded at 23:40 the day before (A29).
-      if (settings?.task_reminders ?? true) {
+      if (st?.task_reminders ?? true) {
         const nowMs = now.getTime();
-        for (const task of open) {
-          if (!validDate(task.date) || !validTime(task.time)) continue;
-          let win;
-          try {
-            win = reminderWindow(task.date, task.time, tz, REMINDER_LEAD_MIN);
-          } catch {
-            continue;
-          }
-          if (nowMs < win.fireAt || nowMs >= win.eventAt) continue;
-          if (await sentUnderOldKey(userId, task.id, task.date)) continue;
-
-          const text =
-            `⏰ <b>Через ${Math.max(1, Math.round((win.eventAt - nowMs) / 60000))} мин</b>\n\n` +
-            `<b>Задача:</b> ${escapeHtml(task.title)}\n` +
-            `<b>Время:</b> ${task.time}` +
-            (task.notes ? `\n<b>Описание:</b> ${escapeHtml(task.notes)}` : "");
-          // the key includes the moment: a task moved to another time gets its own reminder
-          if (await deliver(userId, "task", `${task.id}@${task.date}T${task.time}`, task.date, chatId, text)) sent++;
+        for (const t of tasks) {
+          let d;
+          try { d = reminderDecision(t, nowMs, local.minutes, tz, ns); } catch { continue; }
+          if (d.action !== "send" || !d.anchor) continue;
+          if (await sentUnderOldKey(userId, t.id, d.anchor.date)) continue;
+          // ключ включает момент: перенесённая задача получает своё напоминание,
+          // прежнее для неё больше не срабатывает
+          const ref = `${t.id}@${d.anchor.date}T${d.anchor.time}`;
+          if (await deliverTo("task", ref, d.anchor.date, reminderText(t, d.anchor, Math.round((d.eventAt! - nowMs) / 60000)))) sent++;
         }
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, sent }), {
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ ok: true, sent }), { headers: { "Content-Type": "application/json" } });
   } catch (e) {
     console.error(e);
-    return new Response(JSON.stringify({ ok: false, error: String(e) }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(JSON.stringify({ ok: false, error: String(e) }), { status: 500, headers: { "Content-Type": "application/json" } });
   }
 });

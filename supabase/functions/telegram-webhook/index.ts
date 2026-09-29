@@ -1,6 +1,22 @@
+// Telegram-бот MARK (раздел 9 ТЗ).
+//
+// Порядок обработки одного обновления:
+//   1. секрет webhook — до разбора тела (R2);
+//   2. update_id захватывается в журнале: повтор от Telegram не обрабатывается
+//      второй раз (D07, A25);
+//   3. сообщение или кнопка: разбор намерения моделью, проверка ответа
+//      сервером (_shared/intent.ts), запись через слой операций
+//      (_shared/planner.ts). «Добавлено» — только после принятой записи (A24).
+//
+// Одна понятная задача сохраняется сразу — с кнопкой «Отменить добавление».
+// Несколько задач, удаление и перенос дедлайна — только после подтверждения.
+// Сбой разбора не превращается в задачу: текст ждёт черновиком (D06, A23).
+
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { loadPlanner, savePlanner } from "../_shared/planner.ts";
+import { loadPlanner, savePlanner, restoreTask } from "../_shared/planner.ts";
 import { validDate, validTime } from "../_shared/time.ts";
+import { buildEditPrompt, normalizeEdit, parseMessage, type Draft, type GroupInfo, type ParseContext, type TaskRef } from "../_shared/intent.ts";
+import { buttonLabel, esc, relDay, splitMessage, taskCard, transcriptBlock } from "../_shared/botfmt.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -10,38 +26,85 @@ const GROQ_API_KEY = Deno.env.get("GROQ_API_KEY") || "";
 // without JWT verification, so without this anyone knowing the URL could post
 // a forged update.
 const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET") || "";
+const MINI_APP_URL = "https://kirill-mark.github.io/task-planner/";
 
 const ASCII_ONLY = /^[\x20-\x7E]*$/;
 const badSecrets: string[] = [];
-for (const [name, val] of Object.entries({
-  SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, GROQ_API_KEY,
-})) {
+for (const [name, val] of Object.entries({ SUPABASE_URL, SERVICE_ROLE_KEY, TELEGRAM_BOT_TOKEN, GROQ_API_KEY })) {
   if (!val) {
     console.error(`missing secret: ${name}`);
     badSecrets.push(`${name} не задан`);
   } else if (!ASCII_ONLY.test(val)) {
     console.error(`secret ${name} contains invalid (non-ASCII) characters, length ${val.length}`);
-    badSecrets.push(`${name} содержит недопустимые символы (похоже, скопирован с "умными" кавычками/пробелами)`);
+    badSecrets.push(`${name} содержит недопустимые символы`);
   }
 }
 
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
-
-const TIMEOUT_MS = 20000;
-function withTimeout() {
-  return AbortSignal.timeout(TIMEOUT_MS);
-}
-
+const withTimeout = () => AbortSignal.timeout(20000);
 const api = (method: string) => `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/${method}`;
 
-type Keyboard = { inline_keyboard: { text: string; callback_data: string }[][] };
-type ReplyKeyboard = {
-  keyboard: { text: string }[][];
-  resize_keyboard: boolean;
-  is_persistent: boolean;
+type Button = { text: string; callback_data?: string; web_app?: { url: string } };
+type Keyboard = { inline_keyboard: Button[][] };
+type ReplyKeyboard = { keyboard: { text: string }[][]; resize_keyboard: boolean; is_persistent: boolean };
+
+type Task = {
+  id: string;
+  title: string;
+  notes: string;
+  date: string;
+  time: string;
+  dateMode: "due" | "on";
+  groupId: string | null;
+  completed: boolean;
+  createdAt: number;
 };
 
-// The always-visible menu under the input field.
+// ------------------------------------------------------------ Telegram API --
+
+async function tg(method: string, body: unknown): Promise<any> {
+  const res = await fetch(api(method), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal: withTimeout(),
+  });
+  // Telegram отвечает 200 и с ok:false — проверяются оба признака
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.ok) console.error(`${method} failed`, res.status, json?.description);
+  return json;
+}
+
+async function sendMessage(chatId: number, text: string, opts: { html?: boolean; keyboard?: Keyboard | ReplyKeyboard } = {}) {
+  const parts = splitMessage(text);
+  let last: any = null;
+  for (let i = 0; i < parts.length; i++) {
+    last = await tg("sendMessage", {
+      chat_id: chatId,
+      text: parts[i],
+      parse_mode: opts.html ? "HTML" : undefined,
+      reply_markup: i === parts.length - 1 ? opts.keyboard : undefined,
+      link_preview_options: { is_disabled: true },
+    });
+  }
+  return last?.result?.message_id as number | undefined;
+}
+
+async function editMessage(chatId: number, messageId: number, text: string, keyboard?: Keyboard) {
+  return tg("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: splitMessage(text)[0],
+    parse_mode: "HTML",
+    reply_markup: keyboard || { inline_keyboard: [] },
+    link_preview_options: { is_disabled: true },
+  });
+}
+
+const answerCallback = (id: string, text?: string) => tg("answerCallbackQuery", { callback_query_id: id, text });
+
+// ------------------------------------------------------------- клавиатуры --
+
 const BTN_ADD = "➕ Добавить задачу";
 const BTN_UPCOMING = "📋 Ближайшие задачи";
 const BTN_SECTION = "🗂 Добавить раздел";
@@ -60,135 +123,26 @@ function mainKeyboard(): ReplyKeyboard {
   };
 }
 
-async function sendMessage(
-  chatId: number,
-  text: string,
-  opts: { html?: boolean; keyboard?: Keyboard | ReplyKeyboard } = {}
-) {
-  const res = await fetch(api("sendMessage"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: opts.html ? "HTML" : undefined,
-      reply_markup: opts.keyboard,
-    }),
-    signal: withTimeout(),
-  });
-  // Telegram answers 200 with ok:false too; either way the user saw nothing.
-  const body = await res.json().catch(() => null);
-  if (!res.ok || !body?.ok) console.error("sendMessage failed", res.status, body?.description);
+const openButton = (taskId?: string): Button => ({
+  text: "📱 Открыть",
+  web_app: { url: MINI_APP_URL + (taskId ? `#/tasks?open=${encodeURIComponent(taskId)}` : "") },
+});
+
+// Карточка задачи: «Выполнено · Изменить · Открыть»; сразу после добавления —
+// ещё «В корзину · Отменить добавление» (раздел 9).
+function taskKeyboard(task: Task, justAdded = false): Keyboard {
+  const rows: Button[][] = [[
+    task.completed
+      ? { text: "↩️ Вернуть в работу", callback_data: `undone:${task.id}` }
+      : { text: "✅ Выполнено", callback_data: `done:${task.id}` },
+    { text: "✏️ Изменить", callback_data: `edit:${task.id}` },
+    openButton(task.id),
+  ]];
+  rows.push(justAdded
+    ? [{ text: "🗑 В корзину", callback_data: `del:${task.id}` }, { text: "↩️ Отменить добавление", callback_data: `undo:${task.id}` }]
+    : [{ text: "🗑 В корзину", callback_data: `del:${task.id}` }]);
+  return { inline_keyboard: rows };
 }
-
-async function editMessage(chatId: number, messageId: number, text: string) {
-  await fetch(api("editMessageText"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      message_id: messageId,
-      text,
-      parse_mode: "HTML",
-      reply_markup: { inline_keyboard: [] },
-    }),
-    signal: withTimeout(),
-  });
-}
-
-async function answerCallback(callbackId: string, text?: string) {
-  await fetch(api("answerCallbackQuery"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ callback_query_id: callbackId, text }),
-    signal: withTimeout(),
-  });
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-async function transcribeVoice(fileId: string): Promise<string> {
-  const fileRes = await fetch(api(`getFile?file_id=${fileId}`), { signal: withTimeout() });
-  const fileJson = await fileRes.json();
-  const filePath = fileJson.result?.file_path;
-  if (!filePath) throw new Error("Не удалось получить голосовой файл от Telegram");
-  const fileUrl = `https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`;
-  const audioRes = await fetch(fileUrl, { signal: withTimeout() });
-  const audioBlob = await audioRes.blob();
-
-  const form = new FormData();
-  form.append("file", audioBlob, "voice.ogg");
-  form.append("model", "whisper-large-v3");
-  form.append("language", "ru");
-
-  const groqRes = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
-    body: form,
-    signal: AbortSignal.timeout(30000),
-  });
-  const groqJson = await groqRes.json();
-  if (!groqRes.ok) throw new Error(`Groq: ${groqJson.error?.message || groqRes.status}`);
-  return groqJson.text || "";
-}
-
-// --- planner state helpers ---
-
-type Task = {
-  id: string;
-  title: string;
-  notes: string;
-  date: string;
-  time: string;
-  dateMode: "due" | "on";
-  groupId: string;
-  completed: boolean;
-  createdAt: number;
-};
-
-// Which model the account lives in is decided on the server (see
-// _shared/planner.ts). A failed read throws instead of returning an empty
-// planner: saving that empty planner with one new task on top used to be able
-// to wipe everything else.
-async function loadState(userId: string) {
-  return loadPlanner(supabase, userId, await timezoneOf(userId));
-}
-
-// Throws on failure on purpose: the caller must not report "Добавил ✅" for a
-// write the database refused.
-async function saveState(userId: string, state: any) {
-  try {
-    await savePlanner(supabase, userId, state, "bot");
-  } catch (e) {
-    console.error("saveState failed:", e instanceof Error ? e.message : e);
-    throw e;
-  }
-}
-
-// A brand-new account can reach the bot before it has any groups.
-function ensureGroups(state: any) {
-  if (!state.groups || state.groups.length === 0) {
-    const sectionId = crypto.randomUUID();
-    state.sections = [...(state.sections || []), { id: sectionId, name: "Общее", color: "#7d8ca3" }];
-    state.groups = [{ id: crypto.randomUUID(), name: "Входящие", color: "#16a34a", sectionId }];
-  }
-  return state.groups;
-}
-
-function taskCard(task: Task, heading: string): string {
-  return [
-    heading,
-    "",
-    `<b>Задача:</b> ${escapeHtml(task.title)}`,
-    `<b>Описание:</b> ${escapeHtml(task.notes || "")}`,
-    `<b>${task.dateMode === "on" ? "Дата" : "Дедлайн"}:</b> ${task.date}`,
-    `<b>Время:</b> ${task.time || ""}`,
-  ].join("\n");
-}
-
-// --- daily plan (the digest the reminders function sends) ---
 
 function planKeyboard(date: string): Keyboard {
   return {
@@ -199,753 +153,658 @@ function planKeyboard(date: string): Keyboard {
   };
 }
 
-// Dates must be the user's local ones: on UTC, "сегодня" flips to yesterday's
-// plan for anyone east of Greenwich during their late evening.
+// ---------------------------------------------------------------- контекст --
+
 function localDate(tz: string, offsetDays = 0): string {
   const base = new Date(Date.now() + offsetDays * 86400000);
   const parts: Record<string, string> = {};
-  for (const p of new Intl.DateTimeFormat("en-CA", {
-    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit",
-  }).formatToParts(base)) {
+  for (const p of new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(base)) {
     if (p.type !== "literal") parts[p.type] = p.value;
   }
   return `${parts.year}-${parts.month}-${parts.day}`;
 }
 
-async function timezoneOf(userId: string): Promise<string> {
-  const { data } = await supabase
-    .from("user_settings")
-    .select("timezone")
-    .eq("user_id", userId)
-    .maybeSingle();
-  const tz = data?.timezone || "Europe/Moscow";
-  try {
-    localDate(tz);
-    return tz;
-  } catch {
-    return "Europe/Moscow";
-  }
-}
+const WEEKDAYS = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
 
-function humanDate(date: string, tz: string): string {
-  if (date === localDate(tz)) return "сегодня";
-  if (date === localDate(tz, 1)) return "завтра";
-  return date;
-}
-
-function planText(state: any, date: string, heading: string): string {
-  const tasks: Task[] = (state.tasks || [])
-    .filter((t: Task) => !t.completed && t.date === date)
-    .sort((a: Task, b: Task) => (a.time || "").localeCompare(b.time || ""));
-  if (!tasks.length) return `${heading}\n\nЗадач нет.`;
-  return (
-    `${heading}\n\n` +
-    tasks.map((t) => `• ${escapeHtml(t.title)}${t.time ? ` — ${t.time}` : ""}`).join("\n")
-  );
-}
-
-function taskKeyboard(taskId: string): Keyboard {
-  return {
-    inline_keyboard: [
-      [
-        { text: "✅ Выполнено", callback_data: `done:${taskId}` },
-        { text: "🗑 Удалить", callback_data: `del:${taskId}` },
-      ],
-      [{ text: "✏️ Редактировать", callback_data: `edit:${taskId}` }],
-    ],
-  };
-}
-
-// --- intent parsing ---
-
-type GroupInfo = { id: string; name: string; sectionName: string };
-
-const WEEKDAYS = [
-  "воскресенье", "понедельник", "вторник", "среда",
-  "четверг", "пятница", "суббота",
-];
-
-// A small model gets weekday arithmetic wrong ("в пятницу" landed on a
-// Wednesday), so hand it a ready-made calendar to look the date up in.
-function calendarHint(tz: string, days = 14): string {
-  const [y, m, day] = localDate(tz).split("-").map(Number);
+// Небольшая модель путает дни недели — ей даётся готовый календарь.
+function calendarHint(tz: string, days = 21): string {
+  const [y, m, d] = localDate(tz).split("-").map(Number);
   const lines: string[] = [];
   for (let i = 0; i < days; i++) {
-    const d = new Date(Date.UTC(y, m - 1, day + i));
+    const dt = new Date(Date.UTC(y, m - 1, d + i));
     const label = i === 0 ? " (сегодня)" : i === 1 ? " (завтра)" : i === 2 ? " (послезавтра)" : "";
-    lines.push(`${d.toISOString().slice(0, 10)} — ${WEEKDAYS[d.getUTCDay()]}${label}`);
+    lines.push(`${dt.toISOString().slice(0, 10)} — ${WEEKDAYS[dt.getUTCDay()]}${label}`);
   }
   return lines.join("\n");
 }
 
-type Intent = {
-  intent?: "add" | "delete" | "done";
-  title?: string;
-  notes?: string;
-  date?: string;
-  time?: string;
-  dateMode?: string;
-  groupId?: string;
-  taskIndex?: number;
+type Ctx = {
+  userId: string;
+  state: any;
+  tz: string;
+  today: string;
+  tomorrow: string;
+  groups: GroupInfo[];
+  newTaskDate: "inbox" | "today";
 };
 
-async function parseIntentWithGroq(
-  text: string,
-  groups: GroupInfo[],
-  openTasks: Task[],
-  tz: string
-): Promise<Intent> {
-  const today = localDate(tz);
-  const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
-  // Numbered instead of by id: a small model echoes an index far more reliably than a UUID.
-  const taskList = openTasks.length
-    ? openTasks.map((t, i) => `${i + 1}. ${t.title} (${t.date}${t.time ? " " + t.time : ""})`).join("\n")
-    : "(нет открытых задач)";
+async function loadCtx(userId: string): Promise<Ctx> {
+  const { data: s } = await supabase.from("user_settings").select("timezone, new_task_date").eq("user_id", userId).maybeSingle();
+  let tz = s?.timezone || "Europe/Moscow";
+  try { localDate(tz); } catch { tz = "Europe/Moscow"; }
+  const state = await loadPlanner(supabase, userId, tz);
+  const groups: GroupInfo[] = (state.groups || []).map((g: any) => ({
+    id: g.id, name: g.name,
+    sectionName: (state.sections || []).find((x: any) => x.id === g.sectionId)?.name || "",
+  }));
+  return {
+    userId, state, tz, today: localDate(tz), tomorrow: localDate(tz, 1), groups,
+    newTaskDate: s?.new_task_date === "today" ? "today" : "inbox",
+  };
+}
 
-  const system =
-    `Ты помощник планировщика задач. Сегодня ${today}.\n\n` +
-    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint(tz)}\n\n` +
-    `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
-    `Открытые задачи пользователя:\n${taskList}\n\n` +
-    `Пользователь прислал сообщение (возможно, расшифровку голосового с огрехами распознавания). ` +
-    `Определи намерение:\n` +
-    `- "add" — описывает новую задачу;\n` +
-    `- "delete" — просит удалить/убрать существующую задачу из списка выше;\n` +
-    `- "done" — говорит, что существующая задача уже выполнена.\n\n` +
-    `Для "add" верни: {"intent":"add","title":"короткое название без даты и времени","notes":"детали или пустая строка",` +
-    `"date":"YYYY-MM-DD","time":"HH:MM или пустая строка","dateMode":"due или on","groupId":"id подходящей группы"}.\n` +
-    `Правила для add: понимай "завтра", "в пятницу", "через неделю" относительно сегодня; если дата не упомянута — сегодняшняя. ` +
-    `time заполняй, только если время явно названо. dateMode = "due", если это срок ("до пятницы", "к среде"), ` +
-    `и "on", если событие привязано к конкретному дню ("в пятницу в 11:00", "во вторник встреча"). ` +
-    `groupId выбирай по смыслу из списка; если неясно — первый.\n\n` +
-    `Для "delete" и "done" верни: {"intent":"delete","taskIndex":N} или {"intent":"done","taskIndex":N}, ` +
-    `где N — номер задачи из списка выше.\n\n` +
-    `Ответь СТРОГО одним JSON-объектом, без пояснений и без markdown.`;
+async function save(ctx: Ctx) {
+  await savePlanner(supabase, ctx.userId, ctx.state, "bot");
+}
 
+function pathOf(ctx: Ctx, groupId: string | null): string {
+  const g = ctx.groups.find((x) => x.id === groupId);
+  if (!g) return "Входящие";
+  return g.sectionName ? `${g.sectionName} → ${g.name}` : g.name;
+}
+
+const findTask = (ctx: Ctx, id: string): Task | undefined => (ctx.state.tasks || []).find((t: Task) => t.id === id);
+
+function card(ctx: Ctx, heading: string, t: Task, extra: string[] = []) {
+  return taskCard(heading, t, pathOf(ctx, t.groupId), ctx.today, extra);
+}
+
+function parseCtx(ctx: Ctx): ParseContext {
+  return {
+    today: ctx.today,
+    calendar: calendarHint(ctx.tz),
+    groups: ctx.groups,
+    openTasks: (ctx.state.tasks || []).filter((t: Task) => !t.completed)
+      .map((t: Task) => ({ id: t.id, title: t.title, notes: t.notes, date: t.date, time: t.time, dateMode: t.dateMode })),
+    newTaskDate: ctx.newTaskDate,
+  };
+}
+
+async function callModel(system: string, user: string): Promise<string> {
   const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-    },
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
     body: JSON.stringify({
       model: "openai/gpt-oss-20b",
-      max_tokens: 600,
+      max_tokens: 900,
       reasoning_effort: "low",
       response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: text },
-      ],
+      messages: [{ role: "system", content: system }, { role: "user", content: user }],
     }),
     signal: withTimeout(),
   });
-  const json = await res.json();
-  if (!res.ok) {
-    console.error("Groq parse failed:", JSON.stringify(json));
-    throw new Error(`Groq (parse): ${json.error?.message || res.status}`);
-  }
-  const raw = json.choices?.[0]?.message?.content || "{}";
-  const match = raw.match(/\{[\s\S]*\}/);
-  return JSON.parse(match ? match[0] : raw);
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`Groq: ${json?.error?.message || res.status}`);
+  return json?.choices?.[0]?.message?.content || "";
 }
 
-async function applyEditWithGroq(
-  instruction: string,
-  task: Task,
-  groups: GroupInfo[],
-  tz: string
-): Promise<Partial<Task>> {
-  const today = localDate(tz);
-  const groupList = groups.map((g) => `${g.id}: ${g.sectionName} / ${g.name}`).join("\n");
-
-  const system =
-    `Ты редактируешь одну задачу в планировщике. Сегодня ${today}.\n\n` +
-    `Календарь ближайших дней — бери даты отсюда, не вычисляй дни недели сам:\n${calendarHint(tz)}\n\n` +
-    `Группы пользователя (id: раздел / группа):\n${groupList}\n\n` +
-    `Текущая задача:\n` +
-    `title: ${task.title}\n` +
-    `notes: ${task.notes || ""}\n` +
-    `date: ${task.date}\n` +
-    `time: ${task.time || ""}\n` +
-    `dateMode: ${task.dateMode || "due"}\n` +
-    `groupId: ${task.groupId}\n\n` +
-    `Пользователь прислал, что нужно изменить (возможно, расшифровку голосового с огрехами распознавания). ` +
-    `Верни ПОЛНУЮ задачу после правки: поля, которых правка не касается, оставь ровно такими же. ` +
-    `Даты понимай относительно сегодня. dateMode: "due" — это срок ("до пятницы"), "on" — конкретный день ("в пятницу в 11:00"). ` +
-    `Если просят убрать время — верни пустую строку в time.\n\n` +
-    `Ответь СТРОГО одним JSON-объектом без пояснений и markdown: ` +
-    `{"title":"...","notes":"...","date":"YYYY-MM-DD","time":"HH:MM или пустая строка","dateMode":"due или on","groupId":"..."}`;
-
-  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${GROQ_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "openai/gpt-oss-20b",
-      max_tokens: 600,
-      reasoning_effort: "low",
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: instruction },
-      ],
-    }),
-    signal: withTimeout(),
+async function transcribeVoice(fileId: string): Promise<string> {
+  const fileJson = await (await fetch(api(`getFile?file_id=${fileId}`), { signal: withTimeout() })).json();
+  const filePath = fileJson.result?.file_path;
+  if (!filePath) throw new Error("Не удалось получить голосовой файл от Telegram");
+  if ((fileJson.result?.file_size || 0) > 20 * 1024 * 1024) throw new Error("Голосовое слишком длинное");
+  const audio = await (await fetch(`https://api.telegram.org/file/bot${TELEGRAM_BOT_TOKEN}/${filePath}`, { signal: withTimeout() })).blob();
+  const form = new FormData();
+  form.append("file", audio, "voice.ogg");
+  form.append("model", "whisper-large-v3");
+  form.append("language", "ru");
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST", headers: { Authorization: `Bearer ${GROQ_API_KEY}` }, body: form, signal: AbortSignal.timeout(30000),
   });
-  const json = await res.json();
-  if (!res.ok) {
-    console.error("Groq edit failed:", JSON.stringify(json));
-    throw new Error(`Groq (edit): ${json.error?.message || res.status}`);
-  }
-  const raw = json.choices?.[0]?.message?.content || "{}";
-  const match = raw.match(/\{[\s\S]*\}/);
-  return JSON.parse(match ? match[0] : raw);
+  const json = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(`распознавание речи: ${json?.error?.message || res.status}`);
+  return String(json?.text || "").trim();
 }
 
-// --- update handlers ---
+// ---------------------------------------------------------- отложенные шаги --
+
+async function setPending(chatId: number, action: string, taskId: string | null = null, payload: unknown = null) {
+  await supabase.from("telegram_pending_actions").upsert({
+    telegram_chat_id: chatId, action, task_id: taskId,
+    payload: payload === null ? null : typeof payload === "string" ? payload : JSON.stringify(payload),
+    created_at: new Date().toISOString(),
+  });
+}
+
+async function getPending(chatId: number) {
+  const { data } = await supabase.from("telegram_pending_actions").select("action, task_id, payload, created_at").eq("telegram_chat_id", chatId).maybeSingle();
+  // общий срок ожидания — 30 минут: истёкшее не применяется к случайному сообщению
+  if (data && Date.now() - new Date(data.created_at).getTime() > 30 * 60 * 1000) {
+    await clearPending(chatId);
+    return { ...data, expired: true };
+  }
+  return data;
+}
+
+const clearPending = (chatId: number) => supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
+
+// ------------------------------------------------------------------ задачи --
+
+function taskFromDraft(d: Draft): Task {
+  return {
+    id: crypto.randomUUID(), title: d.title, notes: d.notes, date: d.date, time: d.date ? d.time : "",
+    dateMode: d.dateMode, groupId: d.groupId, completed: false, createdAt: Date.now(),
+  };
+}
+
+function draftsText(ctx: Ctx, drafts: Draft[], heading: string) {
+  const lines = drafts.map((d, i) => `${i + 1}. <b>${esc(d.title)}</b>\n    ${esc(d.date ? relDay(d.date, ctx.today, ctx.tomorrow) + (d.time ? " · " + d.time : "") + (d.dateMode === "due" ? " (дедлайн)" : "") : "без даты")} · ${esc(pathOf(ctx, d.groupId))}`);
+  return `<b>${esc(heading)}</b>\n\n${lines.join("\n")}`;
+}
+
+function draftsKeyboard(drafts: Draft[]): Keyboard {
+  const rows: Button[][] = [[{ text: `✅ Добавить ${drafts.length > 1 ? "все (" + drafts.length + ")" : ""}`.trim(), callback_data: "dr:add" }, { text: "✖️ Отмена", callback_data: "dr:cancel" }]];
+  drafts.forEach((d, i) => rows.push([
+    { text: `✏️ ${i + 1}. ${buttonLabel(d.title, 28)}`, callback_data: `dr:ed:${i}` },
+    { text: `🗑 ${i + 1}`, callback_data: `dr:rm:${i}` },
+  ]));
+  return { inline_keyboard: rows };
+}
+
+function whenShort(ctx: Ctx, t: Task) {
+  return t.date ? relDay(t.date, ctx.today, ctx.tomorrow) + (t.time ? " · " + t.time : "") : "без даты";
+}
+
+function choiceKeyboard(ctx: Ctx, action: string, targets: TaskRef[]): Keyboard {
+  const rows = targets.slice(0, 8).map((t) => {
+    const task = findTask(ctx, t.id)!;
+    return [{ text: buttonLabel(`${task.title} — ${whenShort(ctx, task)}`, 60), callback_data: `pick:${action}:${t.id}` }];
+  });
+  rows.push([{ text: "✖️ Отмена", callback_data: "pick:cancel:-" }]);
+  return { inline_keyboard: rows };
+}
+
+function planText(ctx: Ctx, date: string, heading: string): string {
+  const tasks: Task[] = (ctx.state.tasks || []).filter((t: Task) => !t.completed && t.date === date)
+    .sort((a: Task, b: Task) => (a.time || "99").localeCompare(b.time || "99"));
+  if (!tasks.length) return `${heading}\n\nЗадач нет.`;
+  return `${heading}\n\n` + tasks.map((t) => `• ${t.time ? `<b>${t.time}</b> ` : ""}${esc(t.title)}${t.dateMode === "due" ? " <i>(дедлайн)</i>" : ""}`).join("\n");
+}
+
+async function addDrafts(chatId: number, ctx: Ctx, drafts: Draft[], extra: string[] = [], editId?: number) {
+  const tasks = drafts.map(taskFromDraft);
+  ctx.state.tasks = [...(ctx.state.tasks || []), ...tasks];
+  await save(ctx); // бросает при отказе базы: «Добавлено» без записи не бывает (A24)
+  for (const t of tasks) {
+    const text = card(ctx, tasks.length > 1 ? "Добавлено" : "Добавлено", t, extra);
+    if (editId && tasks.length === 1) await editMessage(chatId, editId, text, taskKeyboard(t, true));
+    else await sendMessage(chatId, text, { html: true, keyboard: taskKeyboard(t, true) });
+  }
+}
+
+// ---------------------------------------------------------------- сообщения --
+
+const HELP = [
+  "<b>Как пользоваться</b>",
+  "Пишите или говорите задачами — бот разберёт дату, время и группу:",
+  "• «созвон с клиентом завтра в 11»",
+  "• «отчёт до пятницы»",
+  "• «купить хлеб, позвонить маме и написать Олегу» — три задачи, покажу черновики",
+  "• «перенеси встречу с Олегом на пятницу», «встреча с Олегом готова», «удали отчёт»",
+  "Без даты задача попадает во «Входящие».",
+  "",
+  "/cancel — отменить текущий диалог",
+  "/menu — показать кнопки",
+].join("\n");
+
+async function handleMessage(message: any) {
+  const chatId: number = message.chat.id;
+  const username: string | null = message.from?.username || null;
+  if (message.chat?.type && message.chat.type !== "private") return; // групповые чаты не обслуживаются
+
+  if (badSecrets.length > 0) {
+    await sendMessage(chatId, `Бот неправильно настроен на сервере:\n${badSecrets.join("\n")}`);
+    return;
+  }
+
+  const text0: string = typeof message.text === "string" ? message.text.trim() : "";
+
+  // --- привязка: /start <код> ---
+  if (text0.startsWith("/start")) {
+    const code = text0.split(" ")[1];
+    if (!code) {
+      await sendMessage(chatId, "Привет! Я добавляю задачи в MARK текстом и голосом.\n\nЧтобы начать: откройте приложение → кабинет → «Подключить Telegram» и перейдите по ссылке оттуда.", { keyboard: mainKeyboard() });
+      return;
+    }
+    // Проверка, погашение и привязка — одна транзакция в базе (R4, R6).
+    const { data: redeemed, error } = await supabase.rpc("mark_redeem_link_code", { p_code: code, p_chat_id: chatId, p_username: username });
+    if (error) throw new Error(`не удалось привязать: ${error.message}`);
+    const status = redeemed?.status;
+    if (status === "invalid" || status === "expired") {
+      await sendMessage(chatId, status === "expired" ? "Срок действия кода истёк — он живёт 10 минут. Создайте новый в приложении." : "Код недействителен или уже использован. Создайте новый в приложении.");
+      return;
+    }
+    if (status === "chat_taken") {
+      await sendMessage(chatId, "Этот Telegram уже привязан к другому аккаунту MARK. Чтобы привязать его сюда, сначала отвяжите его в том аккаунте: кабинет → Telegram → «Отвязать».");
+      return;
+    }
+    await sendMessage(chatId, (status === "already" ? "Этот чат уже привязан к аккаунту ✅" : "Готово! Аккаунт привязан ✅") +
+      (redeemed?.replaced ? " Прежний чат от аккаунта отвязан." : "") + "\n\nПрисылайте задачи текстом или голосом. /help — примеры.", { keyboard: mainKeyboard() });
+    return;
+  }
+
+  if (text0 === "/menu") { await sendMessage(chatId, "Кнопки внизу 👇", { keyboard: mainKeyboard() }); return; }
+  if (text0 === "/help") { await sendMessage(chatId, HELP, { html: true, keyboard: mainKeyboard() }); return; }
+  if (text0 === "/cancel") {
+    await clearPending(chatId);
+    await sendMessage(chatId, "Отменено. Можно начинать заново.", { keyboard: mainKeyboard() });
+    return;
+  }
+
+  // --- аккаунт ---
+  const { data: link } = await supabase.from("telegram_links").select("user_id, blocked_at").eq("telegram_chat_id", chatId).maybeSingle();
+  if (!link) {
+    await sendMessage(chatId, "Сначала привяжите аккаунт: в приложении MARK откройте кабинет → «Подключить Telegram» и перейдите по ссылке.");
+    return;
+  }
+  const userId = link.user_id as string;
+  // человек снова пишет боту — значит, разблокировал: доставка возобновляется
+  if (link.blocked_at) await supabase.from("telegram_links").update({ blocked_at: null }).eq("telegram_chat_id", chatId);
+
+  // --- текст или голос ---
+  let input = typeof message.text === "string" ? message.text : message.caption || "";
+  let transcript: string | null = null;
+  let statusMsgId: number | undefined;
+  if (message.voice) {
+    statusMsgId = await sendMessage(chatId, "Распознаю…");
+    try {
+      transcript = await transcribeVoice(message.voice.file_id);
+    } catch (e) {
+      const why = e instanceof Error ? e.message : String(e);
+      if (statusMsgId) await editMessage(chatId, statusMsgId, `Не удалось распознать голосовое (${esc(why)}). Задача не создана — повторите или напишите текстом.`);
+      return;
+    }
+    // тишина и неразборчивая запись задачу не создают
+    if (transcript.replace(/[^\p{L}\p{N}]/gu, "").length < 2) {
+      if (statusMsgId) await editMessage(chatId, statusMsgId, "Не расслышал слов в записи — задача не создана. Повторите или напишите текстом.");
+      return;
+    }
+    input = transcript;
+  }
+  input = input.trim();
+  if (!input) {
+    await sendMessage(chatId, "Пришлите задачу текстом или голосовым.");
+    return;
+  }
+  const reply = async (text: string, keyboard?: Keyboard | ReplyKeyboard) => {
+    if (statusMsgId && (!keyboard || "inline_keyboard" in keyboard)) {
+      await editMessage(chatId, statusMsgId, text, keyboard as Keyboard | undefined);
+      statusMsgId = undefined;
+    } else await sendMessage(chatId, text, { html: true, keyboard });
+  };
+  const extra = transcript ? [transcriptBlock(transcript)] : [];
+
+  const ctx = await loadCtx(userId);
+
+  // --- кнопки меню: всегда команда, а не ответ на прежний вопрос ---
+  if ([BTN_ADD, BTN_UPCOMING, BTN_SECTION, BTN_TOMORROW, BTN_TODAY].includes(input)) {
+    await clearPending(chatId);
+    if (input === BTN_ADD) {
+      await sendMessage(chatId, "➕ Пришлите задачу текстом или голосовым — например «созвон с клиентом завтра в 11:00».", { keyboard: mainKeyboard() });
+    } else if (input === BTN_UPCOMING) {
+      const upcoming: Task[] = (ctx.state.tasks || []).filter((t: Task) => !t.completed && t.date)
+        .sort((a: Task, b: Task) => a.date.localeCompare(b.date) || (a.time || "99").localeCompare(b.time || "99")).slice(0, 20);
+      const inbox = (ctx.state.tasks || []).filter((t: Task) => !t.completed && !t.date).length;
+      const lines = upcoming.map((t) => `${t.date < ctx.today ? "❗️ " : "• "}${esc(t.title)} — ${esc(whenShort(ctx, t))}${t.dateMode === "due" ? " <i>(дедлайн)</i>" : ""}`);
+      await sendMessage(chatId, (lines.length ? `📋 <b>Ближайшие задачи</b>\n\n${lines.join("\n")}` : "Задач с датой нет.") +
+        (inbox ? `\n\nВо «Входящих» без даты: ${inbox}.` : ""), { html: true, keyboard: mainKeyboard() });
+    } else if (input === BTN_SECTION) {
+      await setPending(chatId, "add_section");
+      await sendMessage(chatId, "🗂 Как назвать новый раздел? /cancel — отменить.", { keyboard: mainKeyboard() });
+    } else if (input === BTN_TOMORROW) {
+      await sendMessage(chatId, planText(ctx, ctx.tomorrow, "🌙 <b>Задачи на завтра</b>"), { html: true, keyboard: planKeyboard(ctx.tomorrow) });
+    } else {
+      await sendMessage(chatId, planText(ctx, ctx.today, "☀️ <b>План на сегодня</b>"), { html: true, keyboard: planKeyboard(ctx.today) });
+    }
+    return;
+  }
+
+  const pending = await getPending(chatId);
+  if (pending && (pending as any).expired) {
+    await sendMessage(chatId, "Предыдущее ожидание истекло (прошло больше 30 минут) — разбираю это сообщение как новое.");
+  }
+  const active = pending && !(pending as any).expired ? pending : null;
+
+  // --- новый раздел, затем предложение добавить в него группу ---
+  if (active?.action === "add_section") {
+    const name = input.slice(0, 80);
+    const palette = ["#7FA7D9", "#6ED6A0", "#F2B861", "#E0698E", "#9B6BDB", "#4FB3BF", "#E05C5C", "#7D8CA3"];
+    const id = crypto.randomUUID();
+    ctx.state.sections = [...(ctx.state.sections || []), { id, name, color: palette[(ctx.state.sections || []).length % palette.length] }];
+    await save(ctx);
+    await setPending(chatId, "add_group", null, id);
+    await sendMessage(chatId, `🗂 Раздел «${esc(name)}» создан.\n\nКак назвать первую группу в нём? /cancel — не сейчас.`, { html: true });
+    return;
+  }
+  if (active?.action === "add_group" && active.payload) {
+    const name = input.slice(0, 80);
+    ctx.state.groups = [...(ctx.state.groups || []), { id: crypto.randomUUID(), name, color: "#7FA7D9", sectionId: active.payload }];
+    await save(ctx);
+    await clearPending(chatId);
+    const sec = (ctx.state.sections || []).find((s: any) => s.id === active.payload);
+    await sendMessage(chatId, `Группа «${esc(name)}» добавлена в раздел «${esc(sec?.name || "")}». Теперь задачи могут попадать в неё.`, { html: true, keyboard: mainKeyboard() });
+    return;
+  }
+
+  // --- правка задачи ---
+  if (active?.action === "edit" && active.task_id) {
+    await clearPending(chatId);
+    const task = findTask(ctx, active.task_id);
+    if (!task) { await reply("Эта задача уже удалена — изменять нечего."); return; }
+    await applyEdit(chatId, ctx, task, input, reply, extra);
+    return;
+  }
+
+  // --- правка одного из черновиков ---
+  if (active?.action === "draft_edit" && active.payload) {
+    const st = JSON.parse(active.payload);
+    const d: Draft = st.drafts[st.index];
+    const pc = parseCtx(ctx);
+    const patch = normalizeEdit(JSON.parse((await callModel(buildEditPrompt(pc, { id: "draft", title: d.title, notes: d.notes, date: d.date, time: d.time, dateMode: d.dateMode, groupId: d.groupId }), input)).match(/\{[\s\S]*\}/)?.[0] || "{}"), pc);
+    Object.assign(d, {
+      ...(patch.title ? { title: patch.title } : {}), ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+      ...(patch.date ? { date: patch.date } : {}), ...(patch.time ? { time: patch.time } : {}),
+      ...(patch.dateMode ? { dateMode: patch.dateMode } : {}), ...("groupId" in patch ? { groupId: patch.groupId } : {}),
+      ...(patch.clearTime ? { time: "" } : {}),
+    });
+    await setPending(chatId, "drafts", null, { drafts: st.drafts });
+    await reply(draftsText(ctx, st.drafts, "Черновики обновлены — проверьте:"), draftsKeyboard(st.drafts));
+    return;
+  }
+
+  // --- добавление на день из кнопки плана ---
+  const forDate = active?.action === "add_for_date" && validDate(active.payload) ? active.payload as string : null;
+  if (forDate) await clearPending(chatId);
+
+  // --- разбор ---
+  let parsed;
+  try {
+    parsed = await parseMessage(input, parseCtx(ctx), callModel);
+  } catch (e) {
+    console.error("parse failed:", e instanceof Error ? e.message : e);
+    parsed = { kind: "unclear" as const, reason: "сбой разбора" };
+  }
+
+  if (parsed.kind === "unclear") {
+    // Сбой или непонятное — задача не создаётся; текст ждёт решения (D06, A23).
+    await setPending(chatId, "draft", null, input.slice(0, 2000));
+    await reply(`Не смог разобрать (${esc(parsed.reason)}) — задача не создана, текст сохранён черновиком:\n\n«${esc(input.slice(0, 300))}»`, {
+      inline_keyboard: [[{ text: "🔁 Повторить", callback_data: "draft:retry" }, { text: "➕ Добавить как есть", callback_data: "draft:asis" }], [{ text: "✖️ Отмена", callback_data: "draft:cancel" }]],
+    });
+    return;
+  }
+
+  if (parsed.kind === "add") {
+    const drafts = parsed.drafts.map((d) => forDate ? { ...d, date: forDate } : d);
+    if (drafts.length === 1) {
+      await clearPending(chatId);
+      const tasks0 = drafts.map(taskFromDraft);
+      ctx.state.tasks = [...(ctx.state.tasks || []), ...tasks0];
+      await save(ctx);
+      await reply(card(ctx, "Добавлено", tasks0[0], extra), taskKeyboard(tasks0[0], true));
+      return;
+    }
+    // несколько задач — только после подтверждения (A19)
+    await setPending(chatId, "drafts", null, { drafts });
+    await reply(draftsText(ctx, drafts, `Нашёл ${drafts.length} задачи — проверьте перед сохранением:`) + (transcript ? "\n" + transcriptBlock(transcript) : ""), draftsKeyboard(drafts));
+    return;
+  }
+
+  // удалить / выполнить / перенести
+  const targets = parsed.targets;
+  if (targets.length > 1) {
+    const action = parsed.kind === "move" ? "mv" : parsed.kind === "delete" ? "del" : "done";
+    if (parsed.kind === "move") await setPending(chatId, "move", null, { date: parsed.date, time: parsed.time, dateMode: parsed.dateMode });
+    await reply(`Нашёл несколько похожих задач. Какую ${parsed.kind === "move" ? "перенести" : parsed.kind === "delete" ? "удалить" : "отметить выполненной"}?`, choiceKeyboard(ctx, action, targets));
+    return;
+  }
+  const task = findTask(ctx, targets[0].id);
+  if (!task) { await reply("Задача не найдена — возможно, её уже удалили."); return; }
+  if (parsed.kind === "done") {
+    task.completed = true;
+    await save(ctx);
+    await reply(card(ctx, "Выполнено ✅", task, extra), taskKeyboard(task));
+  } else if (parsed.kind === "delete") {
+    // удаление — с подтверждением (раздел 8, A22)
+    await reply(card(ctx, "Удалить эту задачу?", task), { inline_keyboard: [[{ text: "🗑 Да, в корзину", callback_data: `cdel:${task.id}` }, { text: "✖️ Нет", callback_data: "pick:cancel:-" }]] });
+  } else if (parsed.kind === "move") {
+    await applyMove(chatId, ctx, task, parsed, reply, extra);
+  }
+}
+
+// Перенос меняет только дату (и время, если названо); описание, группа и
+// второй срок не трогаются (A21). Дедлайн переносится только после подтверждения.
+async function applyMove(chatId: number, ctx: Ctx, task: Task, mv: { date: string; time: string | null; dateMode: "on" | "due" | null }, reply: (t: string, k?: Keyboard) => Promise<void>, extra: string[] = []) {
+  const mode = mv.dateMode || task.dateMode;
+  if (mode === "due" && task.date && task.dateMode === "due") {
+    await setPending(chatId, "move_confirm", task.id, mv);
+    await reply(card(ctx, `Перенести дедлайн на ${relDay(mv.date, ctx.today, ctx.tomorrow)}${mv.time ? " · " + mv.time : ""}?`, task), {
+      inline_keyboard: [[{ text: "✅ Перенести", callback_data: `mvok:${task.id}` }, { text: "✖️ Нет", callback_data: "pick:cancel:-" }]],
+    });
+    return;
+  }
+  task.date = mv.date;
+  if (mv.time) task.time = mv.time;
+  task.dateMode = mode;
+  await save(ctx);
+  await reply(card(ctx, "Перенесено", task, extra), taskKeyboard(task));
+}
+
+async function applyEdit(chatId: number, ctx: Ctx, task: Task, instruction: string, reply: (t: string, k?: Keyboard) => Promise<void>, extra: string[] = []) {
+  const pc = parseCtx(ctx);
+  const raw = await callModel(buildEditPrompt(pc, { id: task.id, title: task.title, notes: task.notes, date: task.date, time: task.time, dateMode: task.dateMode, groupId: task.groupId }), instruction);
+  let json: any = {};
+  try { json = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || "{}"); } catch { /* пустая правка ниже */ }
+  const patch = normalizeEdit(json, pc);
+  if (!Object.keys(patch).length) {
+    await reply("Не понял, что изменить — задача осталась прежней. Попробуйте ещё раз: «перенеси на пятницу», «время 15:00».", taskKeyboard(task));
+    return;
+  }
+  if (patch.title) task.title = patch.title;
+  if (patch.notes !== undefined) task.notes = patch.notes;
+  if (patch.date) task.date = patch.date;
+  if (patch.time && task.date) task.time = patch.time;
+  if (patch.clearTime) task.time = "";
+  if (patch.dateMode) task.dateMode = patch.dateMode;
+  if (patch.groupId) task.groupId = patch.groupId;
+  await save(ctx);
+  await reply(card(ctx, "Изменено ✏️", task, extra), taskKeyboard(task));
+}
+
+// ------------------------------------------------------------------ кнопки --
 
 async function handleCallback(cb: any) {
   const chatId: number = cb.message.chat.id;
   const messageId: number = cb.message.message_id;
   const [action, arg, arg2] = String(cb.data || "").split(":");
 
-  const { data: link } = await supabase
-    .from("telegram_links")
-    .select("user_id")
-    .eq("telegram_chat_id", chatId)
-    .maybeSingle();
-  if (!link) {
-    await answerCallback(cb.id, "Аккаунт не привязан");
-    return;
-  }
+  const { data: link } = await supabase.from("telegram_links").select("user_id").eq("telegram_chat_id", chatId).maybeSingle();
+  if (!link) { await answerCallback(cb.id, "Аккаунт не привязан"); return; }
+  const userId = link.user_id as string;
+  const ctx = await loadCtx(userId);
+  const edit = (text: string, kb?: Keyboard) => editMessage(chatId, messageId, text, kb);
 
-  // --- a message the bot could not parse, kept as a draft ---
+  // --- черновик после сбоя разбора ---
   if (action === "draft") {
-    const { data: draft } = await supabase
-      .from("telegram_pending_actions")
-      .select("action, payload, created_at")
-      .eq("telegram_chat_id", chatId)
-      .maybeSingle();
-    if (draft?.action !== "draft" || typeof draft.payload !== "string") {
+    const pending = await getPending(chatId);
+    if (pending?.action !== "draft" || typeof pending.payload !== "string") {
       await answerCallback(cb.id, "Черновик уже неактуален");
-      await editMessage(chatId, messageId, "Черновик уже обработан или заменён новым сообщением.");
+      await edit("Черновик уже обработан или заменён новым сообщением.");
       return;
     }
-    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
-    const text = draft.payload as string;
-
-    if (arg === "cancel") {
-      await answerCallback(cb.id, "Отменено");
-      await editMessage(chatId, messageId, `Черновик удалён, ничего не сохранено:\n<s>${escapeHtml(text.slice(0, 300))}</s>`);
-      return;
-    }
+    await clearPending(chatId);
+    const text = pending.payload;
+    if (arg === "cancel") { await answerCallback(cb.id, "Отменено"); await edit(`Черновик удалён, ничего не сохранено:\n<s>${esc(text.slice(0, 300))}</s>`); return; }
     if (arg === "retry") {
       await answerCallback(cb.id, "Пробую ещё раз");
-      await editMessage(chatId, messageId, `🔁 Разбираю ещё раз:\n«${escapeHtml(text.slice(0, 300))}»`);
-      await handleMessage({ chat: { id: chatId }, from: cb.from, text });
+      await edit(`🔁 Разбираю ещё раз:\n«${esc(text.slice(0, 300))}»`);
+      await handleMessage({ chat: { id: chatId, type: "private" }, from: cb.from, text });
       return;
     }
     if (arg === "asis") {
-      const state = await loadState(link.user_id);
-      const tz = await timezoneOf(link.user_id);
-      const groups = ensureGroups(state);
-      const task: Task = {
-        id: crypto.randomUUID(),
-        title: text.trim().slice(0, 200),
-        notes: "",
-        date: localDate(tz),
-        time: "",
-        dateMode: "due",
-        groupId: groups[0].id,
-        completed: false,
-        createdAt: Date.now(),
-      };
-      state.tasks = [...(state.tasks || []), task];
-      await saveState(link.user_id, state);
+      const d: Draft = { title: text.trim().slice(0, 200), notes: "", date: ctx.newTaskDate === "today" ? ctx.today : "", time: "", dateMode: "due", groupId: null };
       await answerCallback(cb.id, "Добавлено");
-      await editMessage(chatId, messageId, taskCard(task, "Добавил как есть ✅"));
+      await addDrafts(chatId, ctx, [d], [], messageId);
       return;
     }
-    await answerCallback(cb.id);
-    return;
   }
 
-  const state = await loadState(link.user_id);
-  const tz = await timezoneOf(link.user_id);
+  // --- несколько черновиков ---
+  if (action === "dr") {
+    const pending = await getPending(chatId);
+    if (pending?.action !== "drafts" || !pending.payload) { await answerCallback(cb.id, "Черновики уже неактуальны"); await edit("Черновики уже обработаны."); return; }
+    const st = JSON.parse(pending.payload);
+    if (arg === "cancel") { await clearPending(chatId); await answerCallback(cb.id, "Отменено"); await edit("Черновики отменены, ничего не сохранено."); return; }
+    if (arg === "rm") {
+      st.drafts.splice(Number(arg2), 1);
+      if (!st.drafts.length) { await clearPending(chatId); await edit("Все черновики убраны, ничего не сохранено."); await answerCallback(cb.id); return; }
+      await setPending(chatId, "drafts", null, st);
+      await answerCallback(cb.id, "Убрано");
+      await edit(draftsText(ctx, st.drafts, "Проверьте перед сохранением:"), draftsKeyboard(st.drafts));
+      return;
+    }
+    if (arg === "ed") {
+      await setPending(chatId, "draft_edit", null, { drafts: st.drafts, index: Number(arg2) });
+      await answerCallback(cb.id, "Жду правку");
+      await sendMessage(chatId, `✏️ Что поменять в черновике ${Number(arg2) + 1} «${esc(st.drafts[Number(arg2)]?.title || "")}»? Например «на пятницу в 10» или «в группу Продажи».`, { html: true });
+      return;
+    }
+    if (arg === "add") {
+      await clearPending(chatId);
+      await answerCallback(cb.id, "Сохраняю");
+      await edit(`Добавляю ${st.drafts.length}…`);
+      await addDrafts(chatId, ctx, st.drafts);
+      await edit(`Добавлено задач: ${st.drafts.length} ✅`);
+      return;
+    }
+  }
 
-  // --- buttons under a daily plan: they carry a date, not a task ---
+  // --- выбор среди похожих задач ---
+  if (action === "pick") {
+    if (arg === "cancel") { await clearPending(chatId); await answerCallback(cb.id, "Отменено"); await edit("Отменено — ничего не изменилось."); return; }
+    const task = findTask(ctx, arg2);
+    if (!task) { await answerCallback(cb.id, "Задача уже удалена"); await edit("Эта задача уже удалена."); return; }
+    if (arg === "del") {
+      await answerCallback(cb.id);
+      await edit(card(ctx, "Удалить эту задачу?", task), { inline_keyboard: [[{ text: "🗑 Да, в корзину", callback_data: `cdel:${task.id}` }, { text: "✖️ Нет", callback_data: "pick:cancel:-" }]] });
+      return;
+    }
+    if (arg === "done") { task.completed = true; await save(ctx); await answerCallback(cb.id, "Выполнено"); await edit(card(ctx, "Выполнено ✅", task), taskKeyboard(task)); return; }
+    if (arg === "mv") {
+      const pending = await getPending(chatId);
+      if (pending?.action !== "move" || !pending.payload) { await answerCallback(cb.id, "Устарело"); await edit("Запрос на перенос устарел — повторите его."); return; }
+      await clearPending(chatId);
+      await answerCallback(cb.id);
+      await applyMove(chatId, ctx, task, JSON.parse(pending.payload), (t, k) => edit(t, k));
+      return;
+    }
+  }
+
+  // --- план дня: кнопки из сводок ---
   if (action === "padd") {
-    await supabase.from("telegram_pending_actions").upsert({
-      telegram_chat_id: chatId,
-      action: "add_for_date",
-      task_id: null,
-      payload: arg,
-      created_at: new Date().toISOString(),
-    });
+    await setPending(chatId, "add_for_date", null, arg);
     await answerCallback(cb.id, "Жду задачу");
-    await sendMessage(
-      chatId,
-      `➕ Что добавить на ${humanDate(arg, tz)}? Пришли текстом или голосовым.`
-    );
+    await sendMessage(chatId, `➕ Что добавить на ${relDay(arg, ctx.today, ctx.tomorrow)}? Пришлите текстом или голосовым.`);
     return;
   }
-
   if (action === "pdel") {
-    const open: Task[] = (state.tasks || [])
-      .filter((t: Task) => !t.completed && t.date === arg)
-      .sort((a: Task, b: Task) => (a.time || "").localeCompare(b.time || ""));
-    if (!open.length) {
-      await answerCallback(cb.id, "Удалять нечего");
-      return;
-    }
+    const open: Task[] = (ctx.state.tasks || []).filter((t: Task) => !t.completed && t.date === arg).sort((a: Task, b: Task) => (a.time || "").localeCompare(b.time || ""));
+    if (!open.length) { await answerCallback(cb.id, "Удалять нечего"); return; }
     await answerCallback(cb.id);
-    await sendMessage(chatId, `Какую задачу убрать из плана на ${humanDate(arg, tz)}?`, {
-      keyboard: {
-        inline_keyboard: open.map((t) => [
-          { text: `🗑 ${t.title}`.slice(0, 60), callback_data: `pdone:${t.id}:${arg}` },
-        ]),
-      },
+    await sendMessage(chatId, `Какую задачу убрать из плана на ${relDay(arg, ctx.today, ctx.tomorrow)}?`, {
+      keyboard: { inline_keyboard: open.map((t) => [{ text: buttonLabel(`🗑 ${t.title}`, 60), callback_data: `pdone:${t.id}:${arg}` }]) },
     });
     return;
   }
-
   if (action === "pdone") {
-    const target = (state.tasks || []).find((t: Task) => t.id === arg);
-    if (!target) {
-      await answerCallback(cb.id, "Задача уже удалена");
-      return;
-    }
-    state.tasks = state.tasks.filter((t: Task) => t.id !== arg);
-    await saveState(link.user_id, state);
-    await answerCallback(cb.id, "Удалено");
-    await editMessage(chatId, messageId, `🗑 Удалено: <s>${escapeHtml(target.title)}</s>`);
-    await sendMessage(
-      chatId,
-      planText(state, arg2, `📋 <b>Обновлённый план на ${humanDate(arg2, tz)}</b>`),
-      { html: true, keyboard: planKeyboard(arg2) }
-    );
+    const target = findTask(ctx, arg);
+    if (!target) { await answerCallback(cb.id, "Задача уже удалена"); return; }
+    ctx.state.tasks = ctx.state.tasks.filter((t: Task) => t.id !== arg);
+    await save(ctx);
+    await answerCallback(cb.id, "В корзине");
+    await edit(`🗑 В корзине: <s>${esc(target.title)}</s>`, { inline_keyboard: [[{ text: "↩️ Восстановить", callback_data: `rst:${target.id}` }]] });
+    if (validDate(arg2)) await sendMessage(chatId, planText(await loadCtx(userId), arg2, `📋 <b>Обновлённый план на ${relDay(arg2, ctx.today, ctx.tomorrow)}</b>`), { html: true, keyboard: planKeyboard(arg2) });
     return;
   }
 
-  const taskId = arg;
-  const task = (state.tasks || []).find((t: Task) => t.id === taskId);
+  // --- восстановление из корзины ---
+  if (action === "rst") {
+    try {
+      await restoreTask(supabase, userId, arg);
+    } catch (e) {
+      await answerCallback(cb.id, "Не удалось");
+      await sendMessage(chatId, `Не удалось восстановить: ${esc(e instanceof Error ? e.message : String(e))}`);
+      return;
+    }
+    const fresh = await loadCtx(userId);
+    const task = findTask(fresh, arg);
+    await answerCallback(cb.id, "Восстановлено");
+    await edit(task ? card(fresh, "Восстановлено ↩️", task) : "Восстановлено ↩️", task ? taskKeyboard(task) : undefined);
+    return;
+  }
+
+  // --- кнопки карточки задачи: сверяются с актуальным состоянием ---
+  const task = findTask(ctx, arg);
   if (!task) {
     await answerCallback(cb.id, "Задача уже удалена");
-    await editMessage(chatId, messageId, "Задача больше не найдена в планировщике.");
+    await edit("Эта задача больше не найдена в планировщике — возможно, её удалили в другом месте.");
     return;
   }
-
-  if (action === "del") {
-    state.tasks = state.tasks.filter((t: Task) => t.id !== taskId);
-    await saveState(link.user_id, state);
-    await answerCallback(cb.id, "Удалено");
-    await editMessage(chatId, messageId, `🗑 Задача удалена\n\n<s>${escapeHtml(task.title)}</s>`);
+  if (action === "done" || action === "undone") {
+    const want = action === "done";
+    if (task.completed === want) { await answerCallback(cb.id, want ? "Уже выполнена" : "Уже в работе"); await edit(card(ctx, want ? "Выполнено ✅" : "В работе", task), taskKeyboard(task)); return; }
+    task.completed = want;
+    await save(ctx);
+    await answerCallback(cb.id, want ? "Отмечено выполненной" : "Возвращено в работу");
+    await edit(card(ctx, want ? "Выполнено ✅" : "Снова в работе", task), taskKeyboard(task));
     return;
   }
-
-  if (action === "done") {
-    task.completed = true;
-    await saveState(link.user_id, state);
-    await answerCallback(cb.id, "Отмечено выполненной");
-    await editMessage(
-      chatId,
-      messageId,
-      `✅ <b>Задача закрыта</b>\n\n<s>${escapeHtml(task.title)}</s>\n\nОтмечена галочкой в планировщике.`
-    );
+  if (action === "del" || action === "cdel" || action === "undo") {
+    ctx.state.tasks = ctx.state.tasks.filter((t: Task) => t.id !== task.id);
+    await save(ctx);
+    await answerCallback(cb.id, action === "undo" ? "Добавление отменено" : "В корзине");
+    await edit(action === "undo" ? `Добавление отменено:\n<s>${esc(task.title)}</s>` : `🗑 В корзине:\n<s>${esc(task.title)}</s>`,
+      { inline_keyboard: [[{ text: "↩️ Восстановить", callback_data: `rst:${task.id}` }]] });
     return;
   }
-
+  if (action === "mvok") {
+    const pending = await getPending(chatId);
+    if (pending?.action !== "move_confirm" || pending.task_id !== task.id || !pending.payload) { await answerCallback(cb.id, "Устарело"); await edit("Запрос на перенос устарел — повторите его."); return; }
+    await clearPending(chatId);
+    const mv = JSON.parse(pending.payload);
+    task.date = mv.date;
+    if (mv.time) task.time = mv.time;
+    if (mv.dateMode) task.dateMode = mv.dateMode;
+    await save(ctx);
+    await answerCallback(cb.id, "Перенесено");
+    await edit(card(ctx, "Перенесено", task), taskKeyboard(task));
+    return;
+  }
   if (action === "edit") {
-    // The next message from this chat is the edit instruction; the function is
-    // stateless, so remember what is being edited in the database.
-    await supabase.from("telegram_pending_actions").upsert({
-      telegram_chat_id: chatId,
-      action: "edit",
-      task_id: taskId,
-      created_at: new Date().toISOString(),
-    });
+    await setPending(chatId, "edit", task.id);
     await answerCallback(cb.id, "Жду изменения");
-    await sendMessage(
-      chatId,
-      `✏️ Что поменять в задаче «${escapeHtml(task.title)}»?\n\n` +
-        "Пришли текстом или голосовым — например «перенеси на пятницу», " +
-        "«поставь время 15:00» или «переименуй в созвон с подрядчиком».",
-      { html: true }
-    );
+    await sendMessage(chatId, `✏️ Что поменять в задаче «${esc(task.title)}»?\n\nНапример «перенеси на пятницу», «время 15:00», «в группу Продажи». /cancel — отменить.`, { html: true });
     return;
   }
-
   await answerCallback(cb.id);
 }
 
-async function handleMessage(message: any) {
-  const chatId: number = message.chat.id;
-  const username: string | null = message.from?.username || null;
-
-  if (badSecrets.length > 0) {
-    await sendMessage(
-      chatId,
-      `Бот неправильно настроен на сервере:\n${badSecrets.join("\n")}\n\nНужно пересохранить эти секреты в Supabase.`
-    );
-    return;
-  }
-
-  // --- linking flow: /start <code> ---
-  if (typeof message.text === "string" && message.text.startsWith("/start")) {
-    const code = message.text.split(" ")[1];
-    if (!code) {
-      await sendMessage(
-        chatId,
-        "Привет! Я помогу добавлять задачи в MARK голосом или текстом.\n\n" +
-          "Чтобы начать: открой приложение → «Личный кабинет» → «Привязать Telegram» и перейди по ссылке оттуда.",
-        { keyboard: mainKeyboard() }
-      );
-      return;
-    }
-    // Checked, spent and linked in one database transaction: the code lives ten
-    // minutes, an account keeps one chat, and a chat linked to someone else's
-    // account is never moved silently.
-    const { data: redeemed, error: redeemErr } = await supabase.rpc("mark_redeem_link_code", {
-      p_code: code, p_chat_id: chatId, p_username: username,
-    });
-    if (redeemErr) throw new Error(`не удалось привязать: ${redeemErr.message}`);
-    const status = redeemed?.status;
-    if (status === "invalid" || status === "expired") {
-      await sendMessage(
-        chatId,
-        status === "expired"
-          ? "Срок действия кода истёк — он живёт 10 минут. Сгенерируй новый в приложении."
-          : "Код недействителен или уже использован. Сгенерируй новый в приложении."
-      );
-      return;
-    }
-    if (status === "chat_taken") {
-      await sendMessage(
-        chatId,
-        "Этот Telegram уже привязан к другому аккаунту MARK. Чтобы привязать его сюда, " +
-          "сначала отвяжи его в том аккаунте: «Личный кабинет» → Telegram → «Отвязать»."
-      );
-      return;
-    }
-    await sendMessage(
-      chatId,
-      (status === "already" ? "Этот чат уже привязан к аккаунту ✅" : "Готово! Аккаунт привязан ✅") +
-        (redeemed?.replaced ? " Прежний чат от аккаунта отвязан." : "") +
-        " Теперь просто присылай мне задачи текстом или голосом — или пользуйся кнопками снизу.",
-      { keyboard: mainKeyboard() }
-    );
-    return;
-  }
-
-  if (typeof message.text === "string" && message.text.trim() === "/menu") {
-    await sendMessage(chatId, "Меню внизу 👇", { keyboard: mainKeyboard() });
-    return;
-  }
-
-  // --- must be linked ---
-  const { data: link } = await supabase
-    .from("telegram_links")
-    .select("user_id")
-    .eq("telegram_chat_id", chatId)
-    .maybeSingle();
-  if (!link) {
-    await sendMessage(
-      chatId,
-      "Сначала привяжи аккаунт: в приложении MARK открой «Личный кабинет» → «Привязать Telegram» и перейди по ссылке."
-    );
-    return;
-  }
-  const userId = link.user_id as string;
-
-  // --- get input text (typed or transcribed voice) ---
-  let inputText: string = message.text || message.caption || "";
-  if (message.voice) {
-    await sendMessage(chatId, "Слушаю…");
-    inputText = await transcribeVoice(message.voice.file_id);
-  }
-  if (!inputText.trim()) {
-    await sendMessage(chatId, "Не понял сообщение — пришли текст или голосовое с описанием задачи.");
-    return;
-  }
-
-  const state = await loadState(userId);
-  const tz = await timezoneOf(userId);
-  const groups = ensureGroups(state);
-
-  const groupInfo: GroupInfo[] = groups.map((g: any) => ({
-    id: g.id,
-    name: g.name,
-    sectionName: (state.sections || []).find((s: any) => s.id === g.sectionId)?.name || "",
-  }));
-
-  // --- menu buttons: checked before pending actions, so tapping a button
-  // always acts as a command rather than as an answer to an earlier prompt ---
-  const button = inputText.trim();
-  if ([BTN_ADD, BTN_UPCOMING, BTN_SECTION, BTN_TOMORROW, BTN_TODAY].includes(button)) {
-    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
-
-    if (button === BTN_ADD) {
-      await sendMessage(
-        chatId,
-        "➕ Пришли задачу текстом или голосовым — например «созвон с клиентом завтра в 11:00».",
-        { keyboard: mainKeyboard() }
-      );
-      return;
-    }
-
-    if (button === BTN_UPCOMING) {
-      const today = localDate(tz);
-      const upcoming: Task[] = (state.tasks || [])
-        .filter((t: Task) => !t.completed)
-        .sort(
-          (a: Task, b: Task) =>
-            a.date.localeCompare(b.date) || (a.time || "").localeCompare(b.time || "")
-        )
-        .slice(0, 15);
-
-      if (!upcoming.length) {
-        await sendMessage(chatId, "Открытых задач нет — можно выдохнуть.", { keyboard: mainKeyboard() });
-        return;
-      }
-      const lines = upcoming.map((t) => {
-        const overdue = t.date < today ? "❗️" : "";
-        const when = humanDate(t.date, tz);
-        return `${overdue}• ${escapeHtml(t.title)} — ${when}${t.time ? `, ${t.time}` : ""}`;
-      });
-      await sendMessage(chatId, `📋 <b>Ближайшие задачи</b>\n\n${lines.join("\n")}`, {
-        html: true,
-        keyboard: mainKeyboard(),
-      });
-      return;
-    }
-
-    if (button === BTN_SECTION) {
-      await supabase.from("telegram_pending_actions").upsert({
-        telegram_chat_id: chatId,
-        action: "add_section",
-        task_id: null,
-        payload: null,
-        created_at: new Date().toISOString(),
-      });
-      await sendMessage(chatId, "🗂 Как назвать новый раздел?", { keyboard: mainKeyboard() });
-      return;
-    }
-
-    if (button === BTN_TOMORROW) {
-      const tomorrow = localDate(tz, 1);
-      await sendMessage(chatId, planText(state, tomorrow, "🌙 <b>Задачи на завтра</b>"), {
-        html: true,
-        keyboard: planKeyboard(tomorrow),
-      });
-      return;
-    }
-
-    // BTN_TODAY
-    const today = localDate(tz);
-    await sendMessage(chatId, planText(state, today, "☀️ <b>План на сегодня</b>"), {
-      html: true,
-      keyboard: planKeyboard(today),
-    });
-    return;
-  }
-
-  // --- pending edit: this message is an instruction for a specific task ---
-  const { data: pending } = await supabase
-    .from("telegram_pending_actions")
-    .select("action, task_id, payload, created_at")
-    .eq("telegram_chat_id", chatId)
-    .maybeSingle();
-
-  // --- pending: this message is the name of a new section ---
-  if (pending?.action === "add_section") {
-    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
-    const name = inputText.trim().slice(0, 40);
-    if (!name) {
-      await sendMessage(chatId, "Пустое название — попробуй ещё раз.", { keyboard: mainKeyboard() });
-      return;
-    }
-    const palette = ["#5b8def", "#e0698e", "#3fb98c", "#f2a541", "#9b6bdb", "#4fb3bf", "#e05c5c", "#7d8ca3"];
-    state.sections = [
-      ...(state.sections || []),
-      { id: crypto.randomUUID(), name, color: palette[(state.sections || []).length % palette.length] },
-    ];
-    await saveState(userId, state);
-    await sendMessage(
-      chatId,
-      `🗂 Раздел «${escapeHtml(name)}» создан.\n\nГруппы внутри него можно добавить в приложении — после этого задачи начнут попадать в них.`,
-      { html: true, keyboard: mainKeyboard() }
-    );
-    return;
-  }
-
-  // --- pending add: the task goes on the date the plan button carried ---
-  if (pending?.action === "add_for_date") {
-    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
-    const targetDate = pending.payload as string;
-
-    let parsedAdd: Intent = {};
-    try {
-      parsedAdd = await parseIntentWithGroq(inputText, groupInfo, [], tz);
-    } catch (err) {
-      console.error("parse for dated add failed, using raw text:", err);
-    }
-
-    const task: Task = {
-      id: crypto.randomUUID(),
-      title: parsedAdd.title || inputText.slice(0, 100),
-      notes: parsedAdd.notes || "",
-      date: targetDate, // the plan's date wins over anything the model inferred
-      time: validTime(parsedAdd.time) ? parsedAdd.time : "",
-      dateMode: parsedAdd.dateMode === "on" ? "on" : "due",
-      groupId: groups.some((g: any) => g.id === parsedAdd.groupId) ? parsedAdd.groupId! : groups[0].id,
-      completed: false,
-      createdAt: Date.now(),
-    };
-    state.tasks = [...(state.tasks || []), task];
-    await saveState(userId, state);
-
-    await sendMessage(chatId, taskCard(task, "Добавил в план ✅"), { html: true });
-    await sendMessage(
-      chatId,
-      planText(state, targetDate, `📋 <b>Обновлённый план на ${humanDate(targetDate, tz)}</b>`),
-      { html: true, keyboard: planKeyboard(targetDate) }
-    );
-    return;
-  }
-
-  if (pending?.action === "edit") {
-    await supabase.from("telegram_pending_actions").delete().eq("telegram_chat_id", chatId);
-
-    const stale = Date.now() - new Date(pending.created_at).getTime() > 30 * 60 * 1000;
-    const task: Task | undefined = (state.tasks || []).find((t: Task) => t.id === pending.task_id);
-
-    if (stale || !task) {
-      await sendMessage(
-        chatId,
-        stale
-          ? "Правка отменена — прошло слишком много времени. Нажми «Редактировать» ещё раз."
-          : "Эта задача уже удалена, редактировать нечего."
-      );
-      return;
-    }
-
-    const patch = await applyEditWithGroq(inputText, task, groupInfo, tz);
-    // A field missing or malformed in the model's answer is left as it was:
-    // absence is not an instruction to clear (D06). Time is cleared only when
-    // the user plainly asked for it.
-    if (typeof patch.title === "string" && patch.title.trim()) task.title = patch.title.trim().slice(0, 200);
-    if (typeof patch.notes === "string") task.notes = patch.notes;
-    if (validDate(patch.date)) task.date = patch.date;
-    if (validTime(patch.time)) task.time = patch.time;
-    else if (patch.time === "" && /(без|убер|убра|удал|сним)\S*\s+(\S+\s+)?врем/i.test(inputText)) task.time = "";
-    if (patch.dateMode === "on" || patch.dateMode === "due") task.dateMode = patch.dateMode;
-    if (groups.some((g: any) => g.id === patch.groupId)) task.groupId = patch.groupId!;
-
-    await saveState(userId, state);
-    await sendMessage(chatId, taskCard(task, "Задача обновлена ✏️"), {
-      html: true,
-      keyboard: taskKeyboard(task.id),
-    });
-    return;
-  }
-
-  // Only open tasks can be deleted or completed, and the newest are the likely targets.
-  const openTasks: Task[] = (state.tasks || [])
-    .filter((t: Task) => !t.completed)
-    .slice(-30);
-
-  let parsed: Intent = {};
-  let parseFailed = false;
-  try {
-    parsed = await parseIntentWithGroq(inputText, groupInfo, openTasks, tz);
-  } catch (parseErr) {
-    console.error("parseIntentWithGroq failed:", parseErr instanceof Error ? parseErr.message : parseErr);
-    parseFailed = true;
-  }
-  const usable =
-    parsed.intent === "delete" || parsed.intent === "done" ||
-    (parsed.intent === "add" && typeof parsed.title === "string" && parsed.title.trim() !== "");
-
-  // A failed parse used to add the raw text as a new task - "удали встречу"
-  // became a task called "удали встречу" (D06). Now nothing is written: the text
-  // waits as a draft and the user decides.
-  if (parseFailed || !usable) {
-    await supabase.from("telegram_pending_actions").upsert({
-      telegram_chat_id: chatId,
-      action: "draft",
-      task_id: null,
-      payload: inputText.slice(0, 2000),
-      created_at: new Date().toISOString(),
-    });
-    await sendMessage(
-      chatId,
-      `Не смог разобрать сообщение — задача не создана, текст сохранён черновиком:\n\n«${escapeHtml(inputText.slice(0, 300))}»`,
-      {
-        html: true,
-        keyboard: {
-          inline_keyboard: [[
-            { text: "🔁 Повторить", callback_data: "draft:retry" },
-            { text: "➕ Добавить как есть", callback_data: "draft:asis" },
-          ], [
-            { text: "✖️ Отмена", callback_data: "draft:cancel" },
-          ]],
-        },
-      }
-    );
-    return;
-  }
-
-  // --- delete / done by plain text ---
-  if (parsed.intent === "delete" || parsed.intent === "done") {
-    const target = openTasks[Number(parsed.taskIndex) - 1];
-    if (!target) {
-      await sendMessage(chatId, "Не понял, какую задачу ты имеешь в виду. Напиши её название чуть точнее.");
-      return;
-    }
-    if (parsed.intent === "delete") {
-      state.tasks = state.tasks.filter((t: Task) => t.id !== target.id);
-      await saveState(userId, state);
-      await sendMessage(chatId, `🗑 Задача удалена\n\n<s>${escapeHtml(target.title)}</s>`, { html: true });
-    } else {
-      const task = state.tasks.find((t: Task) => t.id === target.id);
-      if (task) task.completed = true;
-      await saveState(userId, state);
-      await sendMessage(chatId, `✅ Выполнено\n\n<s>${escapeHtml(target.title)}</s>`, { html: true });
-    }
-    return;
-  }
-
-  // --- add (default) ---
-  const newTask: Task = {
-    id: crypto.randomUUID(),
-    title: parsed.title || inputText.slice(0, 100),
-    notes: parsed.notes || "",
-    date: validDate(parsed.date) ? parsed.date : localDate(tz),
-    time: validTime(parsed.time) ? parsed.time : "",
-    dateMode: parsed.dateMode === "on" ? "on" : "due",
-    groupId: groups.some((g: any) => g.id === parsed.groupId) ? parsed.groupId! : groups[0].id,
-    completed: false,
-    createdAt: Date.now(),
-  };
-
-  state.tasks = [...(state.tasks || []), newTask];
-  await saveState(userId, state);
-
-  await sendMessage(chatId, taskCard(newTask, "Твоя задача добавлена ✅"), {
-    html: true,
-    keyboard: taskKeyboard(newTask.id),
-  });
-}
+// ------------------------------------------------------------------ вход --
 
 async function finishUpdate(updateId: number | null, status: "done" | "failed", error?: string) {
   if (updateId === null) return;
-  const { error: err } = await supabase
-    .from("telegram_updates")
-    .update({ status, error: error ? error.slice(0, 300) : null, finished_at: new Date().toISOString() })
-    .eq("update_id", updateId);
+  const { error: err } = await supabase.from("telegram_updates")
+    .update({ status, error: error ? error.slice(0, 300) : null, finished_at: new Date().toISOString() }).eq("update_id", updateId);
   if (err) console.error("update finish failed", err.message);
 }
 
@@ -972,36 +831,26 @@ Deno.serve(async (req) => {
         p_kind: update.callback_query ? "callback" : update.message ? "message" : "other",
       });
       if (claimErr) console.error("update claim failed, processing anyway:", claimErr.message);
-      else if (fresh === false) {
-        console.log("telegram-webhook: repeated update", update.update_id, "skipped");
-        return new Response("ok");
-      }
+      else if (fresh === false) return new Response("ok");
     }
 
     if (update.callback_query) {
-      // Also captured so a failure inside the handler reaches the user instead
-      // of leaving the button spinning with nothing said.
       chatId = update.callback_query.message?.chat?.id ?? null;
       await handleCallback(update.callback_query);
-      await finishUpdate(updateId, "done");
-      return new Response("ok");
+    } else if (update.message) {
+      chatId = update.message.chat.id;
+      await handleMessage(update.message);
     }
-    if (!update.message) {
-      await finishUpdate(updateId, "done");
-      return new Response("ok");
-    }
-
-    chatId = update.message.chat.id;
-    await handleMessage(update.message);
     await finishUpdate(updateId, "done");
     return new Response("ok");
   } catch (e) {
     console.error(e);
-    await finishUpdate(updateId, "failed", e instanceof Error ? e.message : String(e));
+    const msg = e instanceof Error ? e.message : String(e);
+    await finishUpdate(updateId, "failed", msg);
     if (chatId) {
-      const msg = e instanceof Error ? e.message : String(e);
       try {
-        await sendMessage(chatId, `Ошибка при обработке: ${msg}\nПопробуй ещё раз или напиши другими словами.`);
+        // «Добавлено» не отправляется, если запись не прошла (A24)
+        await sendMessage(chatId, `Не получилось: ${msg}\nДанные не сохранены — попробуйте ещё раз.`);
       } catch (sendErr) {
         console.error("failed to notify user of error", sendErr);
       }

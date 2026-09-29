@@ -830,7 +830,8 @@ export function renderProfile(ctx) {
   let tgBlock;
   if (tg.status === "loading") tgBlock = '<span class="muted">Проверяю связь с Telegram…</span>';
   else if (tg.status === "error") tgBlock = '<span>Не удалось проверить связь с Telegram — привязка, если она была, не пострадала.</span><button type="button" class="btn small" data-action="retry-telegram">Проверить ещё раз</button>';
-  else if (tg.status === "linked") tgBlock = `<div class="row"><span class="status ok" style="padding:0"><span class="dot"></span></span><span style="flex:1">Подключено: ${tg.link.telegram_username ? "@" + esc(tg.link.telegram_username) : "аккаунт привязан"}</span><button type="button" class="btn small quiet" data-action="unlink-telegram">Отвязать</button></div>`;
+  else if (tg.status === "linked") tgBlock = `<div class="row"><span class="status ${tg.link.blocked_at ? "bad" : "ok"}" style="padding:0"><span class="dot"></span></span><span style="flex:1">Подключено: ${tg.link.telegram_username ? "@" + esc(tg.link.telegram_username) : "аккаунт привязан"}</span><button type="button" class="btn small quiet" data-action="unlink-telegram">Отвязать</button></div>
+      ${tg.link.blocked_at ? '<span class="form-msg bad">Бот заблокирован в Telegram — сводки и напоминания не доставляются. Напишите боту любое сообщение, чтобы возобновить.</span>' : ""}`;
   else if (ctx.ui.linkCode) tgBlock = `<span class="soft" style="font-size:14px">Откройте бота и нажмите «Запустить» — привяжется автоматически. Код действует 10 минут.</span>
       <a class="btn primary" href="${esc(ctx.ui.linkCode.url)}" target="_blank" rel="noopener">Открыть @markplanner_bot</a>
       <span class="muted" style="font-size:13px">Или отправьте боту: <code>/start ${esc(ctx.ui.linkCode.code)}</code></span>`;
@@ -873,7 +874,17 @@ export function renderProfile(ctx) {
 
       <section class="card" aria-label="Уведомления">
         <div class="card-head"><h2>Уведомления в Telegram</h2>${msg("notify")}</div>
-        <div>${toggle("morning_digest", "Утренняя сводка", "в 09:00 — план на сегодня")}${toggle("evening_digest", "Вечерняя сводка", "в 21:00 — план на завтра")}${toggle("task_reminders", "Напоминание о задаче", "за 30 минут до времени задачи")}</div>
+        <div>${toggle("morning_digest", "Утренняя сводка", "план на сегодня, дедлайны и просроченное")}${toggle("evening_digest", "Вечерняя сводка", "план на завтра")}${toggle("task_reminders", "Напоминание о задаче", "перед плановым временем, иначе — перед дедлайном со временем")}</div>
+        <div class="two">
+          <label class="field"><span>Утренняя сводка в</span><input class="input" type="time" data-notify-input="morning_time" value="${esc(hhmm(s.morning_time))}"></label>
+          <label class="field"><span>Вечерняя сводка в</span><input class="input" type="time" data-notify-input="evening_time" value="${esc(hhmm(s.evening_time))}"></label>
+        </div>
+        <label class="field"><span>Напоминать за</span><select class="select" data-notify-input="reminder_lead">${[5, 15, 30, 60].map((v) => `<option value="${v}" ${Number(s.reminder_lead) === v ? "selected" : ""}>${v === 60 ? "1 час" : v + " минут"}</option>`).join("")}</select></label>
+        <label class="switch-row"><span class="grow"><span>Тихие часы</span><span class="muted" style="font-size:12px">сводка — после них; напоминание — только если задача ещё впереди</span></span>
+          <input type="checkbox" class="switch" data-action="set-setting" data-setting="quiet_enabled" ${s.quiet_enabled ? "checked" : ""}></label>
+        ${s.quiet_enabled ? `<div class="two">
+          <label class="field"><span>С</span><input class="input" type="time" data-notify-input="quiet_start" value="${esc(hhmm(s.quiet_start))}"></label>
+          <label class="field"><span>До</span><input class="input" type="time" data-notify-input="quiet_end" value="${esc(hhmm(s.quiet_end))}"></label></div>` : ""}
       </section>
 
       <section class="card" aria-label="Telegram и синхронизация">

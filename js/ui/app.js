@@ -47,6 +47,12 @@ const settings = {
   buffer_minutes: 0,
   week_start: 1,
   new_task_date: "inbox",
+  morning_time: "09:00",
+  evening_time: "21:00",
+  reminder_lead: 30,
+  quiet_enabled: false,
+  quiet_start: "23:00",
+  quiet_end: "08:00",
 };
 
 function syncWorkday() {
@@ -110,6 +116,7 @@ window.addEventListener("hashchange", () => {
   if (route.name === "calendar" && route.params.date) selectDate(route.params.date);
   if (route.name === "profile" && telegram.status === "loading") loadTelegram();
   if (route.name === "tasks" && route.params.view === "trash") loadTrash();
+  openFromLink();
   if (route.name !== "tasks" && ui.editor && DESKTOP.matches) ui.editor = null;
   render();
   window.scrollTo(0, 0);
@@ -179,8 +186,19 @@ function setDraft(path, value) {
 
 // ------------------------------------------------------------------ данные --
 
+// Ссылка «Открыть» из бота: #/tasks?open=<id> — открыть эту задачу, как только
+// она есть в данных (раньше данных её может не быть).
+let openedFromLink = null;
+function openFromLink() {
+  const id = route.params.open;
+  if (!id || openedFromLink === id || !rows.tasks.some((t) => t.id === id)) return;
+  openedFromLink = id;
+  openEditor(id);
+}
+
 store.subscribe(() => {
   rows = store.rows;
+  openFromLink();
   // задачу, открытую в редакторе, удалили на другом устройстве
   if (ui.editor?.id && !rows.tasks.some((t) => t.id === ui.editor.id)) ui.editor.error = "Эта задача удалена на другом устройстве. Сохранение создаст её заново как новую.";
   render();
@@ -210,12 +228,13 @@ async function checkAccountMode(userId) {
 
 async function loadSettings(userId) {
   const { data, error } = await supabase.from("user_settings")
-    .select("timezone, theme, morning_digest, evening_digest, task_reminders, workday_start, workday_end, buffer_minutes, week_start, new_task_date, home_layout, home_layout_version, focus").eq("user_id", userId).maybeSingle();
+    .select("timezone, theme, morning_digest, evening_digest, task_reminders, workday_start, workday_end, buffer_minutes, week_start, new_task_date, home_layout, home_layout_version, focus, morning_time, evening_time, reminder_lead, quiet_enabled, quiet_start, quiet_end").eq("user_id", userId).maybeSingle();
   if (error || !session || session.user.id !== userId) return;
   if (data) {
     settings.timezone = data.timezone;
     for (const k of ["morning_digest", "evening_digest", "task_reminders"]) settings[k] = data[k] ?? true;
-    for (const k of ["workday_start", "workday_end", "buffer_minutes", "week_start", "new_task_date", "home_layout", "home_layout_version", "focus"]) {
+    for (const k of ["workday_start", "workday_end", "buffer_minutes", "week_start", "new_task_date", "home_layout", "home_layout_version", "focus",
+      "morning_time", "evening_time", "reminder_lead", "quiet_enabled", "quiet_start", "quiet_end"]) {
       if (data[k] !== undefined && data[k] !== null) settings[k] = data[k];
     }
     syncWorkday();
@@ -736,8 +755,15 @@ root.addEventListener("change", (e) => {
     const key = el.dataset.setting;
     settings[key] = el.checked;
     saveSetting(key, { [key]: el.checked }, "notify");
+    if (key === "quiet_enabled") render();
   } else if (el.dataset?.action === "set-timezone") {
     chooseTimezone(el.value);
+  } else if (el.dataset?.notifyInput) {
+    const key = el.dataset.notifyInput;
+    const value = key === "reminder_lead" ? Number(el.value) : el.value;
+    if (!value) return;
+    settings[key] = value;
+    saveSetting(key, { [key]: value }, "notify");
   } else if (el.dataset?.settingInput) {
     const key = el.dataset.settingInput;
     const value = key === "buffer_minutes" ? Number(el.value) : el.value;

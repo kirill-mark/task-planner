@@ -190,3 +190,36 @@ export async function savePlanner(db: SupabaseClient, userId: string, state: any
     if (o && r.result?.revision) meta.revisions[o.entity as "task"].set(o.entity_id, r.result.revision);
   }
 }
+
+// Восстановить задачу из корзины (новая модель). Прежняя модель корзины не
+// имела: там удаление было окончательным.
+export async function restoreTask(db: SupabaseClient, userId: string, id: string) {
+  if ((await accountMode(db, userId)) !== "v2") throw new Error("восстановление доступно только в новой модели");
+  const { data, error } = await db.rpc("mark_apply_operations", {
+    p_user: userId, p_source: "bot",
+    p_ops: [{ operation_id: crypto.randomUUID(), entity: "task", type: "restore", entity_id: id, base_revision: null, changes: {} }],
+  });
+  if (error) throw new Error(`не удалось восстановить: ${error.message}`);
+  const r = data?.results?.[0];
+  if (r?.status !== "applied") throw new Error(r?.result?.reason || "не удалось восстановить");
+}
+
+// Задачи в новой форме — с плановой датой и дедлайном одновременно — для
+// напоминаний. У аккаунта в прежней модели одна дата: она становится планом
+// или дедлайном по dateMode.
+export async function loadTasksV2(db: SupabaseClient, userId: string): Promise<any[]> {
+  if ((await accountMode(db, userId)) === "v2") {
+    const { data, error } = await db.rpc("mark_get_state", { p_user: userId, p_since: null });
+    if (error || !data) throw new Error(`не удалось прочитать задачи: ${error?.message || "пустой ответ"}`);
+    return data.tasks;
+  }
+  const st = await loadPlanner(db, userId);
+  return (st.tasks || []).map((t: any) => {
+    const on = t.dateMode === "on";
+    return {
+      id: t.id, title: t.title, notes: t.notes, completed: !!t.completed,
+      planned_date: on && t.date ? t.date : null, planned_time: on && t.date ? t.time || null : null,
+      due_date: !on && t.date ? t.date : null, due_time: !on && t.date ? t.time || null : null,
+    };
+  });
+}

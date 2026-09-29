@@ -159,7 +159,7 @@ function randomCode() {
 export async function fetchTelegramLink(userId) {
   const { data, error } = await supabase
     .from("telegram_links")
-    .select("telegram_username, linked_at")
+    .select("telegram_username, linked_at, blocked_at")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) {
