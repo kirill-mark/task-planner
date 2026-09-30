@@ -117,15 +117,25 @@ function parseRoute() {
 let route = parseRoute();
 if (route.name === "calendar" && route.params.date) { ui.selectedDate = route.params.date; ui.calMonth = route.params.date.slice(0, 7); }
 
+// Возврат на экран — с тем же положением прокрутки; из кабинета — на экран,
+// с которого в него пришли (A38). Выбранный день и фильтры живут в адресе и ui.
+const scrollMemory = new Map();
+let lastHash = location.hash || "#/home";
+
 window.addEventListener("hashchange", () => {
+  scrollMemory.set(lastHash, window.scrollY);
+  if (scrollMemory.size > 30) scrollMemory.delete(scrollMemory.keys().next().value);
+  const from = lastHash;
+  lastHash = location.hash || "#/home";
   route = parseRoute();
+  if (route.name === "profile" && !from.startsWith("#/profile")) ui.profileFrom = from;
   if (route.name === "calendar" && route.params.date) selectDate(route.params.date);
   if (route.name === "profile" && telegram.status === "loading") loadTelegram();
   if (route.name === "tasks" && route.params.view === "trash") loadTrash();
   openFromLink();
   if (route.name !== "tasks" && ui.editor && DESKTOP.matches) ui.editor = null;
   render();
-  window.scrollTo(0, 0);
+  window.scrollTo(0, scrollMemory.get(lastHash) ?? 0);
 });
 
 function go(hash) {
@@ -530,7 +540,11 @@ const actions = {
     render();
   },
   "layout-cancel": () => { ui.layoutDraft = null; render(); },
-  "layout-reset": () => { ui.layoutDraft = { [ui.layoutKind]: defaultLayout(ui.layoutKind) }; render(); },
+  "layout-reset": () => {
+    ui.confirm = { title: "Вернуть стандартную раскладку?", text: "Виджеты, их порядок и размеры станут как по умолчанию. Задачи не изменятся.", ok: "Вернуть",
+      onOk: () => { ui.layoutDraft = { [ui.layoutKind]: defaultLayout(ui.layoutKind) }; } };
+    render();
+  },
   "w-move": (el) => {
     const l = ui.layoutDraft[ui.layoutKind], i = Number(el.dataset.i), j = i + Number(el.dataset.dir);
     if (j < 0 || j >= l.length) return;
@@ -538,6 +552,7 @@ const actions = {
     render();
   },
   "w-col": (el) => { const w = ui.layoutDraft[ui.layoutKind][Number(el.dataset.i)]; w.col = w.col === "side" ? "main" : "side"; render(); },
+  "w-size": (el) => { ui.layoutDraft[ui.layoutKind][Number(el.dataset.i)].size = el.dataset.size; render(); },
   "w-hide": (el) => { ui.layoutDraft[ui.layoutKind][Number(el.dataset.i)].hidden = true; render(); },
   "w-add": (el) => {
     const l = ui.layoutDraft[ui.layoutKind];

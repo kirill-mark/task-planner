@@ -260,7 +260,7 @@ function renderSummaryCard(ctx) {
       <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
         <span class="eyebrow">Сводка · по вашим задачам</span>
         <span class="summary-title">${esc(s.title)}</span>
-        ${s.text ? `<span class="summary-text">${esc(s.text)}</span>` : ""}
+        ${s.text && ctx.wsize !== "S" ? `<span class="summary-text">${esc(s.text)}</span>` : ""}
       </div>
     </div>
     <div class="chips">
@@ -284,13 +284,14 @@ function renderPlanToday(ctx) {
   const { rows, today } = ctx;
   const list = tasksOfDay(rows, today);
   const p = dayProgress(rows, today);
-  const shown = list.filter(isOpen).slice(0, 5);
+  const n = limitOf(ctx);
+  const shown = list.filter(isOpen).slice(0, n);
   return `<section class="card" aria-label="План на сегодня">
     <div class="card-head"><div class="row" style="align-items:baseline"><h2>План на сегодня</h2><span class="meta">${p.done} из ${p.total} выполнено</span></div>
       <a href="#/calendar?date=${today}" style="font-size:14px;white-space:nowrap">Весь день →</a></div>
     ${shown.length ? `<div class="task-list">${shown.map((t) => taskRow(ctx, t, { when: ctx.isDesktop ? whenOfDay(t, today) : null })).join("")}</div>`
       : `<div class="empty">${p.total ? "Всё на сегодня выполнено." : "На этот день пока нет задач."}<button type="button" class="btn small" data-action="new-task" data-date="${today}">Добавить задачу</button></div>`}
-    ${list.filter(isOpen).length > 5 ? `<a href="#/tasks?view=today" style="font-size:14px">Ещё ${list.filter(isOpen).length - 5}</a>` : ""}
+    ${list.filter(isOpen).length > n ? `<a href="#/tasks?view=today" style="font-size:14px">Ещё ${list.filter(isOpen).length - n}</a>` : ""}
   </section>`;
 }
 
@@ -308,7 +309,7 @@ function renderMiniMonth(ctx) {
       </div></div>
     <div class="cal-grid">
       ${weekHeader(ctx.settings.week_start).map((w) => `<span class="cal-wd">${w}</span>`).join("")}
-      ${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel)).join("")}
+      ${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel, ctx.wsize === "L")).join("")}
     </div>
     <a href="#/calendar?date=${sel}" class="row" style="justify-content:space-between;border-top:1px solid var(--divider);padding-top:10px;font-size:14px">
       <span style="color:var(--text)">${esc(relativeDay(sel, ctx.today))} · ${count} ${plural(count, "дело", "дела", "дел")}</span><span>Открыть день →</span></a>
@@ -326,11 +327,11 @@ function dayCell(ctx, c, mark, sel, big = false) {
 }
 
 function renderUpcoming(ctx) {
-  const u = upcoming(ctx.rows, ctx.today, ctx.nowMin);
-  const ev = u.events.map((t) => `<button type="button" class="up-item" data-action="open-task" data-id="${esc(t.id)}">
+  const u = upcoming(ctx.rows, ctx.today, ctx.nowMin), n = limitOf(ctx);
+  const ev = u.events.slice(0, n).map((t) => `<button type="button" class="up-item" data-action="open-task" data-id="${esc(t.id)}">
       <span style="width:64px;flex-shrink:0;display:flex;flex-direction:column"><span class="muted" style="font-size:12px">${esc(relativeDay(t.planned_date, ctx.today))}</span><span style="font-weight:600;font-variant-numeric:tabular-nums">${hhmm(t.planned_time)}</span></span>
       <span class="task-title">${esc(t.title)}</span></button>`).join("");
-  const dl = u.deadlines.map((t) => `<button type="button" class="up-item" style="justify-content:space-between" data-action="open-task" data-id="${esc(t.id)}">
+  const dl = u.deadlines.slice(0, n).map((t) => `<button type="button" class="up-item" style="justify-content:space-between" data-action="open-task" data-id="${esc(t.id)}">
       <span class="task-title">${esc(t.title)}</span><span style="color:var(--warn);white-space:nowrap;font-size:14px">до ${esc(t.due_date === ctx.today ? "сегодня" : shortDate(t.due_date, { today: ctx.today }))}${t.due_time ? " " + hhmm(t.due_time) : ""}</span></button>`).join("");
   return `<section class="card" aria-label="Ближайшие дела">
     <div class="card-head"><h2>Ближайшие дела</h2><a href="#/tasks?view=week" style="font-size:14px">Все</a></div>
@@ -354,6 +355,11 @@ function renderWeekStrip(ctx) {
 }
 
 // ----------------------------------------------------- рабочий стол (раздел 5) --
+
+// Размер виджета (раздел 5): на компьютере S, M, L в пределах колонки, на
+// телефоне — плотность (компактно = S). Меняет, сколько виджет показывает.
+const LIMIT = { S: 3, M: 5, L: 12 };
+const limitOf = (ctx) => LIMIT[ctx.wsize] || LIMIT.M;
 
 export const WIDGETS = {
   summary: "Сводка дня",
@@ -407,22 +413,22 @@ function renderProgressWidget(ctx) {
 }
 
 function renderOverdueWidget(ctx) {
-  const list = overdue(ctx.rows, ctx.today, ctx.nowMin);
+  const list = overdue(ctx.rows, ctx.today, ctx.nowMin), n = limitOf(ctx);
   return `<section class="card" aria-label="Просроченное">
     <div class="card-head"><h2>Просроченное</h2><span class="meta" style="color:${list.length ? "var(--danger)" : "var(--text-dim)"}">${list.length}</span></div>
-    ${list.length ? `<div class="task-list">${list.slice(0, 5).map((t) => `${taskRow(ctx, t)}
+    ${list.length ? `<div class="task-list">${list.slice(0, n).map((t) => `${taskRow(ctx, t)}
       <div class="chips" style="padding:0 0 8px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">Перенести на сегодня</button>
       <button type="button" class="btn small quiet" data-action="toggle" data-id="${esc(t.id)}">Завершить</button>
       <button type="button" class="btn small quiet" data-action="delete-task" data-id="${esc(t.id)}">В корзину</button></div>`).join("")}</div>
-      ${list.length > 5 ? `<a href="#/tasks?view=overdue" style="font-size:14px">Все ${list.length}</a>` : ""}` : '<div class="empty">Просроченного нет.</div>'}
+      ${list.length > n ? `<a href="#/tasks?view=overdue" style="font-size:14px">Все ${list.length}</a>` : ""}` : '<div class="empty">Просроченного нет.</div>'}
   </section>`;
 }
 
 function renderInboxWidget(ctx) {
-  const list = inbox(ctx.rows);
+  const list = inbox(ctx.rows), n = limitOf(ctx);
   return `<section class="card" aria-label="Входящие">
     <div class="card-head"><h2>Входящие</h2><a href="#/tasks?view=inbox" style="font-size:14px">Разобрать</a></div>
-    ${list.length ? `<div class="task-list">${list.slice(0, 5).map((t) => taskRow(ctx, t)).join("")}</div>` : '<div class="empty">Входящие пусты.</div>'}
+    ${list.length ? `<div class="task-list">${list.slice(0, n).map((t) => taskRow(ctx, t)).join("")}</div>` : '<div class="empty">Входящие пусты.</div>'}
   </section>`;
 }
 
@@ -440,8 +446,8 @@ function widgetHtml(ctx, type) {
   }
 }
 
-// В режиме настройки у каждого виджета — «Выше», «Ниже», колонка и «Скрыть»:
-// перестановка без перетаскивания (раздел 5).
+// В режиме настройки у каждого виджета — «Выше», «Ниже», колонка, размер и
+// «Скрыть»: перестановка без перетаскивания (раздел 5).
 function editFrame(ctx, w, i, n, inner) {
   if (!ctx.ui.layoutDraft) return inner;
   return `<div class="widget-edit">
@@ -453,6 +459,11 @@ function editFrame(ctx, w, i, n, inner) {
         ${ctx.isDesktop ? `<button type="button" class="btn small" data-action="w-col" data-i="${i}">${w.col === "side" ? "← В основную колонку" : "В боковую колонку →"}</button>` : ""}
         <button type="button" class="btn small danger" data-action="w-hide" data-i="${i}">Скрыть</button>
       </div></div>
+    <div class="row" style="gap:6px;flex-wrap:wrap" role="radiogroup" aria-label="${ctx.isDesktop ? "Размер" : "Плотность"}">
+      <span class="muted" style="font-size:13px">${ctx.isDesktop ? "Размер" : "Плотность"}</span>
+      ${(ctx.isDesktop ? [["S", "S"], ["M", "M"], ["L", "L"]] : [["M", "Обычная"], ["S", "Компактная"]]).map(([v, label]) =>
+        `<button type="button" class="chip-btn" role="radio" aria-checked="${(w.size || "M") === v}" data-action="w-size" data-i="${i}" data-size="${v}"${(w.size || "M") === v ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>${label}</button>`).join("")}
+    </div>
     <div class="widget-preview" aria-hidden="true">${inner}</div></div>`;
 }
 
@@ -476,7 +487,8 @@ export function renderHome(ctx) {
   const library = editing && hidden.length ? `<section class="card" aria-label="Библиотека виджетов"><div class="card-head"><h2>Добавить виджет</h2></div>
       <div class="chips">${hidden.map((t) => `<button type="button" class="chip-btn" data-action="w-add" data-type="${t}">+ ${esc(WIDGETS[t])}</button>`).join("")}</div></section>` : "";
   const shown = list.map((w, i) => ({ w, i })).filter(({ w }) => !w.hidden);
-  const render = (items) => items.map(({ w, i }) => editFrame(ctx, w, i, list.length, widgetHtml(ctx, w.type))).join("");
+  const render = (items) => items.map(({ w, i }) => editFrame(ctx, w, i, list.length,
+    `<div class="w-size-${w.size || "M"}">${widgetHtml({ ...ctx, wsize: ctx.isDesktop || w.size === "S" ? w.size || "M" : "M" }, w.type)}</div>`)).join("");
   if (!ctx.isDesktop) {
     return `${head}${renderNotices(ctx)}${editBar}${quick}${render(shown)}${library}`;
   }
@@ -952,7 +964,7 @@ export function renderProfile(ctx) {
     <input type="checkbox" class="switch" data-action="set-setting" data-setting="${key}" ${s[key] ? "checked" : ""}></label>`;
   const n = ctx.status?.unconfirmed || 0;
 
-  return `<header class="page-head"><h1>Кабинет</h1>${statusButton(ctx.status)}</header>
+  return `<header class="page-head"><div class="row" style="gap:8px">${ctx.ui.profileFrom ? `<a class="icon-btn" href="${esc(ctx.ui.profileFrom)}" aria-label="Назад">${icons.left(20)}</a>` : ""}<h1>Кабинет</h1></div>${statusButton(ctx.status)}</header>
     ${renderNotices(ctx)}
     <div class="profile-grid">
       <section class="card" aria-label="Профиль">

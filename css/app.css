@@ -425,6 +425,9 @@ h1, h2, h3 { margin: 0; line-height: 1.25; }
 /* Настройка главной: рамка виджета с кнопками; сам виджет — только просмотр */
 .widget-edit { border: 1px dashed var(--accent); border-radius: calc(var(--radius-card) + 6px); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
 .widget-preview { pointer-events: none; opacity: 0.85; }
+/* размер S — компактнее; M и L отличаются объёмом содержимого */
+.w-size-S > .card { padding: 12px 14px; gap: 8px; }
+.w-size-S .task { padding-top: 6px; padding-bottom: 6px; }
 
 /* Помощник: диалог и черновики */
 .chat { gap: 14px; }
