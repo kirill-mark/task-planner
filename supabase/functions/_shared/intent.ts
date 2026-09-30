@@ -122,7 +122,32 @@ export async function parseMessage(
   } catch {
     throw new Error("модель вернула не JSON");
   }
-  return resolveDates(normalizeParse(json, ctx, candidates), text, ctx.today);
+  return widenAmbiguous(dropUnnamedTime(resolveDates(normalizeParse(json, ctx, candidates), text, ctx.today), text), text, candidates);
+}
+
+// Время, которого нет в сообщении, модель берёт из соседних задач
+// («перенеси встречу на понедельник» → 11:00). Такое время отбрасывается.
+export function dropUnnamedTime(p: Parsed, text: string): Parsed {
+  if (timeMentioned(text)) return p;
+  if (p.kind === "add") return { ...p, drafts: p.drafts.map((d) => (d.time ? { ...d, time: "" } : d)) };
+  if (p.kind === "move") return { ...p, time: null };
+  return p;
+}
+
+// Если слова сообщения не отличают выбранную задачу от другой («встречу» при
+// встрече с Олегом и встрече с Анной), пользователь выбирает сам (A22):
+// в цели добавляются задачи с тем же набором совпавших слов.
+export function widenAmbiguous(p: Parsed, text: string, candidates: TaskRef[]): Parsed {
+  if (p.kind !== "delete" && p.kind !== "done" && p.kind !== "move") return p;
+  const want = new Set(stems(text));
+  const sig = (t: TaskRef) => [...new Set(stems(t.title + " " + (t.notes || "")).filter((w) => want.has(w)))].sort().join(" ");
+  const targets = [...p.targets];
+  for (const t of p.targets) {
+    const k = sig(t);
+    if (!k) continue;
+    for (const c of candidates) if (!targets.some((x) => x.id === c.id) && sig(c) === k) targets.push(c);
+  }
+  return targets.length === p.targets.length ? p : { ...p, targets };
 }
 
 // Дата, названная в тексте однозначно, важнее даты модели (см. _shared/dates.ts).
@@ -146,11 +171,10 @@ export function resolveDates(p: Parsed, text: string, today: string): Parsed {
   return { ...p, drafts };
 }
 
-// «В среду», сказанное во вторник, — завтра, а модель нередко ставит среду
-// следующей недели. Если день недели назван без «следующей», дата, отстоящая
-// ровно на неделю от ближайшего такого дня, возвращается к ближайшему. Когда
-// ближайший — сегодня, решение модели не трогаем: «в среду» в среду чаще
-// значит следующую.
+// Для помощника: «в среду», сказанное во вторник, — завтра, а модель нередко
+// ставит среду следующей недели. Если день недели назван без «следующей»,
+// дата, отстоящая ровно на неделю от ближайшего такого дня, возвращается к
+// ближайшему. Бот считает даты полностью сам (resolveDates).
 const WEEKDAYS: [RegExp, number][] = [
   [/понедельник/, 1], [/вторник/, 2], [/сред[аыуе]/, 3], [/четверг/, 4],
   [/пятниц/, 5], [/суббот/, 6], [/воскресень/, 0],
@@ -172,13 +196,6 @@ export function nearestWeekday(date: string, wds: Set<number>, today: string): s
   return new Date(base + ahead * 86400000).toISOString().slice(0, 10);
 }
 
-export function nearestWeekdays(p: Parsed, text: string, today: string): Parsed {
-  const wds = mentionedWeekdays(text);
-  const fix = (d: string) => nearestWeekday(d, wds, today);
-  if (p.kind === "add") return { ...p, drafts: p.drafts.map((d) => ({ ...d, date: fix(d.date) })) };
-  if (p.kind === "move") return { ...p, date: fix(p.date) };
-  return p;
-}
 
 // ------------------------------------------------------------------ правка --
 

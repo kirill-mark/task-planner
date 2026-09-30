@@ -137,3 +137,14 @@ Deno.test("дата из текста важнее даты модели; нес
   p = await parseMessage("купить хлеб и завтра позвонить маме", ctx(), add([{ title: "Хлеб", date: "" }, { title: "Маме", date: "2026-10-01" }]));
   assert(p.kind === "add"); assertEquals(p.drafts.map((x) => x.date), ["", "2026-09-30"]);
 });
+
+Deno.test("A21/A22: «перенеси встречу» — обе встречи на выбор, время не придумывается", async () => {
+  let p = await parseMessage("перенеси встречу на понедельник", ctx(), model({ intent: "move", targets: [1], date: "2026-10-05", time: "11:00" }));
+  assert(p.kind === "move");
+  assertEquals([p.targets.map((t) => t.id).sort(), p.date, p.time], [["a", "b"], "2026-10-05", null]);
+  p = await parseMessage("перенеси встречу с Олегом на понедельник в 12", ctx(), model({ intent: "move", targets: [1], date: "2026-10-05", time: "12:00" }));
+  assert(p.kind === "move");
+  assertEquals([p.targets.map((t) => t.id), p.time], [["a"], "12:00"]);
+  const add = await parseMessage("купить хлеб завтра", ctx(), model({ intent: "add", tasks: [{ title: "Хлеб", date: "2026-09-30", time: "10:00" }] }));
+  assert(add.kind === "add"); assertEquals(add.drafts[0].time, "");
+});
