@@ -87,8 +87,18 @@ function draftOf(raw: any, ctx: ParseContext): Draft | null {
   return { title, notes: typeof raw.notes === "string" ? raw.notes.trim().slice(0, 5000) : "", date, time, dateMode, groupId };
 }
 
+// Модель иногда называет намерение своими словами («complete», «reschedule»):
+// это то же намерение, а не повод ответить «не понял».
+const INTENT_ALIASES: Record<string, string> = {
+  create: "add", new: "add", add_task: "add", add_tasks: "add",
+  complete: "done", completed: "done", finish: "done", mark_done: "done", close: "done",
+  remove: "delete", cancel: "delete", trash: "delete",
+  reschedule: "move", postpone: "move", update: "move",
+};
+
 export function normalizeParse(raw: any, ctx: ParseContext, candidates: TaskRef[]): Parsed {
-  const intent = raw?.intent;
+  const said = typeof raw?.intent === "string" ? raw.intent.trim().toLowerCase() : "";
+  const intent = INTENT_ALIASES[said] || said;
   if (intent === "add") {
     const list = Array.isArray(raw.tasks) ? raw.tasks : [raw];
     const drafts = list.map((x: any) => draftOf(x, ctx)).filter(Boolean).slice(0, 10) as Draft[];

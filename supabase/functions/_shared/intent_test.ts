@@ -148,3 +148,9 @@ Deno.test("A21/A22: «перенеси встречу» — обе встреч�
   const add = await parseMessage("купить хлеб завтра", ctx(), model({ intent: "add", tasks: [{ title: "Хлеб", date: "2026-09-30", time: "10:00" }] }));
   assert(add.kind === "add"); assertEquals(add.drafts[0].time, "");
 });
+
+Deno.test("намерение своими словами модели — то же намерение", async () => {
+  const p = await parseMessage("отчёт по проекту готов", ctx(), model({ intent: "complete", targets: [1] }));
+  assert(p.kind === "done"); assertEquals(p.targets.map((t) => t.id), ["c"]);
+  assertEquals((await parseMessage("x", ctx(), model({ intent: "что-то своё" }))).kind, "unclear");
+});
