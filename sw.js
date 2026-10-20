@@ -1,4 +1,4 @@
-const CACHE_NAME = "task-planner-v24";
+const CACHE_NAME = "task-planner-v25";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -21,6 +21,7 @@ const APP_SHELL = [
   "./js/mark/engine.js",
   "./js/mark/localdb.js",
   "./js/mark/transport.js",
+  "./js/mark/endpoint.js",
   "./manifest.json",
   "./icons/icon-192.png?v=6",
   "./icons/icon-512.png?v=6",

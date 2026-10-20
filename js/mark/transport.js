@@ -6,14 +6,17 @@
 // сбой сервера, окончательный отказ. Ошибка чтения никогда не выглядит как
 // пустой аккаунт.
 
-export const SUPABASE_URL = "https://ofgicgqsmjvpsrvzefib.supabase.co";
+import { API_URL, apiFetch } from "./endpoint.js";
+
+// Адрес — через прокси с запасным прямым путём (endpoint.js).
+export const SUPABASE_URL = API_URL;
 export const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mZ2ljZ3FzbWp2cHNydnplZmliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxODUyMTAsImV4cCI6MjEwMzc2MTIxMH0._N5Dpuz1ySkBwgypp8gSOPF7U3DnwV0XGIaPAGa3y34";
 
 const REQUEST_TIMEOUT_MS = 20000;
 
 // getAccessToken — функция, а не строка: токен обновляется, и каждый запрос
 // должен брать актуальный. fetchImpl подменяется в тестах.
-export function createTransport({ getAccessToken, fetchImpl = (...a) => fetch(...a), url = SUPABASE_URL, anonKey = SUPABASE_ANON_KEY }) {
+export function createTransport({ getAccessToken, fetchImpl = apiFetch, url = SUPABASE_URL, anonKey = SUPABASE_ANON_KEY }) {
   async function request(path, body) {
     const token = await getAccessToken();
     if (!token) return { kind: "auth" };

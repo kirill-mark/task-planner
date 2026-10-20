@@ -15,12 +15,13 @@
     "test:recovery": "node scripts/test-recovery.mjs",
     "test:export": "node scripts/test-export.mjs",
     "test:notifications": "node scripts/test-notifications.mjs",
-    "test": "npm run test:ui && npm run test:engine && npm run test:server && npm run test:guards && npm run test:recovery && npm run test:export && npm run test:trash && npm run test:notifications && npm run test:widget && npm run test:assistant-chats && npm run test:speech && npm run test:assistant-memory",
+    "test": "npm run test:ui && npm run test:engine && npm run test:server && npm run test:guards && npm run test:recovery && npm run test:export && npm run test:trash && npm run test:notifications && npm run test:widget && npm run test:assistant-chats && npm run test:speech && npm run test:assistant-memory && npm run test:endpoint",
     "test:widget": "node scripts/test-widget.mjs",
     "test:widget:swift": "sh scripts/test-widget-swift.sh",
     "test:speech": "node scripts/test-speech.mjs",
     "test:assistant-chats": "node scripts/test-assistant-chats.mjs",
-    "test:assistant-memory": "node scripts/test-assistant-memory.mjs"
+    "test:assistant-memory": "node scripts/test-assistant-memory.mjs",
+    "test:endpoint": "node scripts/test-endpoint.mjs"
   },
   "dependencies": {
     "@capacitor/core": "8.5.2",

@@ -1,11 +1,12 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "./mark/transport.js";
+import { apiFetch } from "./mark/endpoint.js";
 import { createRecoveryFlow, recoveryAuthOptions } from "./recovery-flow.js";
 
 const hash = location.hash;
 // Credentials stay in memory for this page only, and disappear from the URL.
 history.replaceState(null, "", location.pathname);
-const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: recoveryAuthOptions });
+const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: recoveryAuthOptions, global: { fetch: (...a) => apiFetch(...a) } });
 const flow = createRecoveryFlow(client.auth);
 const form = document.getElementById("recovery-form");
 const message = document.getElementById("recovery-message");

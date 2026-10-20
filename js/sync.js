@@ -1,9 +1,15 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
 
-const SUPABASE_URL = "https://ofgicgqsmjvpsrvzefib.supabase.co";
+import { API_URL as SUPABASE_URL, AUTH_STORAGE_KEY, apiFetch } from "./mark/endpoint.js";
+
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9mZ2ljZ3FzbWp2cHNydnplZmliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxODUyMTAsImV4cCI6MjEwMzc2MTIxMH0._N5Dpuz1ySkBwgypp8gSOPF7U3DnwV0XGIaPAGa3y34";
 
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Запросы — через прокси с запасным прямым путём; ключ входа прежний, чтобы
+// смена адреса никого не разлогинила (endpoint.js).
+export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  global: { fetch: (...a) => apiFetch(...a) },
+  auth: { storageKey: AUTH_STORAGE_KEY },
+});
 
 // --- auth ---
 export async function getSession() {
@@ -35,7 +41,7 @@ export async function signOut() {
 
 export async function telegramMiniAppSignIn(initData) {
   try {
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/telegram-miniapp-auth`, {
+    const res = await apiFetch(`${SUPABASE_URL}/functions/v1/telegram-miniapp-auth`, {
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY },
       body: JSON.stringify({ initData }),

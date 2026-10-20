@@ -25,6 +25,7 @@ import { clearOverdue } from "./clear-overdue.js";
 import { todayIso, hhmm, deviceTimezone, plural, addDays, shortDate } from "./lib.js";
 import { overdueKind, dayLoad } from "./derive.js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../mark/transport.js";
+import { apiFetch } from "../mark/endpoint.js";
 import {
   layoutOf, defaultLayout, renderShell, renderHome, renderTasks, renderCalendar, renderAssistant, renderProfile,
   renderAuth, renderSplash, syncLabel,
@@ -1030,7 +1031,7 @@ async function askAssistant(text) {
   try {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
     if (!current()) { clearTimeout(timeout); return; }
-    const res = await fetch(`${SUPABASE_URL}/functions/v1/mark-assistant`, {
+    const res = await apiFetch(`${SUPABASE_URL}/functions/v1/mark-assistant`, {
       signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
