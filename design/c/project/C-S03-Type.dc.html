@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Текст, отступы, скругления</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.thd .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thd .row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.thd .chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.thd .meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thd .lbl{font-size:13px;color:#A8B1BA}
+.thd .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thd .cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.thd .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thd .pill.sel{background:#F3F5F7;color:#101316}
+.thd .btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thd .btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thd .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thd .danger{color:#FF8F87}
+.thd .card{background:#191E23;border-radius:20px;padding:14px 16px}
+.thd .field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thd .field.focus{border-color:#6ED6A0}
+.thd .field.err{border-color:#FF8F87}
+.thd .flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.thd .sec{font-size:17px;font-weight:600;margin:0}
+.thd .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.thd .key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thd .caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thd .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thd .li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thd .sk{background:#20262C;border-radius:8px}
+.thl .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thl .row + .row{border-top:1px solid #EAEDF0}
+.thl .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7A848E;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#FFFFFF}
+.thl .chk.on{background:#18794E;border-color:#18794E}
+.thl .meta{font-size:13px;color:#5B6570;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thl .lbl{font-size:13px;color:#5B6570}
+.thl .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #C9D0D6;background:none;color:#3A4652;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thl .cap.sel{border-color:#18794E;color:#18212B;background:#E3F3EA}
+.thl .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#FFFFFF;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#3A4652;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thl .pill.sel{background:#18212B;color:#F5F6F8}
+.thl .btn{min-height:48px;border-radius:14px;background:#18794E;color:#FFFFFF;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thl .btn2{min-height:44px;border-radius:14px;background:#FFFFFF;border:1px solid #DCE1E5;color:#18212B;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thl .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#18794E;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thl .danger{color:#B42318}
+.thl .card{background:#FFFFFF;border-radius:20px;padding:14px 16px}
+.thl .field{background:#F5F6F8;border:1px solid #DCE1E5;border-radius:12px;padding:11px 12px;font-size:16px;color:#18212B;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thl .field.focus{border-color:#18794E}
+.thl .field.err{border-color:#B42318}
+.thl .flabel{font-size:13px;color:#5B6570;font-weight:500}
+.thl .sec{font-size:17px;font-weight:600;margin:0}
+.thl .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#5B6570;min-width:56px;padding-top:2px}
+.thl .key{background:#FFFFFF;border-radius:6px;height:42px;flex:1;color:#18212B;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thl .caret{display:inline-block;width:2px;height:1.1em;background:#18794E;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thl .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thl .li + .li{border-top:1px solid #EAEDF0}
+.thl .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thl .sk{background:#EEF0F3;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 1280px; height: 760px; box-sizing: border-box; background: #EEF0F2; color: #18212B; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 15px; line-height: 1.45; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px; overflow: hidden">
+  <header style="display: flex; flex-direction: column; gap: 4px"><h1 style="margin: 0; font-size: 30px; font-weight: 700">Текст, отступы, скругления</h1></header>
+  <p style="margin: 0; color: #4A5561; max-width: 1100px">Системный шрифт iPhone (SF Pro), без своих шрифтов. Размеры — в точках при стандартном размере текста; при крупном тексте всё растёт примерно на треть, области нажатия не уменьшаются. Строка 1,4.</p>
+  <div style="display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 20px; align-items: start">
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 8px 8px"><table style="border-collapse: collapse; width: 100%; font-size: 14px"><thead><tr><th style="text-align: left; padding: 8px 12px">Роль</th><th style="text-align: left; padding: 8px 12px">Размер / начертание</th><th style="text-align: left; padding: 8px 12px">Где</th></tr></thead><tbody><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Заголовок раздела</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">28 / 700</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">«Задачи», «Календарь»</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Приветствие</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">22 / 700</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">главная</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Главная задача</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">19 / 600</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">название в карточке</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Подзаголовок</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">17 / 600</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">«План дня», заголовки листов</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Основной текст</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">16 / 400</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">задачи, поля</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Поле названия</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">18 / 400</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">форма новой задачи</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Кнопки</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">16 / 600</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">«Добавить»</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Капсулы, плашки</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">14 / 400</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">«Без даты», фильтры</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Подписи</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">13 / 400</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">время, проект, сроки</td></tr><tr><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5">Нижняя панель</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; font-family: ui-monospace, Menlo, monospace">11 / 500</td><td style="padding: 8px 12px; border-top: 1px solid #DCE1E5; color: #4A5561">подписи разделов</td></tr></tbody></table></div>
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 16px 20px"><b>Отступы, pt</b><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Поля экрана</span><span style="font-family: ui-monospace, Menlo, monospace">20</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Между блоками главной</span><span style="font-family: ui-monospace, Menlo, monospace">16</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Строка задачи</span><span style="font-family: ui-monospace, Menlo, monospace">10 сверху и снизу</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Внутри карточки</span><span style="font-family: ui-monospace, Menlo, monospace">12–16</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Между капсулами</span><span style="font-family: ui-monospace, Menlo, monospace">6–8</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Отступ сверху</span><span style="font-family: ui-monospace, Menlo, monospace">56 (под системной строкой)</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Конец прокрутки</span><span style="font-family: ui-monospace, Menlo, monospace">28 над нижней панелью</span></div></div>
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 16px 20px"><b>Скругления, pt</b><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Карточки, листы</span><span style="font-family: ui-monospace, Menlo, monospace">20</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Группы настроек</span><span style="font-family: ui-monospace, Menlo, monospace">16</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Кнопки</span><span style="font-family: ui-monospace, Menlo, monospace">14</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Поля</span><span style="font-family: ui-monospace, Menlo, monospace">12</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Капсулы, плашки</span><span style="font-family: ui-monospace, Menlo, monospace">половина высоты</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Отметки, «+»</span><span style="font-family: ui-monospace, Menlo, monospace">круг</span></div><div style="display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid #DCE1E5"><span>Метки сроков</span><span style="font-family: ui-monospace, Menlo, monospace">7</span></div><div style="margin-top: 14px"><b>Границы</b><p style="margin: 4px 0 0; color: #4A5561">1 pt. Рамка главной задачи — зелёная 28%. Фокус поля — зелёная 1 pt без подсветки вокруг. Теней нет, кроме всплывающего меню.</p></div><div style="margin-top: 14px"><b>Области нажатия</b><p style="margin: 4px 0 0; color: #4A5561">Не меньше 44 × 44 pt. У капсул высотой 36 pt недостающее место — прозрачный отступ.</p></div></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

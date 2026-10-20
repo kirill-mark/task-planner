@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>P01. Список проектов с поиском</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.lbl{font-size:13px;color:#A8B1BA}
+.cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.pill.sel{background:#F3F5F7;color:#101316}
+.btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.danger{color:#FF8F87}
+.card{background:#191E23;border-radius:20px;padding:14px 16px}
+.field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.field.focus{border-color:#6ED6A0}
+.field.err{border-color:#FF8F87}
+.flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.sec{font-size:17px;font-weight:600;margin:0}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.sk{background:#20262C;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #101316; color: #F3F5F7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 16px; line-height: 1.4; display: flex; flex-direction: column; overflow: hidden; position: relative">
+  <div style="flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; ">
+  <div style="padding: 56px 20px 28px; display: flex; flex-direction: column; gap: 16px; flex-shrink: 0">
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -8px -8px 0">
+      <a href="C-T04-ByProject.dc.html" style="min-height: 44px; display: flex; align-items: center; gap: 2px; color: #6ED6A0; font-size: 16px; padding-right: 8px"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M15 5l-7 7 7 7"/></svg>Задачи</a>
+      <span style="font-weight: 600; font-size: 16px; flex: 1; text-align: center; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"></span>
+      <div style="display: flex; align-items: center; min-width: 60px; justify-content: flex-end"></div>
+    </header>
+    <header style="display: flex; align-items: center; justify-content: space-between; gap: 12px">
+      <div style="display: flex; flex-direction: column; min-width: 0"><h1 style="margin: 0; font-size: 28px; font-weight: 700; line-height: 1.2">Проекты</h1><span class="lbl">4 проекта</span></div>
+      <div style="display: flex; gap: 4px; align-items: center"></div>
+    </header>
+    <label style="display: flex; flex-direction: column; gap: 6px"><span class="field" style=""><span style="color: #A8B1BA; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/></svg></span><span style="flex: 1; min-width: 0"><span style="color: #A8B1BA">Найти проект</span></span></span></label>
+    <div style="background: #191E23; border-radius: 16px; overflow: hidden"><a href="C-P04-Project.dc.html" class="li"><span style="color: #A8B1BA; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column; padding: 9px 0"><span>KINOMARK</span><span style="font-size: 13px; color: #A8B1BA">12 задач · <span style="color: #FF8F87">2 просрочено</span></span></span><span style="color: #A8B1BA; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"/></svg></span></a><a href="C-P04-Project.dc.html" class="li"><span style="color: #A8B1BA; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column; padding: 9px 0"><span>Дом</span><span style="font-size: 13px; color: #A8B1BA">5 задач</span></span><span style="color: #A8B1BA; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"/></svg></span></a><a href="C-P04-Project.dc.html" class="li"><span style="color: #A8B1BA; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column; padding: 9px 0"><span>Здоровье</span><span style="font-size: 13px; color: #A8B1BA">3 задач · <span style="color: #FF8F87">1 просрочено</span></span></span><span style="color: #A8B1BA; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"/></svg></span></a><a href="C-P04-Project.dc.html" class="li"><span style="color: #A8B1BA; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg></span><span style="flex: 1; display: flex; flex-direction: column; padding: 9px 0"><span>Учёба английского</span><span style="font-size: 13px; color: #A8B1BA">нет задач</span></span><span style="color: #A8B1BA; display: flex"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="m9 6 6 6-6 6"/></svg></span></a></div>
+    <a href="C-P03-Create.dc.html" class="btn2" style="align-self: flex-start"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 5v14M5 12h14"/></svg>Новый проект</a>
+    <span class="lbl">Проект — необязательная группа задач. Задачи без проекта видны в общем списке.</span>
+  </div>
+  </div>
+  <nav aria-label="Разделы" style="height: 84px; flex-shrink: 0; background: #14181C; display: flex; align-items: flex-start; justify-content: space-around; padding-top: 8px; box-sizing: border-box; border-top: 1px solid rgba(255,255,255,0.07)">
+    <a href="C-H01-Home.dc.html" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M4 11 12 4l8 7v9H4z"/></svg>Главная</a><a href="C-T01-Tasks.dc.html" class="tab" style="color: #6ED6A0" aria-current="page"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1" fill="currentColor"/><circle cx="4.5" cy="12" r="1" fill="currentColor"/><circle cx="4.5" cy="18" r="1" fill="currentColor"/></svg>Задачи</a><a href="#" aria-label="Добавить задачу" style="width: 52px; height: 52px; border-radius: 26px; background: #6ED6A0; color: #101316; display: flex; align-items: center; justify-content: center; margin-top: -6px"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 5v14M5 12h14"/></svg></a><a href="C-K01-Week.dc.html" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Календарь</a><a href="C-A01-Start.dc.html" class="tab"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 3l1.8 4.7L18.5 9.5l-4.7 1.8L12 16l-1.8-4.7L5.5 9.5l4.7-1.8z"/></svg>Помощник</a>
+  </nav>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

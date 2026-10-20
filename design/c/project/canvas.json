@@ -1,0 +1,1266 @@
+{
+ "v": 3,
+ "createdOnFiles": {
+  "v": 1,
+  "at": "2026-10-20T17:44:27Z"
+ },
+ "title": "Mark — концепция C",
+ "launch": {
+  "view": "canvas",
+  "page": "home"
+ },
+ "pages": [
+  {
+   "id": "sys",
+   "name": "Система оформления"
+  },
+  {
+   "id": "home",
+   "name": "Главная"
+  },
+  {
+   "id": "create",
+   "name": "Создание и редактирование"
+  },
+  {
+   "id": "date",
+   "name": "Дата и напоминание"
+  },
+  {
+   "id": "tasks",
+   "name": "Задачи и входящие"
+  },
+  {
+   "id": "projects",
+   "name": "Проекты"
+  },
+  {
+   "id": "calendar",
+   "name": "Календарь"
+  },
+  {
+   "id": "assistant",
+   "name": "Помощник"
+  },
+  {
+   "id": "other",
+   "name": "Вход, загрузка, кабинет"
+  }
+ ],
+ "boards": {
+  "C-S01-Brand.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 1280,
+   "h": 600,
+   "title": "S01. Знак и иконка Mark",
+   "page": "sys"
+  },
+  "C-S02-Colors.dc.html": {
+   "x": 1360,
+   "y": 0,
+   "w": 1280,
+   "h": 760,
+   "title": "S02. Цвета",
+   "page": "sys"
+  },
+  "C-S03-Type.dc.html": {
+   "x": 2720,
+   "y": 0,
+   "w": 1280,
+   "h": 760,
+   "title": "S03. Текст, отступы, скругления",
+   "page": "sys"
+  },
+  "C-S04-Controls.dc.html": {
+   "x": 4080,
+   "y": 0,
+   "w": 1280,
+   "h": 820,
+   "title": "S04. Кнопки, поля, отметки, фильтры",
+   "page": "sys"
+  },
+  "C-S05-TaskRows.dc.html": {
+   "x": 5440,
+   "y": 0,
+   "w": 1280,
+   "h": 1180,
+   "title": "S05. Строки задач и правила сроков",
+   "page": "sys"
+  },
+  "C-S06-Surfaces.dc.html": {
+   "x": 6800,
+   "y": 0,
+   "w": 1280,
+   "h": 1000,
+   "title": "S06. Панели, листы и сообщения",
+   "page": "sys"
+  },
+  "C-H01-Home.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H01. Обычный день",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H02-NoMain.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H02. Главная задача не выбрана",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H03-PickMain.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H03. Выбор и смена главной задачи",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H04-Empty.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H04. Задач на сегодня нет",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H05-AllDone.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H05. Все задачи выполнены",
+   "page": "home"
+  },
+  "C-H06-Overdue.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "H06. Срок задачи прошёл",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H07-Offline.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "H07. Нет сети, изменения на телефоне",
+   "page": "home"
+  },
+  "C-H08-Conflict.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "H08. У задачи две версии",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H09-Versions.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "H09. Сравнение двух версий",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H10-Completed.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "H10. Задача выполнена — «Отменить»",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H11-Narrow.dc.html": {
+   "x": 1880,
+   "y": 1004,
+   "w": 360,
+   "h": 780,
+   "title": "H11. 360 × 780, длинные названия",
+   "page": "home"
+  },
+  "C-H12-LargeText.dc.html": {
+   "x": 2320,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "H12. Крупный текст",
+   "page": "home"
+  },
+  "C-H12b-LargeTextEnd.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "H12b. Крупный текст — конец прокрутки",
+   "page": "home"
+  },
+  "C-H13-Loading.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "H13. Начальная загрузка",
+   "page": "home"
+  },
+  "C-H14-LoadError.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "H14. Ошибка получения данных",
+   "page": "home",
+   "is_interactive": true
+  },
+  "C-H15-Light.dc.html": {
+   "x": 1410,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "H15. Светлая тема",
+   "page": "home"
+  },
+  "C-C01-AddEmpty.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C01. Пустая форма, клавиатура открыта",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C02-AddShort.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C02. Короткое название",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C03-AddLong.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C03. Длинное название",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C04-AddVeryLong.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C04. Много текста — поле прокручивается",
+   "page": "create"
+  },
+  "C-C05-AddDate.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C05. Выбрана дата",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C06-AddReminder.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "C06. Выбрано напоминание",
+   "page": "create"
+  },
+  "C-C07-AddInProject.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "C07. Добавление внутри проекта",
+   "page": "create"
+  },
+  "C-C08-More.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "C08. «Ещё» — подробная форма",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C09-MoreEnd.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "C09. Подробная форма — конец прокрутки",
+   "page": "create"
+  },
+  "C-E01-TaskView.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "E01. Открытая задача",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-E02-EditTime.dc.html": {
+   "x": 1880,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "E02. Перенос времени, срок сохраняется",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-E03-Menu.dc.html": {
+   "x": 2350,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "E03. Меню задачи",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-E04-EditTitle.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "E04. Редактирование названия",
+   "page": "create"
+  },
+  "C-C11-Saving.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "C11. Сохранение",
+   "page": "create"
+  },
+  "C-C12-SaveError.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "C12. Ошибка сохранения и повтор",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C13-Added.dc.html": {
+   "x": 1410,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "C13. «Задача добавлена» — «Отменить»",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C14-DraftSaved.dc.html": {
+   "x": 1880,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "C14. Закрыли форму — черновик сохранён",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C15-Draft.dc.html": {
+   "x": 2350,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "C15. Форма открыта с черновиком",
+   "page": "create",
+   "is_interactive": true
+  },
+  "C-C16-Phrase.dc.html": {
+   "x": 0,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "C16. Распознавание фразы (после готовности функции)",
+   "page": "create"
+  },
+  "C-C17-AddLight.dc.html": {
+   "x": 470,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "C17. Светлая тема — длинное название",
+   "page": "create"
+  },
+  "C-C18-AddNarrow.dc.html": {
+   "x": 940,
+   "y": 3012,
+   "w": 360,
+   "h": 780,
+   "title": "C18. 360 × 780 — длинное название",
+   "page": "create"
+  },
+  "C-C19-AddLarge.dc.html": {
+   "x": 1380,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "C19. Крупный текст — длинное название",
+   "page": "create"
+  },
+  "C-C20-MoreLight.dc.html": {
+   "x": 1850,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "C20. Светлая тема — подробная форма",
+   "page": "create"
+  },
+  "C-D01-QuickDate.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D01. Быстрый выбор: сегодня, завтра, другая дата",
+   "page": "date",
+   "is_interactive": true
+  },
+  "C-D02-Month.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D02. Полный календарь месяца",
+   "page": "date",
+   "is_interactive": true
+  },
+  "C-D03-NextMonth.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D03. Дата в следующем месяце",
+   "page": "date"
+  },
+  "C-D04-Time.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D04. Время и «Без времени»",
+   "page": "date"
+  },
+  "C-D05-RemoveDate.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D05. Удаление даты",
+   "page": "date"
+  },
+  "C-D06-Reminder.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "D06. Напоминание, у задачи есть время",
+   "page": "date",
+   "is_interactive": true
+  },
+  "C-D07-ReminderNoTime.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "D07. Напоминание, у задачи нет времени",
+   "page": "date"
+  },
+  "C-D08-NoPermission.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "D08. Нет разрешения на уведомления",
+   "page": "date"
+  },
+  "C-D09-Deadline.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "D09. Крайний срок и «До конца дня»",
+   "page": "date"
+  },
+  "C-D10-MonthLight.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "D10. Светлая тема — календарь месяца",
+   "page": "date"
+  },
+  "C-T01-Tasks.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T01. Задачи — список по умолчанию",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T02-Today.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T02. Фильтр «Сегодня»",
+   "page": "tasks"
+  },
+  "C-T03-ViewMenu.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T03. Меню выбора вида",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T04-ByProject.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T04. Вид «По проектам»",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T05-MoreFilters.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T05. Дополнительные фильтры",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T06-Search.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "T06. Поиск с результатами",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T07-SearchEmpty.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T07. Поиск без результатов",
+   "page": "tasks"
+  },
+  "C-T08-Overdue.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T08. Просроченные задачи",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T09-Inbox.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T09. Входящие",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T10-Review.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T10. Разбор входящей задачи с датой",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T11-ReviewNoDate.dc.html": {
+   "x": 1880,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T11. Разбор без даты и проекта",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T12-Done.dc.html": {
+   "x": 2350,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "T12. Выполненные задачи",
+   "page": "tasks"
+  },
+  "C-T13-Trash.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "T13. Корзина и восстановление",
+   "page": "tasks"
+  },
+  "C-T14-Completed.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "T14. Задача выполнена — шапка не меняется",
+   "page": "tasks",
+   "is_interactive": true
+  },
+  "C-T15-Light.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "T15. Светлая тема",
+   "page": "tasks"
+  },
+  "C-T16-Narrow.dc.html": {
+   "x": 1410,
+   "y": 2008,
+   "w": 360,
+   "h": 780,
+   "title": "T16. 360 × 780, длинные названия",
+   "page": "tasks"
+  },
+  "C-T17-LargeEnd.dc.html": {
+   "x": 1850,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "T17. Крупный текст — конец прокрутки",
+   "page": "tasks"
+  },
+  "C-P01-Projects.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P01. Список проектов с поиском",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P02-Empty.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P02. Проектов ещё нет",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P03-Create.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P03. Создание проекта",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P04-Project.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P04. Внутри проекта",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P05-PickProject.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P05. Выбор проекта в задаче",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P06-TaskProject.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "P06. Проект убран из задачи",
+   "page": "projects"
+  },
+  "C-P07-Rename.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "P07. Переименование проекта",
+   "page": "projects"
+  },
+  "C-P08-Delete.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "P08. Удаление проекта — последствия",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P09-Menu.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "P09. Меню проекта",
+   "page": "projects",
+   "is_interactive": true
+  },
+  "C-P10-ProjectLight.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "P10. Светлая тема — внутри проекта",
+   "page": "projects"
+  },
+  "C-K01-Week.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K01. Неделя и выбранный день",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K02-PickDate.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K02. Переход к другой неделе и дате",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K03-EmptyDay.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K03. Пустой день",
+   "page": "calendar"
+  },
+  "C-K04-Deadlines.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K04. Задачи без времени и крайние сроки",
+   "page": "calendar"
+  },
+  "C-K05-Overlap.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K05. Пересекающиеся события",
+   "page": "calendar"
+  },
+  "C-K06-Open.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "K06. Открытая запись и изменение времени",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K07-End.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K07. Конец прокрутки",
+   "page": "calendar"
+  },
+  "C-K08-Light.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K08. Светлая тема",
+   "page": "calendar"
+  },
+  "C-K09-Narrow.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 360,
+   "h": 780,
+   "title": "K09. 360 × 780",
+   "page": "calendar"
+  },
+  "C-A01-Start.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A01. Начальный экран",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A02-Typing.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A02. Ввод сообщения",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A03-Waiting.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A03. Ожидание ответа",
+   "page": "assistant"
+  },
+  "C-A04-Question.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A04. Уточняющий вопрос",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A05-Answer.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A05. Обычный ответ без изменений",
+   "page": "assistant"
+  },
+  "C-A06-Proposal.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "A06. Предложение — просмотр до подтверждения",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A07-Applying.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A07. Применение с защитой от повторного нажатия",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A08-Applied.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A08. Успешный результат",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A09-Partial.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A09. Частичный результат для независимых действий",
+   "page": "assistant"
+  },
+  "C-A10-Conflict.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A10. Конфликт",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A11-Offline.dc.html": {
+   "x": 1880,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A11. Нет сети и повтор запроса",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A12-Undone.dc.html": {
+   "x": 2350,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "A12. Отмена применённых изменений",
+   "page": "assistant"
+  },
+  "C-A13-Replan.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "A13. Связанный план — нужен пересчёт",
+   "page": "assistant"
+  },
+  "C-A14-Chats.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "A14. История и переключение чатов",
+   "page": "assistant",
+   "is_interactive": true
+  },
+  "C-A15-ProposalLight.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "A15. Светлая тема — предложение",
+   "page": "assistant"
+  },
+  "C-O01-Splash.dc.html": {
+   "x": 0,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O01. Экран загрузки",
+   "page": "other"
+  },
+  "C-O02-IconHome.dc.html": {
+   "x": 470,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O02. Иконка приложения на iPhone",
+   "page": "other"
+  },
+  "C-O03-Login.dc.html": {
+   "x": 940,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O03. Вход",
+   "page": "other",
+   "is_interactive": true
+  },
+  "C-O04-Signup.dc.html": {
+   "x": 1410,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O04. Регистрация",
+   "page": "other",
+   "is_interactive": true
+  },
+  "C-O04b-LoginError.dc.html": {
+   "x": 1880,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O04b. Ошибка входа",
+   "page": "other"
+  },
+  "C-O05-Account.dc.html": {
+   "x": 2350,
+   "y": 0,
+   "w": 390,
+   "h": 844,
+   "title": "O05. Кабинет",
+   "page": "other",
+   "is_interactive": true
+  },
+  "C-O06-Notifications.dc.html": {
+   "x": 0,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O06. Уведомления и напоминания",
+   "page": "other"
+  },
+  "C-O07-Planning.dc.html": {
+   "x": 470,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O07. Планирование",
+   "page": "other"
+  },
+  "C-O08-Assistant.dc.html": {
+   "x": 940,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O08. Настройки помощника",
+   "page": "other"
+  },
+  "C-O09-Data.dc.html": {
+   "x": 1410,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O09. Данные и экспорт",
+   "page": "other"
+  },
+  "C-O10-Recover.dc.html": {
+   "x": 1880,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O10. Восстановление пароля",
+   "page": "other",
+   "is_interactive": true
+  },
+  "C-O10b-RecoverSent.dc.html": {
+   "x": 2350,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "O10b. Письмо для восстановления отправлено",
+   "page": "other"
+  },
+  "C-O11-AccountLight.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "O11. Светлая тема — кабинет",
+   "page": "other"
+  },
+  "C-O12-LoginLight.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "O12. Светлая тема — вход",
+   "page": "other"
+  }
+ },
+ "order": [
+  "C-S01-Brand.dc.html",
+  "C-S02-Colors.dc.html",
+  "C-S03-Type.dc.html",
+  "C-S04-Controls.dc.html",
+  "C-S05-TaskRows.dc.html",
+  "C-S06-Surfaces.dc.html",
+  "C-H01-Home.dc.html",
+  "C-H02-NoMain.dc.html",
+  "C-H03-PickMain.dc.html",
+  "C-H04-Empty.dc.html",
+  "C-H05-AllDone.dc.html",
+  "C-H06-Overdue.dc.html",
+  "C-H07-Offline.dc.html",
+  "C-H08-Conflict.dc.html",
+  "C-H09-Versions.dc.html",
+  "C-H10-Completed.dc.html",
+  "C-H11-Narrow.dc.html",
+  "C-H12-LargeText.dc.html",
+  "C-H12b-LargeTextEnd.dc.html",
+  "C-H13-Loading.dc.html",
+  "C-H14-LoadError.dc.html",
+  "C-H15-Light.dc.html",
+  "C-C01-AddEmpty.dc.html",
+  "C-C02-AddShort.dc.html",
+  "C-C03-AddLong.dc.html",
+  "C-C04-AddVeryLong.dc.html",
+  "C-C05-AddDate.dc.html",
+  "C-C06-AddReminder.dc.html",
+  "C-C07-AddInProject.dc.html",
+  "C-C08-More.dc.html",
+  "C-C09-MoreEnd.dc.html",
+  "C-E01-TaskView.dc.html",
+  "C-E02-EditTime.dc.html",
+  "C-E03-Menu.dc.html",
+  "C-E04-EditTitle.dc.html",
+  "C-C11-Saving.dc.html",
+  "C-C12-SaveError.dc.html",
+  "C-C13-Added.dc.html",
+  "C-C14-DraftSaved.dc.html",
+  "C-C15-Draft.dc.html",
+  "C-C16-Phrase.dc.html",
+  "C-C17-AddLight.dc.html",
+  "C-C18-AddNarrow.dc.html",
+  "C-C19-AddLarge.dc.html",
+  "C-C20-MoreLight.dc.html",
+  "C-D01-QuickDate.dc.html",
+  "C-D02-Month.dc.html",
+  "C-D03-NextMonth.dc.html",
+  "C-D04-Time.dc.html",
+  "C-D05-RemoveDate.dc.html",
+  "C-D06-Reminder.dc.html",
+  "C-D07-ReminderNoTime.dc.html",
+  "C-D08-NoPermission.dc.html",
+  "C-D09-Deadline.dc.html",
+  "C-D10-MonthLight.dc.html",
+  "C-T01-Tasks.dc.html",
+  "C-T02-Today.dc.html",
+  "C-T03-ViewMenu.dc.html",
+  "C-T04-ByProject.dc.html",
+  "C-T05-MoreFilters.dc.html",
+  "C-T06-Search.dc.html",
+  "C-T07-SearchEmpty.dc.html",
+  "C-T08-Overdue.dc.html",
+  "C-T09-Inbox.dc.html",
+  "C-T10-Review.dc.html",
+  "C-T11-ReviewNoDate.dc.html",
+  "C-T12-Done.dc.html",
+  "C-T13-Trash.dc.html",
+  "C-T14-Completed.dc.html",
+  "C-T15-Light.dc.html",
+  "C-T16-Narrow.dc.html",
+  "C-T17-LargeEnd.dc.html",
+  "C-P01-Projects.dc.html",
+  "C-P02-Empty.dc.html",
+  "C-P03-Create.dc.html",
+  "C-P04-Project.dc.html",
+  "C-P05-PickProject.dc.html",
+  "C-P06-TaskProject.dc.html",
+  "C-P07-Rename.dc.html",
+  "C-P08-Delete.dc.html",
+  "C-P09-Menu.dc.html",
+  "C-P10-ProjectLight.dc.html",
+  "C-K01-Week.dc.html",
+  "C-K02-PickDate.dc.html",
+  "C-K03-EmptyDay.dc.html",
+  "C-K04-Deadlines.dc.html",
+  "C-K05-Overlap.dc.html",
+  "C-K06-Open.dc.html",
+  "C-K07-End.dc.html",
+  "C-K08-Light.dc.html",
+  "C-K09-Narrow.dc.html",
+  "C-A01-Start.dc.html",
+  "C-A02-Typing.dc.html",
+  "C-A03-Waiting.dc.html",
+  "C-A04-Question.dc.html",
+  "C-A05-Answer.dc.html",
+  "C-A06-Proposal.dc.html",
+  "C-A07-Applying.dc.html",
+  "C-A08-Applied.dc.html",
+  "C-A09-Partial.dc.html",
+  "C-A10-Conflict.dc.html",
+  "C-A11-Offline.dc.html",
+  "C-A12-Undone.dc.html",
+  "C-A13-Replan.dc.html",
+  "C-A14-Chats.dc.html",
+  "C-A15-ProposalLight.dc.html",
+  "C-O01-Splash.dc.html",
+  "C-O02-IconHome.dc.html",
+  "C-O03-Login.dc.html",
+  "C-O04-Signup.dc.html",
+  "C-O04b-LoginError.dc.html",
+  "C-O05-Account.dc.html",
+  "C-O06-Notifications.dc.html",
+  "C-O07-Planning.dc.html",
+  "C-O08-Assistant.dc.html",
+  "C-O09-Data.dc.html",
+  "C-O10-Recover.dc.html",
+  "C-O10b-RecoverSent.dc.html",
+  "C-O11-AccountLight.dc.html",
+  "C-O12-LoginLight.dc.html"
+ ],
+ "notes": {
+  "t_sys": {
+   "x": 0,
+   "y": -300,
+   "text": "Система оформления",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "sys"
+  },
+  "t_home": {
+   "x": 0,
+   "y": -300,
+   "text": "Главная",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "home"
+  },
+  "t_create": {
+   "x": 0,
+   "y": -300,
+   "text": "Создание и редактирование",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "create"
+  },
+  "t_date": {
+   "x": 0,
+   "y": -300,
+   "text": "Дата и напоминание",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "date"
+  },
+  "t_tasks": {
+   "x": 0,
+   "y": -300,
+   "text": "Задачи и входящие",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "tasks"
+  },
+  "t_projects": {
+   "x": 0,
+   "y": -300,
+   "text": "Проекты",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "projects"
+  },
+  "t_calendar": {
+   "x": 0,
+   "y": -300,
+   "text": "Календарь",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "calendar"
+  },
+  "t_assistant": {
+   "x": 0,
+   "y": -300,
+   "text": "Помощник",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "assistant"
+  },
+  "t_other": {
+   "x": 0,
+   "y": -300,
+   "text": "Вход, загрузка, кабинет",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "other"
+  }
+ },
+ "designSystems": []
+}

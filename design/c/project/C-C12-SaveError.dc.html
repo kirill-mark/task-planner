@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>C12. Ошибка сохранения и повтор</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.lbl{font-size:13px;color:#A8B1BA}
+.cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.pill.sel{background:#F3F5F7;color:#101316}
+.btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.danger{color:#FF8F87}
+.card{background:#191E23;border-radius:20px;padding:14px 16px}
+.field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.field.focus{border-color:#6ED6A0}
+.field.err{border-color:#FF8F87}
+.flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.sec{font-size:17px;font-weight:600;margin:0}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.sk{background:#20262C;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #101316; color: #F3F5F7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 16px; line-height: 1.4; position: relative; overflow: hidden">
+<div aria-hidden="true" style="position: absolute; inset: 0; padding: 56px 20px 0; display: flex; flex-direction: column; gap: 16px; opacity: .35">
+    <div style="display: flex; align-items: center; gap: 12px"><svg width="32" height="22" viewBox="70 230 860 590" aria-hidden="true" style="flex-shrink: 0; display: block"><defs><linearGradient id="mk27" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8BE3B4"/><stop offset="1" stop-color="#3FAF76"/></linearGradient></defs><path fill="url(#mk27)" d="M 387.01,239.80 C 402.19,238.88 417.95,241.02 432.54,245.35 C 442.37,248.27 451.90,252.27 460.50,257.94 C 529.68,303.58 499.51,403.85 479.77,468.27 C 475.22,483.09 471.06,498.02 466.24,512.76 C 458.25,537.16 450.33,562.12 444.82,587.24 C 442.87,596.14 439.67,610.01 449.09,615.93 C 456.72,620.74 466.28,616.84 473.37,613.08 C 489.88,604.33 505.52,593.18 520.60,582.16 C 583.00,536.59 648.85,486.57 721.41,459.04 C 739.28,452.26 757.26,448.48 776.37,448.34 C 790.11,448.24 803.65,449.24 816.83,453.39 C 909.55,482.61 918.18,593.18 918.19,675.74 C 918.19,705.96 921.86,739.15 911.68,768.13 C 898.40,805.90 847.69,817.87 818.96,789.72 C 801.56,772.67 802.68,749.44 801.94,726.88 C 800.97,697.91 799.42,668.00 795.87,639.23 C 793.56,620.49 791.28,594.72 774.49,582.86 C 764.69,575.93 751.32,575.54 739.90,577.24 C 712.34,581.33 685.67,601.79 662.79,616.80 C 614.50,648.50 566.98,684.14 515.44,710.23 C 490.82,722.70 466.82,735.24 439.25,739.43 C 390.42,746.85 334.89,728.24 316.15,678.43 C 310.61,663.70 310.56,648.06 310.67,632.53 C 310.83,608.41 314.87,584.35 321.81,561.26 C 334.69,518.39 350.37,476.37 363.72,433.64 C 369.41,415.42 382.77,379.60 363.54,365.29 C 347.66,353.47 320.56,366.90 304.99,373.58 C 249.89,397.22 198.19,427.40 145.24,455.37 C 123.65,466.78 89.84,469.83 78.89,441.92 C 63.94,403.76 114.08,379.44 138.83,362.77 C 185.80,331.14 232.51,299.76 283.08,274.21 C 315.87,257.66 349.80,242.07 387.01,239.80 Z"/></svg><div style="display: flex; flex-direction: column"><span style="font-size: 13px; color: #A8B1BA">Вторник, 20 октября</span><span style="font-size: 22px; font-weight: 700">Доброе утро, Кирилл</span></div></div>
+  </div><div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6)"></div><section role="dialog" aria-label="Новая задача" style="position: absolute; left: 0; right: 0; bottom: 291px; background: #191E23; border-radius: 20px 20px 0 0; padding: 8px 20px 16px; display: flex; flex-direction: column; gap: 12px;  box-sizing: border-box">
+    <div aria-hidden="true" style="width: 36px; height: 5px; border-radius: 3px; background: #30373D; align-self: center; flex-shrink: 0"></div>
+        <div role="status" style="background: rgba(255,143,135,0.12); border-radius: 14px; padding: 6px 14px; display: flex; align-items: center; gap: 10px; min-height: 52px; box-sizing: border-box">
+      <span style="color: #FF8F87; display: flex"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.3"/></svg></span><div style="flex: 1; display: flex; flex-direction: column; font-size: 15px"><span>Задача не сохранилась</span><span style="font-size: 13px; color: #A8B1BA">Текст остался в форме. Попробуйте ещё раз.</span></div><a href="C-C11-Saving.dc.html" style="font-weight: 600; color: #F3F5F7; min-height: 44px; display: flex; align-items: center; white-space: nowrap">Повторить</a>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span id="nt-label" style="font-size: 15px; font-weight: 600">Новая задача</span>
+      <div style="position: relative; background: #101316; border: 1px solid #6ED6A0; border-radius: 12px; padding: 10px 14px 10px 12px">
+        <div role="textbox" aria-multiline="true" aria-labelledby="nt-label" contenteditable="true" style="font-size: 18px; line-height: 1.35; color: #F3F5F7; outline: none; ">Забрать оборудование из проката на Старом Арбате и вернуть <span style="white-space: nowrap">залог<span class="caret" aria-hidden="true"></span></span></div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap"><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Без даты</a><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg>Напомнить</a><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>Ещё</a></div>
+    <span style="font-size: 13px; color: #A8B1BA">Задача попадёт во «Входящие».</span>
+    <a href="C-C11-Saving.dc.html" class="btn">Добавить</a>
+  </section><div aria-label="Клавиатура телефона (для масштаба)" style="position: absolute; left: 0; right: 0; bottom: 0; height: 291px; background: #2B2F33; padding: 10px 4px 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">й</span><span class="key" style="height: 42px; font-size: 20px">ц</span><span class="key" style="height: 42px; font-size: 20px">у</span><span class="key" style="height: 42px; font-size: 20px">к</span><span class="key" style="height: 42px; font-size: 20px">е</span><span class="key" style="height: 42px; font-size: 20px">н</span><span class="key" style="height: 42px; font-size: 20px">г</span><span class="key" style="height: 42px; font-size: 20px">ш</span><span class="key" style="height: 42px; font-size: 20px">щ</span><span class="key" style="height: 42px; font-size: 20px">з</span><span class="key" style="height: 42px; font-size: 20px">х</span></div><div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">ф</span><span class="key" style="height: 42px; font-size: 20px">ы</span><span class="key" style="height: 42px; font-size: 20px">в</span><span class="key" style="height: 42px; font-size: 20px">а</span><span class="key" style="height: 42px; font-size: 20px">п</span><span class="key" style="height: 42px; font-size: 20px">р</span><span class="key" style="height: 42px; font-size: 20px">о</span><span class="key" style="height: 42px; font-size: 20px">л</span><span class="key" style="height: 42px; font-size: 20px">д</span><span class="key" style="height: 42px; font-size: 20px">ж</span><span class="key" style="height: 42px; font-size: 20px">э</span></div><div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">я</span><span class="key" style="height: 42px; font-size: 20px">ч</span><span class="key" style="height: 42px; font-size: 20px">с</span><span class="key" style="height: 42px; font-size: 20px">м</span><span class="key" style="height: 42px; font-size: 20px">и</span><span class="key" style="height: 42px; font-size: 20px">т</span><span class="key" style="height: 42px; font-size: 20px">ь</span><span class="key" style="height: 42px; font-size: 20px">б</span><span class="key" style="height: 42px; font-size: 20px">ю</span></div>
+    <div style="display: flex; gap: 5px"><span class="key" style="flex: 4; font-size: 15px; height: 42px">пробел</span><span class="key" style="flex: 1.6; font-size: 15px; height: 42px">Готово</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Цвета</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.thd .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thd .row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.thd .chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.thd .meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thd .lbl{font-size:13px;color:#A8B1BA}
+.thd .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thd .cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.thd .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thd .pill.sel{background:#F3F5F7;color:#101316}
+.thd .btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thd .btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thd .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thd .danger{color:#FF8F87}
+.thd .card{background:#191E23;border-radius:20px;padding:14px 16px}
+.thd .field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thd .field.focus{border-color:#6ED6A0}
+.thd .field.err{border-color:#FF8F87}
+.thd .flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.thd .sec{font-size:17px;font-weight:600;margin:0}
+.thd .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.thd .key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thd .caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thd .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thd .li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thd .sk{background:#20262C;border-radius:8px}
+.thl .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thl .row + .row{border-top:1px solid #EAEDF0}
+.thl .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7A848E;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#FFFFFF}
+.thl .chk.on{background:#18794E;border-color:#18794E}
+.thl .meta{font-size:13px;color:#5B6570;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thl .lbl{font-size:13px;color:#5B6570}
+.thl .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #C9D0D6;background:none;color:#3A4652;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thl .cap.sel{border-color:#18794E;color:#18212B;background:#E3F3EA}
+.thl .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#FFFFFF;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#3A4652;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thl .pill.sel{background:#18212B;color:#F5F6F8}
+.thl .btn{min-height:48px;border-radius:14px;background:#18794E;color:#FFFFFF;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thl .btn2{min-height:44px;border-radius:14px;background:#FFFFFF;border:1px solid #DCE1E5;color:#18212B;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thl .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#18794E;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thl .danger{color:#B42318}
+.thl .card{background:#FFFFFF;border-radius:20px;padding:14px 16px}
+.thl .field{background:#F5F6F8;border:1px solid #DCE1E5;border-radius:12px;padding:11px 12px;font-size:16px;color:#18212B;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thl .field.focus{border-color:#18794E}
+.thl .field.err{border-color:#B42318}
+.thl .flabel{font-size:13px;color:#5B6570;font-weight:500}
+.thl .sec{font-size:17px;font-weight:600;margin:0}
+.thl .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#5B6570;min-width:56px;padding-top:2px}
+.thl .key{background:#FFFFFF;border-radius:6px;height:42px;flex:1;color:#18212B;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thl .caret{display:inline-block;width:2px;height:1.1em;background:#18794E;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thl .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thl .li + .li{border-top:1px solid #EAEDF0}
+.thl .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thl .sk{background:#EEF0F3;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 1280px; height: 760px; box-sizing: border-box; background: #EEF0F2; color: #18212B; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 15px; line-height: 1.45; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px; overflow: hidden">
+  <header style="display: flex; flex-direction: column; gap: 4px"><h1 style="margin: 0; font-size: 30px; font-weight: 700">Цвета</h1></header>
+  <p style="margin: 0; color: #4A5561; max-width: 1100px">Палитра пакета B без изменений, кроме новых состояний: красный для просроченных сроков и голубой для встреч. Контраст текста — не ниже 4,5 : 1 на своём фоне.</p>
+  <div style="display: flex; gap: 20px"><div class="thd" style="flex: 1; min-width: 0; background: #101316; color: #F3F5F7; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 16px">
+      <span style="font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #A8B1BA">ТЁМНАЯ ТЕМА</span>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #101316; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Фон экрана</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#101316</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #191E23; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Карточки, листы</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#191E23</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #20262C; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Плашки, аватар</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#20262C</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #F3F5F7; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Основной текст</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#F3F5F7</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #A8B1BA; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Вторичный текст</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#A8B1BA</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #C9D0D6; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Спокойные кнопки</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#C9D0D6</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #6ED6A0; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Акцент: «+», «Добавить», выбор</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#6ED6A0</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: rgba(110,214,160,0.28); border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Рамка главной задачи</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">rgba(110,214,160,0.28)</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #F2B861; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Срок сегодня</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#F2B861</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #FF8F87; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Просрочено, удаление</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#FF8F87</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #8DB4E0; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Встречи</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#8DB4E0</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Разделители</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">rgba(255,255,255,0.07)</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #30373D; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Контур капсул</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#30373D</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #14181C; border: 1px solid rgba(255,255,255,0.09)"></span><span style="flex: 1">Нижняя панель</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #A8B1BA">#14181C</span></div>
+    </div><div class="thl" style="flex: 1; min-width: 0; background: #F5F6F8; color: #18212B; border-radius: 18px; padding: 20px; display: flex; flex-direction: column; gap: 14px; font-size: 16px">
+      <span style="font-size: 12px; font-weight: 600; letter-spacing: .06em; color: #5B6570">СВЕТЛАЯ ТЕМА</span>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #F5F6F8; border: 1px solid #DCE1E5"></span><span style="flex: 1">Фон экрана</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#F5F6F8</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #FFFFFF; border: 1px solid #DCE1E5"></span><span style="flex: 1">Карточки, листы</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#FFFFFF</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #EEF0F3; border: 1px solid #DCE1E5"></span><span style="flex: 1">Плашки, аватар</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#EEF0F3</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #18212B; border: 1px solid #DCE1E5"></span><span style="flex: 1">Основной текст</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#18212B</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #5B6570; border: 1px solid #DCE1E5"></span><span style="flex: 1">Вторичный текст</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#5B6570</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #3A4652; border: 1px solid #DCE1E5"></span><span style="flex: 1">Спокойные кнопки</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#3A4652</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #18794E; border: 1px solid #DCE1E5"></span><span style="flex: 1">Акцент: «+», «Добавить», выбор</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#18794E</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: rgba(24,121,78,0.30); border: 1px solid #DCE1E5"></span><span style="flex: 1">Рамка главной задачи</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">rgba(24,121,78,0.30)</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #8A5300; border: 1px solid #DCE1E5"></span><span style="flex: 1">Срок сегодня</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#8A5300</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #B42318; border: 1px solid #DCE1E5"></span><span style="flex: 1">Просрочено, удаление</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#B42318</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #2F6DB5; border: 1px solid #DCE1E5"></span><span style="flex: 1">Встречи</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#2F6DB5</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #EAEDF0; border: 1px solid #DCE1E5"></span><span style="flex: 1">Разделители</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#EAEDF0</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #C9D0D6; border: 1px solid #DCE1E5"></span><span style="flex: 1">Контур капсул</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#C9D0D6</span></div><div style="display: flex; align-items: center; gap: 12px; min-height: 34px"><span style="width: 34px; height: 26px; border-radius: 7px; background: #FFFFFF; border: 1px solid #DCE1E5"></span><span style="flex: 1">Нижняя панель</span><span style="font-family: ui-monospace, Menlo, monospace; font-size: 12px; color: #5B6570">#FFFFFF</span></div>
+    </div></div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

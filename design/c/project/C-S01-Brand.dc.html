@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Знак и иконка Mark</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.thd .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thd .row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.thd .chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.thd .meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thd .lbl{font-size:13px;color:#A8B1BA}
+.thd .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thd .cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.thd .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thd .pill.sel{background:#F3F5F7;color:#101316}
+.thd .btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thd .btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thd .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thd .danger{color:#FF8F87}
+.thd .card{background:#191E23;border-radius:20px;padding:14px 16px}
+.thd .field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thd .field.focus{border-color:#6ED6A0}
+.thd .field.err{border-color:#FF8F87}
+.thd .flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.thd .sec{font-size:17px;font-weight:600;margin:0}
+.thd .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.thd .key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thd .caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thd .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thd .li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.thd .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thd .sk{background:#20262C;border-radius:8px}
+.thl .row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.thl .row + .row{border-top:1px solid #EAEDF0}
+.thl .chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7A848E;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#FFFFFF}
+.thl .chk.on{background:#18794E;border-color:#18794E}
+.thl .meta{font-size:13px;color:#5B6570;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.thl .lbl{font-size:13px;color:#5B6570}
+.thl .cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #C9D0D6;background:none;color:#3A4652;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.thl .cap.sel{border-color:#18794E;color:#18212B;background:#E3F3EA}
+.thl .pill{min-height:36px;padding:0 14px;border-radius:18px;background:#FFFFFF;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#3A4652;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.thl .pill.sel{background:#18212B;color:#F5F6F8}
+.thl .btn{min-height:48px;border-radius:14px;background:#18794E;color:#FFFFFF;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.thl .btn2{min-height:44px;border-radius:14px;background:#FFFFFF;border:1px solid #DCE1E5;color:#18212B;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.thl .tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#18794E;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.thl .danger{color:#B42318}
+.thl .card{background:#FFFFFF;border-radius:20px;padding:14px 16px}
+.thl .field{background:#F5F6F8;border:1px solid #DCE1E5;border-radius:12px;padding:11px 12px;font-size:16px;color:#18212B;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.thl .field.focus{border-color:#18794E}
+.thl .field.err{border-color:#B42318}
+.thl .flabel{font-size:13px;color:#5B6570;font-weight:500}
+.thl .sec{font-size:17px;font-weight:600;margin:0}
+.thl .tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#5B6570;min-width:56px;padding-top:2px}
+.thl .key{background:#FFFFFF;border-radius:6px;height:42px;flex:1;color:#18212B;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.thl .caret{display:inline-block;width:2px;height:1.1em;background:#18794E;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.thl .li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.thl .li + .li{border-top:1px solid #EAEDF0}
+.thl .badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.thl .sk{background:#EEF0F3;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 1280px; height: 600px; box-sizing: border-box; background: #EEF0F2; color: #18212B; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 15px; line-height: 1.45; padding: 40px 48px; display: flex; flex-direction: column; gap: 24px; overflow: hidden">
+  <header style="display: flex; flex-direction: column; gap: 4px"><h1 style="margin: 0; font-size: 30px; font-weight: 700">Знак и иконка Mark</h1></header>
+  <p style="margin: 0; color: #4A5561; max-width: 1100px">Название приложения везде пишется «Mark» — с заглавной буквы, без капса. На главной экран открывает только знак: линия-буква M без надписи.</p>
+  <div style="display: flex; gap: 20px; align-items: stretch">
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 12px; width: 260px"><svg width="180" height="180" viewBox="0 0 1024 1024" role="img" aria-label="Иконка Mark" style="display: block; flex-shrink: 0"><defs><linearGradient id="ib1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#07563A"/><stop offset=".58" stop-color="#003B26"/><stop offset="1" stop-color="#003923"/></linearGradient><radialGradient id="il1" cx=".5" cy=".015" r=".64" gradientTransform="translate(0 -.004) scale(1 .74)"><stop offset="0" stop-color="#329A61"/><stop offset=".34" stop-color="#268453" stop-opacity=".85"/><stop offset=".72" stop-color="#147347" stop-opacity=".3"/><stop offset="1" stop-color="#147347" stop-opacity="0"/></radialGradient><clipPath id="ic1"><rect width="1024" height="1024" rx="232"/></clipPath></defs><g clip-path="url(#ic1)"><rect width="1024" height="1024" fill="url(#ib1)"/><rect width="1024" height="1024" fill="url(#il1)"/><path fill="#FFFFFF" d="M 387.01,239.80 C 402.19,238.88 417.95,241.02 432.54,245.35 C 442.37,248.27 451.90,252.27 460.50,257.94 C 529.68,303.58 499.51,403.85 479.77,468.27 C 475.22,483.09 471.06,498.02 466.24,512.76 C 458.25,537.16 450.33,562.12 444.82,587.24 C 442.87,596.14 439.67,610.01 449.09,615.93 C 456.72,620.74 466.28,616.84 473.37,613.08 C 489.88,604.33 505.52,593.18 520.60,582.16 C 583.00,536.59 648.85,486.57 721.41,459.04 C 739.28,452.26 757.26,448.48 776.37,448.34 C 790.11,448.24 803.65,449.24 816.83,453.39 C 909.55,482.61 918.18,593.18 918.19,675.74 C 918.19,705.96 921.86,739.15 911.68,768.13 C 898.40,805.90 847.69,817.87 818.96,789.72 C 801.56,772.67 802.68,749.44 801.94,726.88 C 800.97,697.91 799.42,668.00 795.87,639.23 C 793.56,620.49 791.28,594.72 774.49,582.86 C 764.69,575.93 751.32,575.54 739.90,577.24 C 712.34,581.33 685.67,601.79 662.79,616.80 C 614.50,648.50 566.98,684.14 515.44,710.23 C 490.82,722.70 466.82,735.24 439.25,739.43 C 390.42,746.85 334.89,728.24 316.15,678.43 C 310.61,663.70 310.56,648.06 310.67,632.53 C 310.83,608.41 314.87,584.35 321.81,561.26 C 334.69,518.39 350.37,476.37 363.72,433.64 C 369.41,415.42 382.77,379.60 363.54,365.29 C 347.66,353.47 320.56,366.90 304.99,373.58 C 249.89,397.22 198.19,427.40 145.24,455.37 C 123.65,466.78 89.84,469.83 78.89,441.92 C 63.94,403.76 114.08,379.44 138.83,362.77 C 185.80,331.14 232.51,299.76 283.08,274.21 C 315.87,257.66 349.80,242.07 387.01,239.80 Z"/></g></svg><b>Иконка приложения</b><span style="color: #4A5561; text-align: center; font-size: 13px">design/brand/mark-icon.svg · 1024 × 1024</span></div>
+    <div style="background: #101316; color: #F3F5F7; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; flex: 1"><svg width="105" height="72" viewBox="70 230 860 590" role="img" aria-label="Mark" style="flex-shrink: 0; display: block"><defs><linearGradient id="mk2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#8BE3B4"/><stop offset="1" stop-color="#3FAF76"/></linearGradient></defs><path fill="url(#mk2)" d="M 387.01,239.80 C 402.19,238.88 417.95,241.02 432.54,245.35 C 442.37,248.27 451.90,252.27 460.50,257.94 C 529.68,303.58 499.51,403.85 479.77,468.27 C 475.22,483.09 471.06,498.02 466.24,512.76 C 458.25,537.16 450.33,562.12 444.82,587.24 C 442.87,596.14 439.67,610.01 449.09,615.93 C 456.72,620.74 466.28,616.84 473.37,613.08 C 489.88,604.33 505.52,593.18 520.60,582.16 C 583.00,536.59 648.85,486.57 721.41,459.04 C 739.28,452.26 757.26,448.48 776.37,448.34 C 790.11,448.24 803.65,449.24 816.83,453.39 C 909.55,482.61 918.18,593.18 918.19,675.74 C 918.19,705.96 921.86,739.15 911.68,768.13 C 898.40,805.90 847.69,817.87 818.96,789.72 C 801.56,772.67 802.68,749.44 801.94,726.88 C 800.97,697.91 799.42,668.00 795.87,639.23 C 793.56,620.49 791.28,594.72 774.49,582.86 C 764.69,575.93 751.32,575.54 739.90,577.24 C 712.34,581.33 685.67,601.79 662.79,616.80 C 614.50,648.50 566.98,684.14 515.44,710.23 C 490.82,722.70 466.82,735.24 439.25,739.43 C 390.42,746.85 334.89,728.24 316.15,678.43 C 310.61,663.70 310.56,648.06 310.67,632.53 C 310.83,608.41 314.87,584.35 321.81,561.26 C 334.69,518.39 350.37,476.37 363.72,433.64 C 369.41,415.42 382.77,379.60 363.54,365.29 C 347.66,353.47 320.56,366.90 304.99,373.58 C 249.89,397.22 198.19,427.40 145.24,455.37 C 123.65,466.78 89.84,469.83 78.89,441.92 C 63.94,403.76 114.08,379.44 138.83,362.77 C 185.80,331.14 232.51,299.76 283.08,274.21 C 315.87,257.66 349.80,242.07 387.01,239.80 Z"/></svg><b>Знак на тёмной теме</b><span style="color: #A8B1BA; font-size: 13px">градиент #8BE3B4 → #3FAF76</span></div>
+    <div style="background: #F5F6F8; color: #18212B; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; flex: 1"><svg width="105" height="72" viewBox="70 230 860 590" role="img" aria-label="Mark" style="flex-shrink: 0; display: block"><defs><linearGradient id="mk3" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E9A62"/><stop offset="1" stop-color="#07563A"/></linearGradient></defs><path fill="url(#mk3)" d="M 387.01,239.80 C 402.19,238.88 417.95,241.02 432.54,245.35 C 442.37,248.27 451.90,252.27 460.50,257.94 C 529.68,303.58 499.51,403.85 479.77,468.27 C 475.22,483.09 471.06,498.02 466.24,512.76 C 458.25,537.16 450.33,562.12 444.82,587.24 C 442.87,596.14 439.67,610.01 449.09,615.93 C 456.72,620.74 466.28,616.84 473.37,613.08 C 489.88,604.33 505.52,593.18 520.60,582.16 C 583.00,536.59 648.85,486.57 721.41,459.04 C 739.28,452.26 757.26,448.48 776.37,448.34 C 790.11,448.24 803.65,449.24 816.83,453.39 C 909.55,482.61 918.18,593.18 918.19,675.74 C 918.19,705.96 921.86,739.15 911.68,768.13 C 898.40,805.90 847.69,817.87 818.96,789.72 C 801.56,772.67 802.68,749.44 801.94,726.88 C 800.97,697.91 799.42,668.00 795.87,639.23 C 793.56,620.49 791.28,594.72 774.49,582.86 C 764.69,575.93 751.32,575.54 739.90,577.24 C 712.34,581.33 685.67,601.79 662.79,616.80 C 614.50,648.50 566.98,684.14 515.44,710.23 C 490.82,722.70 466.82,735.24 439.25,739.43 C 390.42,746.85 334.89,728.24 316.15,678.43 C 310.61,663.70 310.56,648.06 310.67,632.53 C 310.83,608.41 314.87,584.35 321.81,561.26 C 334.69,518.39 350.37,476.37 363.72,433.64 C 369.41,415.42 382.77,379.60 363.54,365.29 C 347.66,353.47 320.56,366.90 304.99,373.58 C 249.89,397.22 198.19,427.40 145.24,455.37 C 123.65,466.78 89.84,469.83 78.89,441.92 C 63.94,403.76 114.08,379.44 138.83,362.77 C 185.80,331.14 232.51,299.76 283.08,274.21 C 315.87,257.66 349.80,242.07 387.01,239.80 Z"/></svg><b>Знак на светлой теме</b><span style="color: #5B6570; font-size: 13px">градиент #2E9A62 → #07563A</span></div>
+    <div style="background: linear-gradient(180deg, #07563A, #003923); color: #FFFFFF; border-radius: 18px; padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; flex: 1"><svg width="105" height="72" viewBox="70 230 860 590" role="img" aria-label="Mark" style="flex-shrink: 0; display: block"><path fill="#FFFFFF" d="M 387.01,239.80 C 402.19,238.88 417.95,241.02 432.54,245.35 C 442.37,248.27 451.90,252.27 460.50,257.94 C 529.68,303.58 499.51,403.85 479.77,468.27 C 475.22,483.09 471.06,498.02 466.24,512.76 C 458.25,537.16 450.33,562.12 444.82,587.24 C 442.87,596.14 439.67,610.01 449.09,615.93 C 456.72,620.74 466.28,616.84 473.37,613.08 C 489.88,604.33 505.52,593.18 520.60,582.16 C 583.00,536.59 648.85,486.57 721.41,459.04 C 739.28,452.26 757.26,448.48 776.37,448.34 C 790.11,448.24 803.65,449.24 816.83,453.39 C 909.55,482.61 918.18,593.18 918.19,675.74 C 918.19,705.96 921.86,739.15 911.68,768.13 C 898.40,805.90 847.69,817.87 818.96,789.72 C 801.56,772.67 802.68,749.44 801.94,726.88 C 800.97,697.91 799.42,668.00 795.87,639.23 C 793.56,620.49 791.28,594.72 774.49,582.86 C 764.69,575.93 751.32,575.54 739.90,577.24 C 712.34,581.33 685.67,601.79 662.79,616.80 C 614.50,648.50 566.98,684.14 515.44,710.23 C 490.82,722.70 466.82,735.24 439.25,739.43 C 390.42,746.85 334.89,728.24 316.15,678.43 C 310.61,663.70 310.56,648.06 310.67,632.53 C 310.83,608.41 314.87,584.35 321.81,561.26 C 334.69,518.39 350.37,476.37 363.72,433.64 C 369.41,415.42 382.77,379.60 363.54,365.29 C 347.66,353.47 320.56,366.90 304.99,373.58 C 249.89,397.22 198.19,427.40 145.24,455.37 C 123.65,466.78 89.84,469.83 78.89,441.92 C 63.94,403.76 114.08,379.44 138.83,362.77 C 185.80,331.14 232.51,299.76 283.08,274.21 C 315.87,257.66 349.80,242.07 387.01,239.80 Z"/></svg><b>Белый знак на зелёном</b><span style="font-size: 13px; opacity: .8">экран загрузки, иконка</span></div>
+  </div>
+  <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px">
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 20px"><b>На главной</b><p style="margin: 6px 0 0; color: #4A5561">Знак высотой с приветствие (22 px; 28 px при крупном тексте) слева от даты и приветствия. Без слова «Mark».</p></div>
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 20px"><b>Экран загрузки</b><p style="margin: 6px 0 0; color: #4A5561">Фирменный зелёный градиент и белый знак 84 px по центру. Без текста и индикаторов: экран виден доли секунды.</p></div>
+    <div style="background: #FFFFFF; border-radius: 18px; padding: 20px"><b>Охранное поле</b><p style="margin: 6px 0 0; color: #4A5561">Вокруг знака — не меньше четверти его высоты. Знак не вращать, не обводить, не ставить на пёстрый фон.</p></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

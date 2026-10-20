@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>C07. Добавление внутри проекта</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit}
+.row{display:flex;align-items:flex-start;gap:12px;padding:10px 0}
+.row + .row{border-top:1px solid rgba(255,255,255,0.07)}
+.chk{width:22px;height:22px;border-radius:50%;border:1.5px solid #7D8790;flex-shrink:0;margin-top:1px;background:none;padding:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;color:#101316}
+.chk.on{background:#6ED6A0;border-color:#6ED6A0}
+.meta{font-size:13px;color:#A8B1BA;margin-top:2px;display:flex;flex-wrap:wrap;align-items:center;gap:0 6px}
+.lbl{font-size:13px;color:#A8B1BA}
+.cap{min-height:36px;padding:0 12px;border-radius:18px;border:1px solid #30373D;background:none;color:#C9D0D6;font-size:14px;display:inline-flex;align-items:center;gap:6px;white-space:nowrap;box-sizing:border-box}
+.cap.sel{border-color:#6ED6A0;color:#F3F5F7;background:rgba(110,214,160,0.12)}
+.pill{min-height:36px;padding:0 14px;border-radius:18px;background:#191E23;display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#C9D0D6;white-space:nowrap;box-sizing:border-box;border:1px solid transparent}
+.pill.sel{background:#F3F5F7;color:#101316}
+.btn{min-height:48px;border-radius:14px;background:#6ED6A0;color:#101316;font-size:16px;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;border:0;box-sizing:border-box;padding:0 18px}
+.btn2{min-height:44px;border-radius:14px;background:#191E23;border:1px solid rgba(255,255,255,0.09);color:#F3F5F7;font-size:15px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:8px;box-sizing:border-box;padding:0 16px}
+.tbtn{min-height:44px;display:inline-flex;align-items:center;gap:6px;color:#6ED6A0;font-size:15px;font-weight:500;background:none;border:0;padding:0}
+.danger{color:#FF8F87}
+.card{background:#191E23;border-radius:20px;padding:14px 16px}
+.field{background:#101316;border:1px solid rgba(255,255,255,0.09);border-radius:12px;padding:11px 12px;font-size:16px;color:#F3F5F7;display:flex;align-items:center;gap:10px;min-height:46px;box-sizing:border-box}
+.field.focus{border-color:#6ED6A0}
+.field.err{border-color:#FF8F87}
+.flabel{font-size:13px;color:#A8B1BA;font-weight:500}
+.sec{font-size:17px;font-weight:600;margin:0}
+.tab{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;color:#A8B1BA;min-width:56px;padding-top:2px}
+.key{background:#4A535B;border-radius:6px;height:42px;flex:1;color:#F3F5F7;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 1px 0 rgba(0,0,0,0.25)}
+.caret{display:inline-block;width:2px;height:1.1em;background:#6ED6A0;vertical-align:-0.18em;margin-left:1px;border-radius:1px}
+.li{display:flex;align-items:center;gap:12px;min-height:52px;padding:0 16px;box-sizing:border-box}
+.li + .li{border-top:1px solid rgba(255,255,255,0.07)}
+.badge{display:inline-flex;align-items:center;gap:4px;border-radius:7px;padding:1px 7px;font-size:13px;font-weight:600;line-height:1.45}
+.sk{background:#20262C;border-radius:8px}
+
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #101316; color: #F3F5F7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif; font-size: 16px; line-height: 1.4; position: relative; overflow: hidden">
+<div aria-hidden="true" style="position: absolute; inset: 0; padding: 56px 20px 0; display: flex; flex-direction: column; gap: 8px; opacity: .35">
+    <span style="font-size: 28px; font-weight: 700">KINOMARK</span><span class="lbl">12 задач</span></div><div aria-hidden="true" style="position: absolute; inset: 0; background: rgba(0,0,0,0.6)"></div><section role="dialog" aria-label="Новая задача" style="position: absolute; left: 0; right: 0; bottom: 291px; background: #191E23; border-radius: 20px 20px 0 0; padding: 8px 20px 16px; display: flex; flex-direction: column; gap: 12px;  box-sizing: border-box">
+    <div aria-hidden="true" style="width: 36px; height: 5px; border-radius: 3px; background: #30373D; align-self: center; flex-shrink: 0"></div>
+    <a href="#" aria-label="Убрать проект KINOMARK" class="cap sel" style="align-self: flex-start; padding-right: 6px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/></svg>KINOMARK<span style="display: flex; width: 28px; height: 28px; align-items: center; justify-content: center; color: #A8B1BA"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M6 6l12 12M18 6 6 18"/></svg></span></a>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span id="nt-label" style="font-size: 15px; font-weight: 600">Новая задача</span>
+      <div style="position: relative; background: #101316; border: 1px solid #6ED6A0; border-radius: 12px; padding: 10px 14px 10px 12px">
+        <div role="textbox" aria-multiline="true" aria-labelledby="nt-label" contenteditable="true" style="font-size: 18px; line-height: 1.35; color: #F3F5F7; outline: none; ">Согласовать с Палмирой дату выезда на <span style="white-space: nowrap">площадку<span class="caret" aria-hidden="true"></span></span></div>
+      </div>
+    </div>
+    <div style="display: flex; gap: 6px; flex-wrap: wrap"><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>Без даты</a><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 21h4"/></svg>Напомнить</a><a href="#" class="cap"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>Ещё</a></div>
+    <span style="font-size: 13px; color: #A8B1BA">Задача попадёт в проект KINOMARK. Проект можно убрать.</span>
+    <a href="C-C13-Added.dc.html" class="btn">Добавить</a>
+  </section><div aria-label="Клавиатура телефона (для масштаба)" style="position: absolute; left: 0; right: 0; bottom: 0; height: 291px; background: #2B2F33; padding: 10px 4px 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">й</span><span class="key" style="height: 42px; font-size: 20px">ц</span><span class="key" style="height: 42px; font-size: 20px">у</span><span class="key" style="height: 42px; font-size: 20px">к</span><span class="key" style="height: 42px; font-size: 20px">е</span><span class="key" style="height: 42px; font-size: 20px">н</span><span class="key" style="height: 42px; font-size: 20px">г</span><span class="key" style="height: 42px; font-size: 20px">ш</span><span class="key" style="height: 42px; font-size: 20px">щ</span><span class="key" style="height: 42px; font-size: 20px">з</span><span class="key" style="height: 42px; font-size: 20px">х</span></div><div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">ф</span><span class="key" style="height: 42px; font-size: 20px">ы</span><span class="key" style="height: 42px; font-size: 20px">в</span><span class="key" style="height: 42px; font-size: 20px">а</span><span class="key" style="height: 42px; font-size: 20px">п</span><span class="key" style="height: 42px; font-size: 20px">р</span><span class="key" style="height: 42px; font-size: 20px">о</span><span class="key" style="height: 42px; font-size: 20px">л</span><span class="key" style="height: 42px; font-size: 20px">д</span><span class="key" style="height: 42px; font-size: 20px">ж</span><span class="key" style="height: 42px; font-size: 20px">э</span></div><div style="display: flex; gap: 5px"><span class="key" style="height: 42px; font-size: 20px">я</span><span class="key" style="height: 42px; font-size: 20px">ч</span><span class="key" style="height: 42px; font-size: 20px">с</span><span class="key" style="height: 42px; font-size: 20px">м</span><span class="key" style="height: 42px; font-size: 20px">и</span><span class="key" style="height: 42px; font-size: 20px">т</span><span class="key" style="height: 42px; font-size: 20px">ь</span><span class="key" style="height: 42px; font-size: 20px">б</span><span class="key" style="height: 42px; font-size: 20px">ю</span></div>
+    <div style="display: flex; gap: 5px"><span class="key" style="flex: 4; font-size: 15px; height: 42px">пробел</span><span class="key" style="flex: 1.6; font-size: 15px; height: 42px">Готово</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
