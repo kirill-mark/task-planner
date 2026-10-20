@@ -1,0 +1,42 @@
+{
+  "name": "mark-planner",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build-ios.mjs",
+    "ios:sync": "npm run build && cap sync ios",
+    "ios:open": "cap open ios",
+    "test:ui": "node scripts/test-ui.mjs",
+    "test:trash": "node scripts/test-trash.mjs",
+    "test:engine": "node scripts/test-engine.mjs",
+    "test:server": "deno test supabase/functions/_shared/",
+    "test:guards": "node scripts/test-edge-guards.mjs",
+    "test:recovery": "node scripts/test-recovery.mjs",
+    "test:export": "node scripts/test-export.mjs",
+    "test:notifications": "node scripts/test-notifications.mjs",
+    "test": "npm run test:ui && npm run test:engine && npm run test:server && npm run test:guards && npm run test:recovery && npm run test:export && npm run test:trash && npm run test:notifications && npm run test:widget && npm run test:assistant-chats && npm run test:speech && npm run test:assistant-memory",
+    "test:widget": "node scripts/test-widget.mjs",
+    "test:widget:swift": "sh scripts/test-widget-swift.sh",
+    "test:speech": "node scripts/test-speech.mjs",
+    "test:assistant-chats": "node scripts/test-assistant-chats.mjs",
+    "test:assistant-memory": "node scripts/test-assistant-memory.mjs"
+  },
+  "dependencies": {
+    "@capacitor/core": "8.5.2",
+    "@capacitor/filesystem": "8.1.4",
+    "@capacitor/ios": "8.5.2",
+    "@capacitor/local-notifications": "8.3.1",
+    "@capacitor/share": "8.0.3",
+    "@supabase/supabase-js": "2.117.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "deno": "2.9.6",
+    "esbuild": "0.28.2",
+    "fake-indexeddb": "6.2.5"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

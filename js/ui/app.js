@@ -7,12 +7,22 @@
 // фокус и открытый редактор (раздел 4 ТЗ).
 
 import {
-  supabase, getSession, onAuthChange, signIn, signUp, signOut, telegramMiniAppSignIn,
+  supabase, getSession, onAuthChange, signIn, signUp, signOut, requestPasswordReset, telegramMiniAppSignIn,
   updateDisplayName, updatePassword, fetchTelegramLink, createLinkCode, unlinkTelegram,
   subscribeTelegramLink, reconcileTimezone, setAccountTimezone,
 } from "../sync.js?v=13";
 import { ModelStore } from "../mark/store.js";
-import { todayIso, hhmm, deviceTimezone, plural, addDays } from "./lib.js";
+import { exportFile } from "../file-export.js";
+import { memoryRequest, memoryDay, scopedNote, activeMemory, noteDate, recallChats } from "../assistant-memory.js";
+import { readChats, writeChats, beginConversation, appendMemory } from "../assistant-chats.js";
+import { routeForWidgetOpen } from "../widget-snapshot.js";
+import { getDeviceSpeech } from "../device-speech.js";
+import { getDeviceWidget } from "../device-widget.js";
+import { getDeviceNotifications } from "../device-notifications.js";
+import { syncModalScroll, pageScrollY, scrollPageTo } from "./modal-scroll.js";
+import { createMotion } from "./motion.js";
+import { clearOverdue } from "./clear-overdue.js";
+import { todayIso, hhmm, deviceTimezone, plural, addDays, shortDate } from "./lib.js";
 import { overdueKind, dayLoad } from "./derive.js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../mark/transport.js";
 import {
@@ -21,10 +31,31 @@ import {
 } from "./views.js";
 
 const root = document.getElementById("app");
+const motion = createMotion(root, () => syncModalScroll(root));
 const THEME_KEY = "mark:theme";
 const DESKTOP = window.matchMedia("(min-width: 1024px)");
 
 const store = new ModelStore({ supabase, source: window.Telegram?.WebApp?.initData ? "miniapp" : "web" });
+const deviceNotifications = getDeviceNotifications();
+const deviceWidget = getDeviceWidget();
+const deviceSpeech = getDeviceSpeech();
+let speechBase = "";
+let speechOwner = null;
+let speechScreen = false;
+let assistantRequest = null;
+let iphoneWidget = deviceWidget?.getState() || null;
+let pendingWidgetOpen = null;
+let iphoneReminders = deviceNotifications?.getState() || null;
+
+function updateIphoneReminders() {
+  deviceWidget?.update({ userId: session?.user?.id || null, tasks: store.rows.tasks,
+    ready: !!store.engine && store.userId === session?.user?.id,
+    timezone: settings.timezone || deviceTimezone() || "UTC" });
+  applyWidgetOpen();
+  deviceNotifications?.update({ userId: session?.user?.id || null, tasks: store.rows.tasks,
+    ready: !!store.engine && store.userId === session?.user?.id,
+    timezone: settings.timezone || deviceTimezone() || "UTC" });
+}
 
 let session = null;
 let authResolved = false;
@@ -56,7 +87,7 @@ const settings = {
   quiet_end: "08:00",
   assistant_consent_at: null,
   assistant_brief: true,
-  assistant_confirm_all: false,
+  assistant_confirm_all: true,
 };
 
 function syncWorkday() {
@@ -76,6 +107,8 @@ const ui = {
   manage: null,      // { form: null|{kind,id,name,color,section_id} }
   confirm: null,     // { title, text, ok, danger, moveOptions, moveTo, onOk }
   showDone: false,
+  overdueCleanup: null,
+  trashCleanup: null,
   more: {},          // «Показать ещё»: ключ списка → сколько добавлено
   calMonth: today0.slice(0, 7),
   selectedDate: today0,
@@ -123,11 +156,13 @@ const scrollMemory = new Map();
 let lastHash = location.hash || "#/home";
 
 window.addEventListener("hashchange", () => {
-  scrollMemory.set(lastHash, window.scrollY);
+  scrollMemory.set(lastHash, pageScrollY());
   if (scrollMemory.size > 30) scrollMemory.delete(scrollMemory.keys().next().value);
   const from = lastHash;
   lastHash = location.hash || "#/home";
   route = parseRoute();
+  if (route.name === "assistant" && !from.startsWith("#/assistant")) createFreshChat();
+  if (route.name !== "assistant") deviceSpeech?.cancel();
   if (route.name === "profile" && !from.startsWith("#/profile")) ui.profileFrom = from;
   if (route.name === "calendar" && route.params.date) selectDate(route.params.date);
   if (route.name === "profile" && telegram.status === "loading") loadTelegram();
@@ -135,7 +170,7 @@ window.addEventListener("hashchange", () => {
   openFromLink();
   if (route.name !== "tasks" && ui.editor && DESKTOP.matches) ui.editor = null;
   render();
-  window.scrollTo(0, scrollMemory.get(lastHash) ?? 0);
+  scrollPageTo(scrollMemory.get(lastHash) ?? 0);
 });
 
 function go(hash) {
@@ -155,14 +190,26 @@ function nowMinutes() {
 }
 
 function context() {
+  if (deviceSpeech) ui.assistant.voice = deviceSpeech.getState();
   return {
     rows, status, today: todayIso(), nowMin: nowMinutes(), route, ui, session, settings,
-    telegram, tz, trash, isDesktop: DESKTOP.matches,
+    telegram, tz, trash, iphoneReminders, iphoneWidget, speechAvailable: !!deviceSpeech, isDesktop: DESKTOP.matches,
   };
 }
 
 function render() {
+  const transition = motion.before({ route: session ? route.name : 'auth',
+    editor: ui.editor ? (ui.editor.id || 'new') : null,
+    panel: ui.assistant.panel, thread: ui.assistant.threadId });
   const focus = captureFocus();
+  const transcript = root.querySelector(".assistant-transcript");
+  const chatScroll = transcript?.scrollTop || 0;
+  const atEnd = !transcript || transcript.scrollHeight - chatScroll - transcript.clientHeight < 90;
+  const openDetails = [...root.querySelectorAll("details[data-detail][open]")].map((el) => el.dataset.detail);
+  const onChat = !!session && route.name === "assistant";
+  if (ui.editor && (deviceSpeech?.getState().phase || "idle") !== "idle") deviceSpeech.cancel();
+  if (speechScreen !== onChat) { speechScreen = onChat; deviceSpeech?.setScreenActive(onChat); }
+
   if (!session) {
     root.innerHTML = !authResolved || tgLoginInFlight ? renderSplash() : renderAuth(ui.auth);
   } else {
@@ -170,7 +217,44 @@ function render() {
     const page = { home: renderHome, tasks: renderTasks, calendar: renderCalendar, assistant: renderAssistant, profile: renderProfile }[route.name] || renderHome;
     root.innerHTML = renderShell(ctx, page(ctx));
   }
+  motion.after(transition);
+  syncModalScroll(root);
   restoreFocus(focus);
+  root.querySelectorAll("details[data-detail]").forEach((el) => { el.open = openDetails.includes(el.dataset.detail); });
+  const nextTranscript = root.querySelector(".assistant-transcript");
+  if (nextTranscript) nextTranscript.scrollTop = atEnd || ui.assistant.scrollEnd ? nextTranscript.scrollHeight : chatScroll;
+  ui.assistant.scrollEnd = false;
+  resizeComposer();
+  if (onChat && !ui.assistant.chat.length) ui.assistant.greetingAnimated = true;
+
+}
+
+function resizeComposer() {
+  const el = root.querySelector('[data-key="assistant"]');
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(144, Math.max(32, el.scrollHeight)) + "px";
+}
+function chatViewport() {
+  const v = window.visualViewport;
+  document.documentElement.style.setProperty("--chat-height", (v?.height || window.innerHeight) + "px");
+  document.documentElement.style.setProperty("--chat-top", (v?.offsetTop || 0) + "px");
+}
+window.visualViewport?.addEventListener("resize", chatViewport);
+window.visualViewport?.addEventListener("scroll", chatViewport);
+window.addEventListener("resize", chatViewport);
+chatViewport();
+if (deviceSpeech) {
+  deviceSpeech.subscribe((voice) => {
+    if (speechOwner !== session?.user?.id || route.name !== "assistant") return;
+    const a = ui.assistant;
+    a.voice = voice;
+    if (voice.text) a.input = (speechBase + (speechBase ? " " : "") + voice.text).slice(0, 2000);
+    render();
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") deviceSpeech.stop().catch(() => {});
+  });
 }
 
 function captureFocus() {
@@ -198,7 +282,14 @@ function setDraft(path, value) {
   else if (head === "profile") ui.profile[rest[0]] = value;
   else if (head === "auth") ui.auth[rest[0]] = value;
   else if (head === "search") { ui.search = value; render(); }
-  else if (head === "assistantInput") ui.assistant.input = value;
+  else if (head === "assistantMemory") ui.assistant.memoryDraft = value;
+  else if (head === "assistantInput") {
+    ui.assistant.input = value;
+    saveChat();
+    resizeComposer();
+    const send = root.querySelector(".assistant-send");
+    if (send) send.disabled = !value.trim() || ui.assistant.busy || status?.state === "offline" || (ui.assistant.voice?.phase || "idle") !== "idle";
+  }
 }
 
 // ------------------------------------------------------------------ данные --
@@ -215,11 +306,43 @@ function openFromLink() {
 
 store.subscribe(() => {
   rows = store.rows;
+  updateIphoneReminders();
   openFromLink();
   // задачу, открытую в редакторе, удалили на другом устройстве
   if (ui.editor?.id && !rows.tasks.some((t) => t.id === ui.editor.id)) ui.editor.error = "Эта задача удалена на другом устройстве. Сохранение создаст её заново как новую.";
   render();
 });
+
+function applyWidgetOpen() {
+  if (!pendingWidgetOpen || !authResolved) return;
+  const target = routeForWidgetOpen(pendingWidgetOpen, session?.user?.id);
+  pendingWidgetOpen = null;
+  if (!target) return;
+  openedFromLink = null;
+  go(target);
+  openFromLink();
+}
+if (deviceWidget) {
+  deviceWidget.subscribe((s) => { iphoneWidget = s; render(); });
+  deviceWidget.onOpen((value) => { pendingWidgetOpen = value; applyWidgetOpen(); render(); });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") deviceWidget.refresh(); });
+  window.addEventListener("focus", () => deviceWidget.refresh());
+  setInterval(() => { if (document.visibilityState === "visible") deviceWidget.refresh(); }, 60000);
+}
+
+if (deviceNotifications) {
+  deviceNotifications.subscribe((s) => { iphoneReminders = s; render(); });
+  deviceNotifications.onOpenTask((id) => {
+    openedFromLink = null;
+    go(`#/tasks?open=${encodeURIComponent(id)}`);
+    if (route.params.open === id) { openFromLink(); render(); }
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") deviceNotifications.refresh();
+  });
+  window.addEventListener("focus", () => deviceNotifications.refresh());
+  setInterval(() => { if (document.visibilityState === "visible") deviceNotifications.refresh(); }, 60000);
+}
 
 let lastStatusKey = "";
 store.onStatus((s) => {
@@ -257,15 +380,19 @@ async function loadSettings(userId) {
     syncWorkday();
     if (data.theme && data.theme !== settings.theme) { settings.theme = data.theme; applyTheme(data.theme); }
   }
+  updateIphoneReminders();
   render();
 }
 
 // Каждая настройка показывает «Сохраняется → Сохранено / Не удалось сохранить».
 async function saveSetting(key, patch, savedKey = key) {
+  const owner = session?.user?.id;
+  if (!owner) return false;
   ui.saved[savedKey] = { cls: "", text: "Сохраняется…" };
   render();
   const { error } = await supabase.from("user_settings")
-    .update({ ...patch, updated_at: new Date().toISOString() }).eq("user_id", session.user.id);
+    .update({ ...patch, updated_at: new Date().toISOString() }).eq("user_id", owner);
+  if (owner !== session?.user?.id) return false;
   ui.saved[savedKey] = error ? { cls: "bad", text: "Не удалось сохранить" } : { cls: "ok", text: "Сохранено" };
   render();
   if (!error) setTimeout(() => { if (ui.saved[savedKey]?.cls === "ok") { delete ui.saved[savedKey]; render(); } }, 2500);
@@ -276,6 +403,7 @@ async function checkTimezone(userId) {
   const r = await reconcileTimezone(userId);
   if (!session || session.user.id !== userId) return;
   if (r.account) settings.timezone = r.account;
+  updateIphoneReminders();
   let chosen = null;
   try { chosen = localStorage.getItem("mark:tz-choice:" + userId); } catch { /* спросим снова */ }
   tz.prompt = r.status === "differs" && chosen !== `${r.account}|${r.device}` ? { account: r.account, device: r.device } : null;
@@ -312,8 +440,16 @@ onAuthChange((next) => {
   authResolved = true;
   if (next) tgLoginInFlight = false;
   const prevId = session?.user?.id;
+  if (prevId !== next?.user?.id) {
+    speechOwner = null;
+    deviceSpeech?.cancel();
+    assistantRequest?.abort();
+    ui.assistant = { chat: [], input: "", busy: false };
+    settings.assistant_consent_at = null;
+  }
   session = next;
   if (next && next.user.id !== prevId) {
+    settings.timezone = null;
     const userId = next.user.id;
     store.attachUser(userId);
     loadChat(userId);
@@ -327,9 +463,10 @@ onAuthChange((next) => {
     store.detachUser();
     rows = store.rows;
     if (telegramChannel) { telegramChannel.unsubscribe(); telegramChannel = null; }
-    Object.assign(ui, { editor: null, manage: null, confirm: null, quick: "", linkCode: null, telegramMsg: "", saved: {}, profile: {}, assistant: { chat: [], input: "", busy: false } });
+    Object.assign(ui, { editor: null, manage: null, confirm: null, quick: "", linkCode: null, telegramMsg: "", saved: {}, profile: {}, overdueCleanup: null, trashCleanup: null, assistant: { chat: [], input: "", busy: false } });
     tz = { prompt: null, device: deviceTimezone() };
   }
+  updateIphoneReminders();
   render();
 });
 
@@ -483,6 +620,10 @@ function confirmDeleteSection(id) {
 // --------------------------------------------------------------- события --
 
 const actions = {
+  "enable-iphone-reminders": () => deviceNotifications?.enable(),
+  "disable-iphone-reminders": () => deviceNotifications?.disable(),
+  "test-iphone-reminders": () => deviceNotifications?.test(),
+  "retry-iphone-reminders": () => deviceNotifications?.refresh(),
   "new-task": (el) => {
     const defaults = {};
     if (el.dataset.date) defaults.planned_date = el.dataset.date;
@@ -508,6 +649,19 @@ const actions = {
     render();
   },
   "move-today": (el) => moveToToday(el.dataset.id),
+  "clear-overdue": async () => {
+    if (ui.overdueCleanup?.busy || !session || !store.engine) return;
+    const userId = session.user.id;
+    ui.overdueCleanup = { busy: true, text: "Убираем просроченные задачи…" };
+    render();
+    const result = await clearOverdue(store, todayIso(), nowMinutes());
+    if (session?.user?.id !== userId) return;
+    ui.overdueCleanup = { busy: false, failed: result.failed,
+      text: result.failed
+        ? `Убрано в корзину: ${result.moved}. Остальные задачи не удалось убрать — попробуйте ещё раз.`
+        : `Убрано в корзину: ${result.moved}. Задачи можно восстановить в разделе «Корзина».` };
+    render();
+  },
   "toggle-done": () => { ui.showDone = !ui.showDone; render(); },
   "show-more": (el) => { ui.more[el.dataset.key] = (ui.more[el.dataset.key] || 0) + Number(el.dataset.step || 50); render(); },
   "cal-prev": () => { shiftMonth(-1); },
@@ -528,6 +682,25 @@ const actions = {
     setTimeout(loadTrash, 2500);
   },
   "reload-trash": () => loadTrash(),
+  "empty-trash": () => {
+    if (ui.trashCleanup?.busy || trash.status !== "ok" || !trash.tasks.length) return;
+    const tasks = trash.tasks.map((t) => ({ ...t }));
+    const userId = session?.user?.id;
+    ui.confirm = { title: "Очистить корзину?", text: `Будут окончательно удалены задачи из корзины: ${tasks.length}. Восстановить их будет нельзя.`, ok: "Удалить окончательно", danger: true,
+      onOk: async () => {
+        if (session?.user?.id !== userId) return;
+        ui.trashCleanup = { busy: true, text: "Очищаем корзину…" };
+        render();
+        let result;
+        try { result = await store.emptyTrash(tasks); }
+        catch { result = { ok: false, message: "Не удалось подтвердить очистку. Обновите корзину и попробуйте снова." }; }
+        if (session?.user?.id !== userId) return;
+        ui.trashCleanup = { busy: false, failed: !result.ok,
+          text: result.ok ? `Удалено окончательно: ${result.count}.` : result.message };
+        await loadTrash();
+      } };
+    render();
+  },
   "clear-search": () => { ui.search = ""; render(); },
   "set-week-start": (el) => { settings.week_start = Number(el.dataset.value); saveSetting("week_start", { week_start: settings.week_start }, "planning"); },
   "set-new-task-date": (el) => { settings.new_task_date = el.dataset.value; saveSetting("new_task_date", { new_task_date: settings.new_task_date }, "planning"); },
@@ -561,12 +734,52 @@ const actions = {
     render();
   },
   "layout-save": () => saveLayout(),
-  "assistant-consent": () => { settings.assistant_consent_at = new Date().toISOString(); saveSetting("assistant_consent_at", { assistant_consent_at: settings.assistant_consent_at }, "assistant"); },
-  "assistant-revoke": () => { settings.assistant_consent_at = null; saveSetting("assistant_consent_at", { assistant_consent_at: null }, "assistant"); },
+  "assistant-consent": async () => {
+    const value = new Date().toISOString();
+    const owner = session?.user?.id;
+    const ok = await saveSetting("assistant_consent_at", { assistant_consent_at: value }, "assistant");
+    if (ok && owner === session?.user?.id) settings.assistant_consent_at = value;
+    render();
+  },
+  "assistant-revoke": () => { deviceSpeech?.cancel(); assistantRequest?.abort(); ui.assistant = { ...ui.assistant, busy: false }; settings.assistant_consent_at = null; saveSetting("assistant_consent_at", { assistant_consent_at: null }, "assistant"); },
+  "assistant-voice": async () => {
+    if (!deviceSpeech || ui.assistant.busy) return;
+    if ((ui.assistant.voice?.phase || "idle") !== "idle") {
+      if (ui.assistant.voice?.phase === "starting") await deviceSpeech.cancel();
+      else await deviceSpeech.stop();
+      return;
+    }
+    root.querySelector('[data-key="assistant"]')?.blur();
+    speechBase = ui.assistant.input.trim();
+    speechOwner = session?.user?.id;
+    await deviceSpeech.start();
+  },
+  "assistant-new": () => { createFreshChat(); render(); },
+  "assistant-chats": () => { deviceSpeech?.cancel(); ui.assistant.panel = "chats"; render(); },
+  "assistant-open-chat": (el) => { saveChat(); activateChat(el.dataset.id); render(); },
+  "assistant-close-panel": () => { ui.assistant.panel = null; render(); },
+  "assistant-memory": () => {
+    deviceSpeech?.cancel(); ui.assistant.panel = "memory";
+    ui.assistant.memoryDraft = (ui.assistant.book?.memory || []).join("\n"); render();
+  },
+  "assistant-memory-save": () => {
+    const a = ui.assistant;
+    const lines = [...new Set((a.memoryDraft || "").split("\n").map(x => x.trim()).filter(Boolean))];
+    if (lines.length > 20 || lines.some(x => x.length > 400)) {
+      a.memoryError = "До 20 заметок, каждая — не длиннее 400 символов."; render(); return;
+    }
+    const previous = a.book.memory; a.book.memory = lines;
+    const removed = previous.filter(n => !lines.includes(n));
+    const excluded = [];
+    for (const t of a.book.threads) for (const m of t.messages) if (m.memoryNote && removed.includes(m.memoryNote) && !m.recallExcluded) { m.recallExcluded = true; excluded.push(m); }
+    if (saveChat()) { a.panel = null; a.memoryError = ""; }
+    else { a.book.memory = previous; for (const m of excluded) delete m.recallExcluded; }
+    render();
+  },
   "assistant-ask": (el) => askAssistant(el.dataset.text),
   "assistant-clear": () => {
-    ui.confirm = { title: "Очистить историю помощника?", text: "Диалог удалится с этого устройства. Задачи и настройки не изменятся.", ok: "Очистить", danger: true,
-      onOk: () => { ui.assistant.chat = []; saveChat(); } };
+    ui.confirm = { title: "Очистить этот чат?", text: "Сообщения этого чата удалятся с устройства. Остальные чаты и память останутся.", ok: "Очистить", danger: true,
+      onOk: () => { ui.assistant.chat = []; ui.assistant.input = ""; saveChat(); activateChat(ui.assistant.threadId); } };
     render();
   },
   "draft-apply": async (el) => {
@@ -629,7 +842,8 @@ const actions = {
       render();
     } else signOut();
   },
-  "auth-toggle": () => { ui.auth.mode = ui.auth.mode === "signin" ? "signup" : "signin"; ui.auth.error = ""; ui.auth.message = ""; render(); },
+  "auth-toggle": () => { if (ui.auth.busy) return; ui.auth.mode = ui.auth.mode === "signin" ? "signup" : "signin"; ui.auth.error = ""; ui.auth.message = ""; render(); },
+  "auth-recover": () => { if (ui.auth.busy) return; Object.assign(ui.auth, { mode: "recover", error: "", message: "" }); render(); },
 };
 
 // ---------------------------------------------------- рабочий стол, фокус --
@@ -666,21 +880,58 @@ async function toggleFocus(id, on) {
 
 // ---------------------------------------------------------------- помощник --
 
-// История — на этом устройстве, 30 дней; предпочтения — в аккаунте (раздел 8).
-const CHAT_KEY = (id) => "mark:assistant:" + id;
-const CHAT_DAYS = 30;
-
-function loadChat(userId) {
-  try {
-    const all = JSON.parse(localStorage.getItem(CHAT_KEY(userId)) || "[]");
-    const since = Date.now() - CHAT_DAYS * 86400000;
-    ui.assistant.chat = all.filter((m) => (m.at || 0) > since);
-  } catch { ui.assistant.chat = []; }
+// Conversations survive new chats; saved notes and selected user messages carry context.
+function activateChat(id) {
+  const menu = root.querySelector(".assistant-menu"); if (menu) menu.open = false;
+  const book = ui.assistant.book;
+  const thread = book?.threads.find(t => t.id === id);
+  if (!thread) return;
+  deviceSpeech?.cancel(); assistantRequest?.abort();
+  book.activeId = id;
+  ui.assistant = { book, threadId: id, chat: thread.messages, input: thread.input || "", busy: false,
+    greetingIndex: thread.greeting, greetingAnimated: false, scrollEnd: true };
+  saveChat();
 }
-
+function loadChat(userId) {
+  const book = readChats(localStorage, userId);
+  ui.assistant.book = book;
+  activateChat(book.activeId);
+  if (route.name === "assistant") createFreshChat();
+}
+function createFreshChat() {
+  saveChat();
+  const book = ui.assistant.book;
+  if (!book) return;
+  const t = beginConversation(book);
+  activateChat(t.id);
+}
+// A backgrounded/terminated app returns to a fresh conversation; the old one stays saved.
+let assistantWasHidden = false;
+function assistantAppState(active) {
+  if (!active) {
+    saveChat(); assistantWasHidden = route.name === "assistant";
+    if (assistantWasHidden) { deviceSpeech?.cancel(); assistantRequest?.abort(); }
+  } else if (assistantWasHidden) {
+    assistantWasHidden = false;
+    if (route.name === "assistant" && session) { createFreshChat(); render(); }
+  }
+}
+// iOS reports actual background transitions, rather than temporary permission sheets.
+window.addEventListener("mark:app-state", e => assistantAppState(e.detail?.active === true));
+document.addEventListener("visibilitychange", () => {
+  if (document.documentElement.dataset.platform !== "ios") assistantAppState(document.visibilityState !== "hidden");
+});
 function saveChat() {
-  if (!session) return;
-  try { localStorage.setItem(CHAT_KEY(session.user.id), JSON.stringify(ui.assistant.chat.slice(-100))); } catch { /* только в памяти */ }
+  const a = ui.assistant, owner = session?.user?.id;
+  if (!owner || !a.book) return false;
+  const thread = a.book.threads.find(t => t.id === a.threadId);
+  if (thread) {
+    thread.messages = a.chat; thread.input = a.input; thread.updatedAt = Date.now();
+    thread.title = a.chat.find(m => m.role === "user")?.content?.slice(0, 64) || "Новый чат";
+  }
+  const ok = writeChats(localStorage, owner, a.book);
+  a.storageError = ok ? "" : "Не удалось сохранить чаты на устройстве. Проверь свободное место.";
+  return ok;
 }
 
 // Загрузка дня — тем же расчётом, что и календарь: помощник и календарь не расходятся.
@@ -696,41 +947,65 @@ function loadFacts() {
 async function askAssistant(text) {
   text = String(text || "").trim();
   const a = ui.assistant;
-  if (!text || a.busy) return;
-  a.chat.push({ role: "user", content: text, at: Date.now() });
+  if (!text || a.busy || !settings.assistant_consent_at || (a.voice?.phase || "idle") !== "idle") return;
+  const owner = session?.user?.id;
+  const current = () => owner === session?.user?.id && a === ui.assistant && !!settings.assistant_consent_at;
+  const at = Date.now(), timezone = settings.timezone || deviceTimezone() || "UTC";
+  const request = memoryRequest(text);
+  if (request && !request.fact) {
+    a.chat.push({ role: "user", content: text, at }, { role: "assistant", content: "Что именно мне запомнить? Напиши само решение или предпочтение — я сохраню его для новых чатов.", at });
+    a.input = ""; a.scrollEnd = true; saveChat(); render(); return;
+  }
+  let memoryNote = null;
+  if (request?.fact && a.book) {
+    memoryNote = scopedNote(request.fact, at, timezone);
+    const memory = appendMemory(a.book.memory, memoryNote);
+    if (!memory) { a.storageError = "Память заполнена: удали ненужные заметки в меню → Память."; render(); return; }
+    const previous = a.book.memory; a.book.memory = memory;
+    if (!saveChat()) { a.book.memory = previous; render(); return; }
+  }
+  assistantRequest = new AbortController();
+  const controller = assistantRequest;
+  const timeout = setTimeout(() => controller.abort(), 90000);
+  a.scrollEnd = true;
+  a.chat.push({ role: "user", content: text, at, ...(memoryNote ? { memoryNote, memoryNotice: noteDate(memoryNote) ? "Сохранено на " + shortDate(noteDate(memoryNote)) : "Сохранено в память" } : {}) });
   a.input = "";
   a.busy = true;
+  saveChat();
   render();
-  const history = a.chat.slice(-7, -1).map((m) => ({ role: m.role, content: m.content || "" }));
+  const history = a.chat.slice(-7, -1).map((m) => ({ role: m.role, content: [m.content || "", ...(m.sections || []).map((s) => s.title + ": " + s.items.join("; "))].join("\n").slice(0, 1500) }));
   let reply;
   try {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
+    if (!current()) { clearTimeout(timeout); return; }
     const res = await fetch(`${SUPABASE_URL}/functions/v1/mark-assistant`, {
+      signal: controller.signal,
       method: "POST",
       headers: { "Content-Type": "application/json", apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ message: text, history, facts: loadFacts() }),
+      body: JSON.stringify({ message: text, history, memory: activeMemory(a.book?.memory, memoryDay(at, timezone)), recall: recallChats(a.book, a.threadId, text, at, timezone), facts: loadFacts() }),
     });
     const body = await res.json().catch(() => null);
+    if (!current()) { clearTimeout(timeout); return; }
     if (!res.ok) {
       const error = res.status === 401 ? "Нужно войти снова."
+        : res.status === 403 && body?.error === "consent_required" ? "Помощник выключен. Включите его заново на экране «Помощник», чтобы разрешить передачу данных ИИ-провайдеру."
         : res.status === 429 ? "Лимит ИИ-провайдера на сейчас исчерпан — попробуйте позже. Задачи работают как обычно."
         : "Помощник не ответил. Задачи работают как обычно — попробуйте ещё раз.";
       reply = { role: "assistant", error, at: Date.now() };
-      a.input = text; // черновик сообщения не теряется
+      if (!a.input) a.input = text; // черновик сообщения не теряется
     } else {
       const drafts = (body.drafts || []).map((d) => ({ ...d, skip: false }));
-      reply = { role: "assistant", content: body.answer || (drafts.length ? "Вот что предлагаю:" : "Готово."), refs: body.refs || [], drafts, rejected: body.rejected || [], state: drafts.length ? "pending" : "none", at: Date.now() };
-      // одна понятная новая задача — сразу, с кнопкой «Отменить» (раздел 8)
-      if (drafts.length === 1 && drafts[0].type === "create" && !settings.assistant_confirm_all) {
-        reply.created = await store.applyAssistantDrafts(drafts, { timezone: settings.timezone });
-        reply.state = "auto";
-      }
+      reply = { role: "assistant", sections: body.sections || [], content: body.answer || (body.sections?.length ? "" : drafts.length ? "Вот что предлагаю:" : "Не получилось составить ответ. Попробуй уточнить вопрос."), refs: body.refs || [], drafts, rejected: body.rejected || [], state: drafts.length ? "pending" : "none", at: Date.now() };
+
     }
   } catch {
     reply = { role: "assistant", error: "Нет связи с помощником. Задачи работают как обычно.", at: Date.now() };
-    a.input = text;
+    if (!a.input) a.input = text;
   }
+  clearTimeout(timeout);
+  if (assistantRequest === controller) assistantRequest = null;
   a.busy = false;
+  if (!current()) return;
   a.chat.push(reply);
   saveChat();
   render();
@@ -738,15 +1013,20 @@ async function askAssistant(text) {
 
 // ---------------------------------------------------------------- экспорт --
 
-function download(name, type, text) {
-  const url = URL.createObjectURL(new Blob([text], { type }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+async function download(name, type, text) {
+  if (ui.profile.exportBusy) return;
+  ui.profile.exportBusy = true;
+  ui.saved.export = { cls: "", text: "Подготавливаем файл…" };
+  render();
+  try {
+    const result = await exportFile(name, type, text);
+    ui.saved.export = { cls: "ok", text: result.kind === "shared" ? "Файл передан выбранному приложению" : result.kind === "download" ? "Файл подготовлен для скачивания" : "" };
+  } catch {
+    ui.saved.export = { cls: "bad", text: "Не удалось экспортировать файл. Попробуйте снова." };
+  } finally {
+    ui.profile.exportBusy = false;
+    render();
+  }
 }
 
 const clean = (row) => Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith("_") && k !== "user_id" && k !== "seq"));
@@ -794,6 +1074,7 @@ async function chooseTimezone(zone) {
   const r = await setAccountTimezone(session.user.id, zone);
   if (r.ok) {
     settings.timezone = zone;
+    updateIphoneReminders();
     if (prompt) { try { localStorage.setItem("mark:tz-choice:" + session.user.id, `${zone}|${prompt.device}`); } catch { /* спросим снова */ } }
     tz.prompt = null;
     ui.saved.timezone = { cls: "ok", text: "Сохранено" };
@@ -833,17 +1114,26 @@ const submits = {
     render();
   },
   "auth-submit": async (form) => {
+    if (ui.auth.busy) return;
     const fd = new FormData(form);
     const email = String(fd.get("email") || "").trim();
     const password = String(fd.get("password") || "");
-    if (!email || !password) return;
+    const mode = ui.auth.mode;
+    if (!email || (mode !== "recover" && !password)) return;
     Object.assign(ui.auth, { email, error: "", message: "", busy: true });
     render();
-    const { data, error } = ui.auth.mode === "signup" ? await signUp(email, password) : await signIn(email, password);
-    ui.auth.busy = false;
-    if (error) ui.auth.error = error.message;
-    else if (ui.auth.mode === "signup" && !data.session) ui.auth.message = "Проверьте почту и перейдите по ссылке для подтверждения, потом войдите.";
-    render();
+    try {
+      const { data, error } = mode === "recover" ? await requestPasswordReset(email)
+        : mode === "signup" ? await signUp(email, password) : await signIn(email, password);
+      if (error) ui.auth.error = mode === "recover" ? "Не удалось отправить письмо. Проверьте соединение и попробуйте позже." : error.message;
+      else if (mode === "recover") ui.auth.message = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в MARK для входа.";
+      else if (mode === "signup" && !data.session) ui.auth.message = "Проверьте почту и перейдите по ссылке для подтверждения, потом войдите.";
+    } catch {
+      ui.auth.error = "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
+    } finally {
+      ui.auth.busy = false;
+      render();
+    }
   },
 };
 
@@ -910,6 +1200,7 @@ root.addEventListener("change", (e) => {
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (ui.confirm) ui.confirm = null;
+  else if (ui.assistant.panel) ui.assistant.panel = null;
   else if (ui.manage) ui.manage = null;
   else if (ui.editor) ui.editor = null;
   else return;

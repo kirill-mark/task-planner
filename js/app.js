@@ -5,7 +5,7 @@ import {
   weekDayName, isToday,
 } from "./dates.js?v=13";
 import {
-  onAuthChange, signUp, signIn, signOut, updateDisplayName, updatePassword,
+  onAuthChange, signUp, signIn, signOut, requestPasswordReset, updateDisplayName, updatePassword,
   fetchTelegramLink, createLinkCode, unlinkTelegram, subscribeTelegramLink,
   telegramMiniAppSignIn, getSession, reconcileTimezone, setAccountTimezone,
 } from "./sync.js?v=13";
@@ -23,7 +23,7 @@ const ui = {
 };
 
 let session = null;
-let authMode = "signin"; // 'signin' | 'signup'
+let authMode = "signin"; // 'signin' | 'signup' | 'recover'
 let authError = "";
 let authMessage = "";
 let authBusy = false;
@@ -549,21 +549,23 @@ function renderSplash() {
 
 function renderAuthScreen() {
   const isSignup = authMode === "signup";
+  const recovery = authMode === "recover";
   return `
     <div class="auth-screen">
       <div class="auth-card">
         <h1><img src="icons/icon-192.png?v=6" alt="" class="logo" />MARK</h1>
-        <p class="auth-subtitle">Планировщик задач</p>
+        <p class="auth-subtitle">${recovery ? "Восстановление пароля" : "Планировщик задач"}</p>
         <form class="auth-form" data-action="auth-submit">
           <input type="email" name="email" placeholder="Email" required autocomplete="email" />
-          <input type="password" name="password" placeholder="Пароль" required minlength="6"
-            autocomplete="${isSignup ? "new-password" : "current-password"}" />
+          ${recovery ? "" : `<input type="password" name="password" placeholder="Пароль" required minlength="6"
+            autocomplete="${isSignup ? "new-password" : "current-password"}" />`}
           ${authError ? `<div class="auth-error">${escapeHtml(authError)}</div>` : ""}
           ${authMessage ? `<div class="auth-message">${escapeHtml(authMessage)}</div>` : ""}
-          <button type="submit" ${authBusy ? "disabled" : ""}>${isSignup ? "Зарегистрироваться" : "Войти"}</button>
+          <button type="submit" ${authBusy ? "disabled" : ""}>${authBusy ? "Подождите…" : recovery ? "Отправить письмо" : isSignup ? "Зарегистрироваться" : "Войти"}</button>
         </form>
-        <button type="button" class="auth-toggle" data-action="toggle-auth-mode">
-          ${isSignup ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться"}
+        ${authMode === "signin" ? `<button type="button" class="auth-toggle" data-action="recover-password" ${authBusy ? "disabled" : ""}>Забыли пароль?</button>` : ""}
+        <button type="button" class="auth-toggle" data-action="toggle-auth-mode" ${authBusy ? "disabled" : ""}>
+          ${recovery ? "Вернуться ко входу" : isSignup ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться"}
         </button>
       </div>
     </div>`;
@@ -911,7 +913,14 @@ root.addEventListener("click", (e) => {
     ui.openForms.delete(el.dataset.form);
     render();
   } else if (action === "toggle-auth-mode") {
+    if (authBusy) return;
     authMode = authMode === "signin" ? "signup" : "signin";
+    authError = "";
+    authMessage = "";
+    render();
+  } else if (action === "recover-password") {
+    if (authBusy) return;
+    authMode = "recover";
     authError = "";
     authMessage = "";
     render();
@@ -1021,24 +1030,28 @@ root.addEventListener("submit", (e) => {
       groupId: data.get("groupId"),
     });
   } else if (action === "auth-submit") {
+    if (authBusy) return;
     const email = data.get("email")?.toString().trim();
     const password = data.get("password")?.toString();
-    if (!email || !password) return;
+    const mode = authMode;
+    if (!email || (mode !== "recover" && !password)) return;
     authError = "";
     authMessage = "";
     authBusy = true;
     render();
     (async () => {
-      const { data: result, error } = authMode === "signup"
-        ? await signUp(email, password)
-        : await signIn(email, password);
-      authBusy = false;
-      if (error) {
-        authError = error.message;
-      } else if (authMode === "signup" && !result.session) {
-        authMessage = "Проверь почту и перейди по ссылке для подтверждения, потом сможешь войти.";
+      try {
+        const { data: result, error } = mode === "recover" ? await requestPasswordReset(email)
+          : mode === "signup" ? await signUp(email, password) : await signIn(email, password);
+        if (error) authError = mode === "recover" ? "Не удалось отправить письмо. Проверьте соединение и попробуйте позже." : error.message;
+        else if (mode === "recover") authMessage = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в MARK для входа.";
+        else if (mode === "signup" && !result.session) authMessage = "Проверь почту и перейди по ссылке для подтверждения, потом сможешь войти.";
+      } catch {
+        authError = "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
+      } finally {
+        authBusy = false;
+        render();
       }
-      render();
     })();
   } else if (action === "save-display-name") {
     const name = data.get("displayName")?.toString().trim();

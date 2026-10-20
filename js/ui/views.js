@@ -8,6 +8,7 @@ import { esc, plural, longDate, shortDate, relativeDay, hhmm, minutesOf, timeOf,
   weekHeader, monthTitle, addDays, parseIso, capitalize } from "./lib.js";
 import { tasksOfDay, dayProgress, overdue, overdueKind, inbox, nextDays, upcoming, monthMarks,
   monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder } from "./derive.js";
+import { greetingText } from "../assistant-chats.js";
 import { icons, blob } from "./icons.js";
 
 const NAV = [
@@ -82,6 +83,9 @@ function counts(ctx) {
 // ------------------------------------------------------------------ каркас --
 
 export function renderShell(ctx, content) {
+  if (ctx.route.name === "assistant") return `<div class="assistant-shell"><main id="main" class="assistant-main">${content}</main>
+    ${ctx.ui.editor ? renderEditorSheet(ctx) : ""}${ctx.ui.confirm ? renderConfirm(ctx.ui.confirm) : ""}</div>`;
+
   const c = counts(ctx);
   const route = ctx.route.name;
   const view = ctx.route.params.view;
@@ -111,7 +115,10 @@ export function renderShell(ctx, content) {
         </span>
       </a>
     </nav>
-    <main class="main" id="main">${content}</main>
+    <main class="main" id="main">
+      ${route !== "profile" ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
+      ${content}
+    </main>
     <nav class="bottom-nav" aria-label="Основная навигация">
       ${NAV.slice(0, 2).map((n) => `<a href="${n.href}" ${route === n.id ? 'aria-current="page"' : ""}>${n.icon(22)}${n.label}</a>`).join("")}
       <button type="button" class="nav-add" data-action="new-task" aria-label="Добавить задачу"><span>${icons.plus(24)}</span></button>
@@ -196,22 +203,22 @@ function duePill(t, today) {
   return `<span class="pill due">до ${esc(when)}${time ? " " + time : ""}</span>`;
 }
 
-export function taskRow(ctx, t, { showPath = true, when = null, selected = false } = {}) {
+export function taskRow(ctx, t, { showPath = true, when = null, selected = false, compactDay = false } = {}) {
   const today = ctx.today;
   const path = pathOf(ctx.rows, t);
   const missed = !t.completed && !t.due_date && t.planned_date && t.planned_date < today;
-  return `<div class="task ${t.completed ? "done" : ""} ${selected ? "selected" : ""}">
+  return `<div class="task ${t.completed ? "done" : ""} ${selected ? "selected" : ""} ${compactDay ? "task-compact-day" : ""}">
     ${when !== null ? `<span class="when ${when.cls || ""}">${esc(when.text)}</span>` : ""}
     <button type="button" class="check ${t.completed ? "done" : ""}" data-action="toggle" data-id="${esc(t.id)}" aria-pressed="${t.completed ? "true" : "false"}" aria-label="${t.completed ? "Вернуть в работу" : "Отметить выполненной"}: ${esc(t.title)}">${t.completed ? icons.check() : ""}</button>
     <button type="button" class="task-body" data-action="open-task" data-id="${esc(t.id)}">
       <span class="task-title">${esc(t.title)}</span>
       <span class="task-meta">
         ${showPath ? `${path.color ? `<span class="sq" style="background:${esc(path.color)}"></span>` : ""}<span>${esc(path.label)}</span>` : ""}
-        ${missed ? `<span class="pill late">не выполнено ${esc(shortDate(t.planned_date, { today }))}</span>` : when !== null && t.planned_date === ctx.today ? "" : planPill(t, today)}
+        ${missed ? `<span class="pill late">не выполнено ${esc(shortDate(t.planned_date, { today }))}</span>` : (when !== null || (compactDay && !t.planned_time)) && t.planned_date === ctx.today ? "" : planPill(t, today)}
         ${duePill(t, today)}
         ${t.duration_minutes ? `<span>${esc(durationText(t.duration_minutes))}</span>` : ""}
         ${t.priority === "high" ? '<span class="pill due">важно</span>' : ""}
-        ${t._pending ? '<span class="pill pending" title="Сохранено на устройстве, ещё не подтверждено сервером">не отправлено</span>' : ""}
+        ${t._pending ? '<span class="pill pending" title="Сохранено на устройстве, ещё не подтверждено сервером">ждёт синхронизации</span>' : ""}
       </span>
     </button>
   </div>`;
@@ -520,7 +527,7 @@ export function renderTasks(ctx0) {
     const late = overdue(rows, today, nowMin);
     body = (late.length ? `<div class="alert"><div class="grow"><b>Просрочено · ${late.length}</b><span class="muted">Не переносится само — решите по каждой задаче</span></div><a class="btn small" href="#/tasks?view=overdue">Разобрать</a></div>` : "") +
       (() => { const pg = paged(ctx, "today", list, 100);
-        return card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { when: whenOfDay(t, today), selected: t.id === selectedId })).join("")}</div>${pg.more}` : emptyDay(today), `Сегодня · ${longDate(today)}`); })();
+        return card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { compactDay: true, selected: t.id === selectedId })).join("")}</div>${pg.more}` : emptyDay(today), `Сегодня · ${longDate(today)}`); })();
   } else if (view === "inbox") {
     const list = inbox(rows);
     const pg = paged(ctx, "inbox", list);
@@ -538,8 +545,12 @@ export function renderTasks(ctx0) {
       || card('<div class="empty">На ближайшие 7 дней задач нет.</div>', "Ближайшие 7 дней");
   } else if (view === "overdue") {
     const list = overdue(rows, today, nowMin);
+    const allLate = overdue(ctx0.rows, today, nowMin).length;
+    const cleanup = ctx.ui.overdueCleanup;
     const pg = paged(ctx, "overdue", list);
-    body = card(list.length ? `<div class="task-list">${pg.shown.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
+    body = `${allLate ? `<div class="alert info overdue-cleanup"><div class="grow"><b>Убрать просроченные задачи</b><span class="muted">Все ${allLate} попадут в корзину — их можно восстановить.</span></div><button type="button" class="btn danger" data-action="clear-overdue" ${cleanup?.busy ? "disabled" : ""}>${cleanup?.busy ? "Убираем…" : "Убрать все"}</button></div>` : ""}
+      ${cleanup ? `<div class="alert ${cleanup.failed ? "warn" : "info"}" role="status"><div class="grow">${esc(cleanup.text)}</div>${cleanup.busy ? "" : '<a class="btn small" href="#/tasks?view=trash">Корзина</a>'}</div>` : ""}` +
+      card(list.length ? `<div class="task-list">${pg.shown.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
       <div class="chips" style="padding:0 0 10px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button>
       <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>${pg.more}`
       : '<div class="empty">Просроченных задач нет.</div>', "Просроченные", "Ничего не переносится автоматически");
@@ -574,15 +585,18 @@ function renderTrash(ctx, q) {
   if (tr.status === "loading") return card('<div class="skeleton" style="width:60%"></div><div class="skeleton" style="width:40%"></div>', "Корзина");
   if (tr.status === "error") return card(`<div class="empty">Не удалось загрузить корзину — ничего не потеряно.<button type="button" class="btn small" data-action="reload-trash">Повторить</button></div>`, "Корзина");
   const list = tr.tasks.filter((t) => !q || matchesSearch(t, q));
+  const cleanup = ctx.ui.trashCleanup;
   const until = (t) => {
     const d = new Date(t.deleted_at);
     d.setDate(d.getDate() + (tr.keep_days || 30));
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  return card(list.length ? `<div class="task-list">${list.map((t) => `<div class="task">
+  return `${tr.tasks.length ? `<div class="alert info overdue-cleanup"><div class="grow"><b>Задач в корзине: ${tr.tasks.length}</b><span class="muted">Очистка удалит их без возможности восстановления.</span></div><button type="button" class="btn danger" data-action="empty-trash" ${cleanup?.busy ? "disabled" : ""}>${cleanup?.busy ? "Очищаем…" : "Очистить корзину"}</button></div>` : ""}
+    ${cleanup ? `<div class="alert ${cleanup.failed ? "warn" : "info"}" role="status"><div class="grow">${esc(cleanup.text)}</div></div>` : ""}` +
+    card(list.length ? `<div class="task-list">${list.map((t) => `<div class="task">
       <div class="task-body"><span class="task-title">${esc(t.title)}</span>
         <span class="task-meta"><span>${esc(pathOf(ctx.rows, t).label)}</span><span>удалится окончательно ${esc(shortDate(until(t), { today: ctx.today }))}</span></span></div>
-      <button type="button" class="btn small" data-action="restore-task" data-id="${esc(t.id)}">Восстановить</button></div>`).join("")}</div>`
+      <button type="button" class="btn small" data-action="restore-task" data-id="${esc(t.id)}" ${cleanup?.busy ? "disabled" : ""}>Восстановить</button></div>`).join("")}</div>`
     : '<div class="empty">Корзина пуста.</div>', "Корзина", `Удалённое хранится ${tr.keep_days || 30} дней`);
 }
 
@@ -752,14 +766,14 @@ function renderDraft(ctx, d, i, msgIndex, locked) {
 }
 
 function renderChatMessage(ctx, m, idx) {
-  if (m.role === "user") return `<div class="bubble user">${esc(m.content)}</div>`;
+  if (m.role === "user") return `<div class="bubble user">${esc(m.content)}${m.memoryNotice ? `<small class="assistant-memory-notice">✓ ${esc(m.memoryNotice)}</small>` : ""}</div>`;
   const refs = (m.refs || []).map((id) => ctx.rows.tasks.find((t) => t.id === id)).filter(Boolean);
   const drafts = m.drafts || [];
   const locked = m.state === "applied" || m.state === "cancelled" || m.state === "auto";
   const chosen = drafts.filter((d) => !d.skip).length;
   return `<div class="bubble bot">
-    ${m.error ? `<span class="form-msg bad">${esc(m.error)}</span>` : `<span style="white-space:pre-line">${esc(m.content)}</span>`}
-    ${refs.length ? `<div class="chips">${refs.map((t) => `<button type="button" class="chip-btn" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div>` : ""}
+    ${m.error ? `<span class="form-msg bad">${esc(m.error)}</span>` : `${renderAssistantText(m)}`}
+    ${refs.length ? `<details class="assistant-refs" data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="chips">${refs.map((t) => `<button type="button" class="chip-btn" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
     ${drafts.length && m.state === "pending" ? `<span class="eyebrow">Предлагаю — проверьте перед применением</span>` : ""}
     ${drafts.length ? `<div style="display:flex;flex-direction:column;gap:8px">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked)).join("")}</div>
       ${m.state === "pending" ? `<div class="chips"><button type="button" class="btn small primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>Применить${drafts.length > 1 ? ` (${chosen})` : ""}</button>
@@ -770,47 +784,55 @@ function renderChatMessage(ctx, m, idx) {
   </div>`;
 }
 
+const micIcon = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>`;
+
+function renderAssistantText(m) {
+  if (Array.isArray(m.sections) && m.sections.length) return `<div class="assistant-answer">${m.content ? `<p>${esc(m.content)}</p>` : ""}${m.sections.slice(0, 4).map((s) => `<section>${s.title ? `<h2>${esc(s.title)}</h2>` : ""}${Array.isArray(s.items) ? `<ul>${s.items.slice(0, 12).map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}</section>`).join("")}</div>`;
+  // Render a tiny, escaped subset of Markdown, including old saved replies.
+  return `<div class="assistant-answer">${(String(m.content || "").length > 320 ? String(m.content || "").replace(/\s+(?=\d{1,2}[.)]\s)/g, "\n\n").replace(/([.!?])\s+([А-ЯA-Z«])/g, "$1\n\n$2") : String(m.content || "")).split(/\n\s*\n/).map((block) => {
+    const lines = block.split("\n");
+    if (lines.every((l) => /^\s*(?:[-*]|\d+[.)])\s+/.test(l))) return `<ul>${lines.map((l) => `<li>${esc(l.replace(/^\s*(?:[-*]|\d+[.)])\s+/, ""))}</li>`).join("")}</ul>`;
+    return `<p>${esc(block).replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>").replace(/\n/g, "<br>")}</p>`;
+  }).join("")}</div>`;
+}
+
 export function renderAssistant(ctx) {
-  const s = ctx.settings;
-  const a = ctx.ui.assistant;
-  if (!s.assistant_consent_at) {
-    return `<header class="page-head"><h1>Помощник</h1></header>
-      ${renderNotices(ctx)}
-      <section class="card" aria-label="Включение помощника"><div class="summary">${blob()}<div style="display:flex;flex-direction:column;gap:10px">
-        <span class="summary-title">Помощник планирует день по вашим задачам</span>
-        <span class="summary-text">Собирает день, подсказывает, что дальше, разбирает входящие, находит окно нужной длительности, переносит и добавляет задачи — всё, что меняет данные, только после вашего подтверждения.</span>
-        <span class="summary-text"><b>Что передаётся.</b> Для ответа ваш вопрос, до 60 задач, относящихся к нему (названия, описания, даты), названия групп и расчёт загрузки дня уходят на сервер MARK и ИИ-провайдеру Groq. Весь аккаунт не отправляется; пароль и ключи — никогда. Без помощника всё остальное работает как прежде.</span>
-        <div class="chips"><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button></div>
-      </div></div></section>
-      ${renderSummaryCard(ctx)}`;
-  }
+  const a = ctx.ui.assistant || { chat: [], input: "", busy: false };
+  const enabled = !!ctx.settings.assistant_consent_at;
+  const voice = a.voice || { phase: "idle" };
+  const recording = voice.phase !== "idle";
   const offline = ctx.status?.state === "offline";
-  const stale = ctx.status?.unconfirmed || 0;
-  const chips = ["Собери мне день", "Что дальше?", "Разбери входящие", "Что у меня завтра?", "У меня 2 часа — что успею?"];
-  return `<header class="page-head"><h1>Помощник</h1>
-      <div class="row" style="gap:8px">${a.chat.length ? `<button type="button" class="btn small quiet" data-action="assistant-clear">Очистить историю</button>` : ""}${ctx.isDesktop ? "" : statusButton(ctx.status)}</div></header>
-    ${renderNotices(ctx)}
-    <div class="layout-split">
-      <div class="col">
-        <section class="card chat" aria-label="Диалог" aria-live="polite">
-          ${a.chat.length ? a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("") : `<div class="empty">Спросите о дне или поручите: «перенеси незавершённое на завтра», «добавь созвон в пятницу в 11».</div>`}
-          ${a.busy ? '<div class="bubble bot"><span class="muted">Думаю…</span></div>' : ""}
-        </section>
-        ${offline ? '<div class="alert warn"><div class="grow">Нет сети — помощнику нужна связь. Задачи по-прежнему можно менять вручную.</div></div>'
-          : stale ? `<div class="alert info"><div class="grow">${stale} ${plural(stale, "изменение ещё не отправлено", "изменения ещё не отправлены", "изменений ещё не отправлены")} — ответ может не учитывать их.</div></div>` : ""}
-        <div class="chips">${chips.map((c) => `<button type="button" class="chip-btn" data-action="assistant-ask" data-text="${esc(c)}" ${a.busy || offline ? "disabled" : ""}>${esc(c)}</button>`).join("")}</div>
-        <form class="quick-add" data-action="assistant-send">
-          <input name="message" data-key="assistant" data-draft="assistantInput" value="${esc(a.input)}" maxlength="2000" autocomplete="off" aria-label="Сообщение помощнику" placeholder="Спросите или поручите — черновик не пропадёт">
-          <button type="submit" class="btn small primary" ${a.busy || offline ? "disabled" : ""} aria-label="Отправить">${icons.send(16)}</button>
-        </form>
-      </div>
-      <aside class="col">
-        ${renderSummaryCard(ctx)}
-        <section class="card"><div class="card-head"><h2>Правила</h2></div>
-          <span class="summary-text">Несколько задач, удаление, перенос дедлайна — только после подтверждения. Если задачу изменили на другом устройстве, пока вы смотрели черновик, изменение не применится молча — покажем конфликт.</span>
-          <span class="muted" style="font-size:13px">История диалога хранится на этом устройстве 30 дней.</span></section>
-      </aside>
-    </div>`;
+  const name = firstName(ctx.session);
+  const menu = `<details class="assistant-menu" data-detail="menu"><summary class="assistant-icon" aria-label="Меню чата">${icons.menu ? icons.menu(22) : '<span>•••</span>'}</summary><div class="assistant-menu-panel">
+    <button type="button" data-action="assistant-new">Новый чат</button>
+    <button type="button" data-action="assistant-chats">Мои чаты</button>
+    <button type="button" data-action="assistant-memory">Память${a.book?.memory?.length ? " · " + a.book.memory.length : ""}</button>
+    <a href="#/profile">Кабинет и настройки</a>
+    ${a.chat.length ? '<button type="button" data-action="assistant-clear">Очистить этот чат</button>' : ""}
+    ${enabled ? '<button type="button" data-action="assistant-revoke">Выключить помощника</button>' : ""}
+    <small>Чаты и память хранятся на этом устройстве.</small></div></details>`;
+  return `<header class="assistant-header" ${a.panel ? 'inert aria-hidden="true"' : ""}><a href="#/home" class="assistant-icon" aria-label="Назад в MARK"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg></a><span>MARK <span class="assistant-header-label">/ помощник</span></span>${menu}</header>
+    <div class="assistant-transcript" ${a.panel ? 'inert aria-hidden="true"' : ""} role="log" aria-label="Диалог с помощником" aria-live="polite">
+      ${renderNotices(ctx)}
+      ${a.chat.length && enabled ? `<div class="assistant-messages">${a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("")}${a.busy ? '<div class="assistant-thinking"><span></span><span></span><span></span><span class="sr-only">Думаю…</span></div>' : ""}</div>` : `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}"><span class="assistant-mark">MARK AI ${icons.spark(14)}</span><p>Твой помощник по делам.</p><h1>${esc(greetingText(a.greetingIndex, name))}</h1><span class="assistant-intro">Освободим голову.<br>Соберём день по твоим задачам.</span>
+        ${enabled ? `<div class="assistant-starters">${["План на сегодня", "Что сделать первым?", "Разобрать входящие"].map((label, i) => `<button type="button" data-action="assistant-ask" data-text="${["Покажи мои задачи на сегодня и предложи порядок выполнения", "Что мне сделать первым сегодня? Объясни почему", "Помоги разобрать входящие: что нужно уточнить?"][i]}" ${offline || a.busy ? "disabled" : ""}>${label}<span>↗</span></button>`).join("")}</div>` : `<div class="assistant-consent"><p>Чтобы отвечать по делу, помощник передаёт твой вопрос, историю текущего чата, подходящие фрагменты твоих сообщений из прошлых чатов и сохранённые тобой заметки памяти и до 60 подходящих задач с описаниями на сервер MARK и провайдеру Groq.</p><p>Любые изменения задач — после твоего подтверждения.</p><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button>${ctx.ui.saved?.assistant?.cls === "bad" ? `<p role="alert">${esc(ctx.ui.saved.assistant.text)}</p>` : ""}</div>`}
+      </div>`}
+    </div>
+    ${enabled ? `<div class="assistant-bottom" ${a.panel ? 'inert aria-hidden="true"' : ""}>
+      ${a.storageError ? `<div class="assistant-hint bad" role="alert">${esc(a.storageError)}</div>` : ""}
+      ${offline ? '<div class="assistant-hint" role="status">Нет связи. Черновик останется здесь.</div>' : ctx.status?.unconfirmed ? '<div class="assistant-hint" role="status">Есть несинхронизированные изменения. Ответ может их не учитывать.</div>' : ""}
+      ${voice.error ? `<div class="assistant-hint bad" role="alert">${esc(voice.error)}</div>` : ""}
+      ${recording ? `<div class="assistant-recording" role="status"><span class="recording-dot"></span>${voice.phase === "starting" ? "Включаю микрофон…" : voice.phase === "finishing" ? "Завершаю распознавание…" : "Слушаю. Нажми ■, когда закончишь."}</div>` : ""}
+      <form class="assistant-composer" data-action="assistant-send"><textarea name="message" data-key="assistant" data-draft="assistantInput" rows="1" maxlength="2000" autocomplete="off" aria-label="Сообщение помощнику" placeholder="О чём поговорим?" ${recording ? "readonly" : ""}>${esc(a.input)}</textarea>
+        <div class="assistant-composer-tools"><span class="assistant-composer-label">${recording ? "Диктовка" : "Твои задачи. Твой ритм."}</span>
+        ${ctx.speechAvailable ? `<button type="button" class="assistant-icon ${recording ? "is-recording" : ""}" data-action="assistant-voice" aria-label="${recording ? "Остановить диктовку" : "Надиктовать сообщение"}" ${a.busy || voice.phase === "finishing" ? "disabled" : ""}>${recording ? '<span class="recording-stop">■</span>' : micIcon}</button>` : ""}
+        <button type="submit" class="assistant-send" aria-label="Отправить сообщение" ${a.busy || offline || recording || !a.input.trim() ? "disabled" : ""}>${icons.send(20)}</button></div>
+      </form><p class="assistant-footnote">${recording ? "Распознавание выполняет iPhone или сервис Apple. Текст отправишь сам." : "Помощник может ошибаться. Изменения — с твоего согласия."}</p>
+    </div>` : ""}
+    ${a.panel ? `<div class="assistant-panel" role="dialog" aria-modal="true" aria-label="${a.panel === "chats" ? "Мои чаты" : "Память помощника"}">
+      <header><h2>${a.panel === "chats" ? "Мои чаты" : "Память"}</h2><button type="button" class="assistant-icon" data-action="assistant-close-panel" data-key="assistant-panel-close" autofocus aria-label="Закрыть">×</button></header>
+      ${a.panel === "chats" ? `<button type="button" class="btn primary" data-action="assistant-new">+ Новый чат</button><div class="assistant-chat-list">${(a.book?.threads || []).map(t => `<button type="button" data-action="assistant-open-chat" data-id="${esc(t.id)}" ${t.id === a.threadId ? 'aria-current="true"' : ""}><strong>${esc(t.title)}</strong><small>${t.messages.length} сообщений</small></button>`).join("")}</div>` : `<p>Эти заметки помощник учитывает во всех чатах. Решения на сегодня действуют только в указанную дату. Сохраняй предпочтения фразой «Запомни: …» или добавляй здесь по одной заметке на строку.</p><p>Память хранится на этом устройстве и передаётся ИИ вместе с вопросом. Её можно изменить или удалить здесь.</p><textarea data-key="assistant-memory" data-draft="assistantMemory" aria-label="Заметки памяти" rows="8" maxlength="8020">${esc(a.memoryDraft || "")}</textarea>${a.memoryError || a.storageError ? `<p class="bad" role="alert">${esc(a.memoryError || a.storageError)}</p>` : ""}<button type="button" class="btn primary" data-action="assistant-memory-save">Сохранить память</button>`}
+    </div>` : ""}`;
 }
 
 // ------------------------------------------------------------------ редактор --
@@ -834,19 +856,23 @@ function editorFields(ctx) {
   const dur = [["", "не указана"], ["15", "15 мин"], ["30", "30 мин"], ["45", "45 мин"], ["60", "1 ч"], ["90", "1 ч 30 мин"], ["120", "2 ч"], ["180", "3 ч"], ["240", "4 ч"]];
   if (d.duration_minutes && !dur.some(([v]) => v === String(d.duration_minutes))) dur.push([String(d.duration_minutes), durationText(d.duration_minutes)]);
   return `
-    ${task ? `<div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${esc(pathOf(ctx.rows, task).label)}</span>${task._pending ? '<span class="muted">не отправлено</span>' : '<span style="color:var(--accent)">Сохранено</span>'}</div>` : ""}
+    ${task ? `<div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${esc(pathOf(ctx.rows, task).label)}</span>${task._pending ? '<span class="muted" title="Сохранено на устройстве, ещё не подтверждено сервером">Ждёт синхронизации</span>' : '<span style="color:var(--accent)">Сохранено</span>'}</div>` : ""}
     <label class="field"><span>Название</span>
       <input class="input" name="title" data-key="ed-title" data-draft="editor.title" value="${esc(d.title)}" required maxlength="200" autocomplete="off" ${ed.id ? "" : "autofocus"}></label>
     <label class="field"><span>Описание</span>
       <textarea class="textarea" name="notes" data-key="ed-notes" data-draft="editor.notes" maxlength="5000" rows="3">${esc(d.notes)}</textarea></label>
     <label class="field"><span>Раздел и группа</span><select class="select" name="group_id" data-draft="editor.group_id">${groupOptions(ctx, d.group_id)}</select></label>
-    <div class="two">
+    <div class="two editor-schedule">
       <div class="date-box plan"><span class="t">Запланировать на</span>
-        <input class="input" type="date" name="planned_date" data-key="ed-pd" data-draft="editor.planned_date" value="${esc(d.planned_date || "")}" aria-label="Дата, на которую запланировано">
-        <input class="input" type="time" name="planned_time" data-key="ed-pt" data-draft="editor.planned_time" value="${esc(hhmm(d.planned_time))}" aria-label="Время, на которое запланировано"></div>
+        <div class="date-fields">
+          <label class="field"><span>Дата</span><input class="input" type="date" name="planned_date" data-key="ed-pd" data-draft="editor.planned_date" value="${esc(d.planned_date || "")}" aria-label="Дата, на которую запланировано"></label>
+          <label class="field"><span>Время</span><input class="input" type="time" name="planned_time" data-key="ed-pt" data-draft="editor.planned_time" value="${esc(hhmm(d.planned_time))}" aria-label="Время, на которое запланировано"></label>
+        </div></div>
       <div class="date-box due"><span class="t">Выполнить до</span>
-        <input class="input" type="date" name="due_date" data-key="ed-dd" data-draft="editor.due_date" value="${esc(d.due_date || "")}" aria-label="Крайний срок">
-        <input class="input" type="time" name="due_time" data-key="ed-dt" data-draft="editor.due_time" value="${esc(hhmm(d.due_time))}" aria-label="Время крайнего срока"></div>
+        <div class="date-fields">
+          <label class="field"><span>Дата</span><input class="input" type="date" name="due_date" data-key="ed-dd" data-draft="editor.due_date" value="${esc(d.due_date || "")}" aria-label="Крайний срок"></label>
+          <label class="field"><span>Время</span><input class="input" type="time" name="due_time" data-key="ed-dt" data-draft="editor.due_time" value="${esc(hhmm(d.due_time))}" aria-label="Время крайнего срока"></label>
+        </div></div>
     </div>
     <span class="muted" style="font-size:13px">Перенос работы на другой день не сдвигает дедлайн. Без даты задача попадёт во «Входящие».</span>
     <div class="two">
@@ -863,7 +889,7 @@ function editorFields(ctx) {
 
 function renderEditorPanel(ctx) {
   const ed = ctx.ui.editor;
-  return `<form class="card" data-action="save-task" aria-label="${ed.id ? "Задача" : "Новая задача"}">
+  return `<form class="card task-editor" data-action="save-task" aria-label="${ed.id ? "Задача" : "Новая задача"}">
     <div class="card-head"><h2>${ed.id ? "Задача" : "Новая задача"}</h2>
       <button type="button" class="icon-btn small" data-action="close-editor" aria-label="Закрыть">${icons.close(16)}</button></div>
     ${editorFields(ctx)}</form>`;
@@ -872,10 +898,10 @@ function renderEditorPanel(ctx) {
 function renderEditorSheet(ctx) {
   const ed = ctx.ui.editor;
   return `<div class="sheet-scrim" data-action="close-editor"></div>
-    <form class="sheet" role="dialog" aria-modal="true" aria-label="${ed.id ? "Задача" : "Новая задача"}" data-action="save-task">
+    <form class="sheet task-editor" role="dialog" aria-modal="true" aria-label="${ed.id ? "Задача" : "Новая задача"}" data-action="save-task">
       <span class="handle"></span>
-      <div class="row" style="justify-content:space-between"><button type="button" class="btn quiet small" data-action="close-editor">Отмена</button>
-        <h2 style="font-size:17px">${ed.id ? "Задача" : "Новая задача"}</h2><span style="width:72px"></span></div>
+      <div class="sheet-header"><button type="button" class="btn quiet small" data-action="close-editor">Отмена</button>
+        <h2>${ed.id ? "Задача" : "Новая задача"}</h2><span aria-hidden="true"></span></div>
       ${editorFields(ctx)}
     </form>`;
 }
@@ -945,6 +971,27 @@ const ZONES = ["Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Asia/Yek
   "Asia/Almaty", "Asia/Tashkent", "Asia/Tbilisi", "Asia/Yerevan", "Asia/Baku", "Europe/Minsk", "Europe/Kiev",
   "Europe/Istanbul", "Asia/Dubai", "Europe/Berlin", "Europe/London", "America/New_York"];
 
+export function renderIphoneReminders(s) {
+  if (!s?.available) return "";
+  const permitted = s.permission === "granted";
+  const text = s.permission === "denied" ? "Разрешите уведомления: Настройки iPhone → Уведомления → MARK."
+    : s.enabled && permitted ? `Включены · за 30 минут. Запланировано: ${s.pending}.`
+      : "Включите напоминания о задачах на этом iPhone.";
+  return `<section class="card" aria-label="Уведомления на iPhone">
+    <div class="card-head"><h2>Уведомления на iPhone</h2></div>
+    <span class="soft" role="status">${esc(text)}</span>
+    <span class="muted" style="font-size:13px">До планового времени задачи, а если его нет — до дедлайна со временем. Задачи без времени не присылают уведомлений.</span>
+    <div class="row" style="flex-wrap:wrap;gap:10px">
+      <button type="button" class="btn ${s.enabled && permitted ? "quiet" : "primary"}" data-action="${s.enabled && permitted ? "disable" : "enable"}-iphone-reminders" ${s.busy ? "disabled" : ""}>${s.busy ? "Подождите…" : s.enabled && permitted ? "Выключить" : "Включить уведомления"}</button>
+      ${s.enabled && permitted ? `<button type="button" class="btn" data-action="test-iphone-reminders" ${s.busy ? "disabled" : ""}>Проверить уведомление</button>` : ""}
+    </div>
+    ${s.total > s.pending && !s.error ? '<span class="muted" style="font-size:13px">Запланированы ближайшие напоминания. Остальные добавятся при следующем открытии MARK.</span>' : ""}
+    ${s.message ? `<span class="form-msg" role="status">${esc(s.message)}</span>` : ""}
+    ${s.error ? `<span class="form-msg bad" role="alert">${esc(s.error)}</span><button type="button" class="btn small" data-action="retry-iphone-reminders">Повторить</button>` : ""}
+    <span class="muted" style="font-size:13px">Изменения с другого устройства учитываются после синхронизации MARK на этом iPhone. Если до задачи осталось меньше 30 минут, новое напоминание уже не ставится.</span>
+  </section>`;
+}
+
 export function renderProfile(ctx) {
   const s = ctx.settings;
   const msg = (key) => ctx.ui.saved[key] ? `<span class="form-msg ${ctx.ui.saved[key].cls}">${esc(ctx.ui.saved[key].text)}</span>` : "";
@@ -995,6 +1042,15 @@ export function renderProfile(ctx) {
         <span class="muted" style="font-size:13px">Если устройство окажется в другом поясе, приложение спросит — само не поменяет.</span>
       </section>
 
+      ${renderIphoneReminders(ctx.iphoneReminders)}
+      ${ctx.iphoneWidget ? `<section class="card" aria-label="Виджет на iPhone">
+        <div class="card-head"><h2>Виджет на iPhone</h2></div>
+        <p class="muted">Зажми свободное место на главном экране iPhone → «Изменить» → «Добавить виджет» → MARK. «Сегодня в MARK» — маленький и средний. «План на день» — большой список задач.</p>
+        <p class="muted">Для экрана блокировки: зажми экран → «Настроить» → «Экран блокировки» → область виджетов под часами → MARK → «План на день». Карточка показывает до трёх задач; нажатие открывает весь список.</p>
+        <p class="muted">Виджет «Сегодня» показывает задачи и открывает их по нажатию. После изменений открой MARK — iOS обновит виджет.</p>
+        ${ctx.iphoneWidget.error ? `<p class="error">${esc(ctx.iphoneWidget.error)}</p>` : ""}
+      </section>` : ""}
+
       <section class="card" aria-label="Уведомления">
         <div class="card-head"><h2>Уведомления в Telegram</h2>${msg("notify")}</div>
         <div>${toggle("morning_digest", "Утренняя сводка", "план на сегодня, дедлайны и просроченное")}${toggle("evening_digest", "Вечерняя сводка", "план на завтра")}${toggle("task_reminders", "Напоминание о задаче", "перед плановым временем, иначе — перед дедлайном со временем")}</div>
@@ -1038,7 +1094,7 @@ export function renderProfile(ctx) {
         <div class="card-head"><h2>Помощник</h2>${msg("assistant")}</div>
         ${s.assistant_consent_at ? `<div>
           <label class="switch-row"><span class="grow"><span>Краткие ответы</span><span class="muted" style="font-size:12px">вывод, основание, действие</span></span><input type="checkbox" class="switch" data-action="set-setting" data-setting="assistant_brief" ${s.assistant_brief !== false ? "checked" : ""}></label>
-          <label class="switch-row"><span class="grow"><span>Всегда показывать черновик</span><span class="muted" style="font-size:12px">даже для одной понятной задачи</span></span><input type="checkbox" class="switch" data-action="set-setting" data-setting="assistant_confirm_all" ${s.assistant_confirm_all ? "checked" : ""}></label></div>
+          <p class="muted" style="font-size:13px">Все изменения задач требуют подтверждения в чате.</p></div>
           <button type="button" class="btn small quiet" style="align-self:flex-start" data-action="assistant-revoke">Выключить помощника</button>`
         : `<span class="soft" style="font-size:14px">Выключен. Включается на экране «Помощник» — там же сказано, какие данные передаются.</span>`}
       </section>
@@ -1046,8 +1102,9 @@ export function renderProfile(ctx) {
       <section class="card" aria-label="Данные">
         <div class="card-head"><h2>Данные</h2></div>
         <span class="soft" style="font-size:14px">Все ваши разделы, группы и задачи. JSON — полная копия с версией схемы; CSV — список задач для таблиц.</span>
-        <div class="chips"><button type="button" class="btn small" data-action="export-json">Скачать JSON</button><button type="button" class="btn small" data-action="export-csv">Скачать CSV</button>
+        <div class="chips"><button type="button" class="btn small" data-action="export-json" ${ctx.ui.profile.exportBusy ? "disabled" : ""}>Экспорт JSON</button><button type="button" class="btn small" data-action="export-csv" ${ctx.ui.profile.exportBusy ? "disabled" : ""}>Экспорт CSV</button>
           <a class="btn small quiet" href="#/tasks?view=trash">Корзина</a></div>
+        ${ctx.ui.saved.export?.text ? `<div class="form-msg ${ctx.ui.saved.export.cls}" role="status">${esc(ctx.ui.saved.export.text)}</div>` : ""}
       </section>
 
       <section class="card" aria-label="Выход">
@@ -1070,16 +1127,18 @@ export function renderSplash() {
 }
 
 export function renderAuth(a) {
-  return `<div class="center-screen"><section class="card auth-card" aria-label="${a.mode === "signup" ? "Регистрация" : "Вход"}">
+  const recovery = a.mode === "recover";
+  return `<div class="center-screen"><section class="card auth-card" aria-label="${recovery ? "Восстановление пароля" : a.mode === "signup" ? "Регистрация" : "Вход"}">
     <div class="brand"><span class="brand-mark">M</span>MARK</div>
-    <span class="muted" style="text-align:center;font-size:14px">Планировщик задач</span>
+    <span class="muted" style="text-align:center;font-size:14px">${recovery ? "Восстановление пароля" : "Планировщик задач"}</span>
     <form data-action="auth-submit">
       <label class="field"><span>Email</span><input class="input" type="email" name="email" data-key="au-email" data-draft="auth.email" value="${esc(a.email || "")}" autocomplete="username" required></label>
-      <label class="field"><span>Пароль</span><input class="input" type="password" name="password" data-key="au-pass" autocomplete="${a.mode === "signup" ? "new-password" : "current-password"}" minlength="6" required></label>
+      ${recovery ? "" : `<label class="field"><span>Пароль</span><input class="input" type="password" name="password" data-key="au-pass" autocomplete="${a.mode === "signup" ? "new-password" : "current-password"}" minlength="6" required></label>`}
       ${a.error ? `<div class="form-msg bad" role="alert">${esc(a.error)}</div>` : ""}
       ${a.message ? `<div class="form-msg" role="status">${esc(a.message)}</div>` : ""}
-      <button type="submit" class="btn primary" ${a.busy ? "disabled" : ""}>${a.busy ? "Подождите…" : a.mode === "signup" ? "Зарегистрироваться" : "Войти"}</button>
+      <button type="submit" class="btn primary" ${a.busy ? "disabled" : ""}>${a.busy ? "Подождите…" : recovery ? "Отправить письмо" : a.mode === "signup" ? "Зарегистрироваться" : "Войти"}</button>
     </form>
-    <button type="button" class="link-btn" data-action="auth-toggle">${a.mode === "signup" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться"}</button>
+    ${a.mode === "signin" ? `<button type="button" class="link-btn" data-action="auth-recover" ${a.busy ? "disabled" : ""}>Забыли пароль?</button>` : ""}
+    <button type="button" class="link-btn" data-action="auth-toggle" ${a.busy ? "disabled" : ""}>${recovery ? "Вернуться ко входу" : a.mode === "signup" ? "Уже есть аккаунт? Войти" : "Нет аккаунта? Зарегистрироваться"}</button>
   </section></div>`;
 }

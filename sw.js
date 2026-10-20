@@ -1,4 +1,4 @@
-const CACHE_NAME = "task-planner-v22";
+const CACHE_NAME = "task-planner-v23";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -10,6 +10,7 @@ const APP_SHELL = [
   "./js/sync.js?v=13",
   "./js/store.js?v=13",
   "./js/boot.js?v=1",
+  "./js/file-export.js",
   "./css/app.css?v=1",
   "./js/ui/app.js",
   "./js/ui/views.js",

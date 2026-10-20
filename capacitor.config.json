@@ -1,0 +1,14 @@
+{
+  "appId": "com.kinomark.mark",
+  "appName": "MARK",
+  "webDir": "dist",
+  "plugins": {
+    "LocalNotifications": {
+      "presentationOptions": ["banner", "list", "sound"]
+    }
+  },
+  "ios": {
+    "contentInset": "never",
+    "preferredContentMode": "mobile"
+  }
+}

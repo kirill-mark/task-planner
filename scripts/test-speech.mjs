@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { createDeviceSpeech } from '../js/device-speech.js';
+let callback, starts=[];
+const plugin={addListener:async(_name,fn)=>{callback=fn},start:async(v)=>starts.push(v),stop:async()=>{},cancel:async()=>{},setScreenActive:async()=>{}};
+const speech=createDeviceSpeech(plugin); await speech.listen();
+await speech.start();
+callback({generation:1,phase:'recording',text:'Первая задача'});
+assert.equal(speech.getState().text,'Первая задача');
+await speech.cancel();
+callback({generation:1,phase:'recording',text:'Старый текст другого аккаунта'});
+assert.equal(speech.getState().text,'');
+await speech.start();
+callback({generation:3,phase:'idle',text:'Новая задача'});
+assert.equal(speech.getState().phase,'idle');assert.equal(speech.getState().text,'Новая задача');
+plugin.start=async()=>{throw Error('Denied')};
+await speech.start();assert.equal(speech.getState().phase,'idle');assert(speech.getState().error.includes('разрешения'));
+console.log('PASS speech partial text, cancellation, stale events, final draft and permission failure');

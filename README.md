@@ -29,3 +29,18 @@ python3 -m http.server 8000
 - `js/dates.js` — работа с датами и неделями
 - `js/app.js` — рендер интерфейса и обработка событий
 - `manifest.json`, `sw.js`, `icons/` — PWA (иконка, офлайн-кеш)
+
+## Версия iOS
+
+Подготовлен проект Capacitor 8.5.2 с локально включённым интерфейсом и SDK Supabase.
+
+- Открыть в Xcode: `ios/App/App.xcodeproj`.
+- После изменения веб-кода: `npm ci`, затем `npm run ios:sync`.
+- Проверки: `npm test`.
+- Состояние подготовки и ограничения: [docs/ios-release.md](docs/ios-release.md).
+
+Идентификатор `com.kinomark.mark` предварительный: перед публикацией нужно сверить его с записью приложения в App Store Connect. Версия 1.0.0, сборка 1; минимальная iOS 15.4.
+
+## Виджеты iPhone
+
+Нативные виджеты «Сегодня» для главного экрана и экрана блокировки. Инструкции, обновления и ограничения: [docs/iphone-widgets.md](docs/iphone-widgets.md). Проверки: `npm run test:widget` и `npm run test:widget:swift`.

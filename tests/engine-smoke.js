@@ -5,6 +5,7 @@
 
 import { SyncEngine } from "../js/mark/engine.js";
 import { deleteLocalDb } from "../js/mark/localdb.js";
+import { clearOverdue } from "../js/ui/clear-overdue.js";
 
 function fakeServer() {
   const srv = { seq: 0, epoch: 1, offline: false, rows: { task: new Map(), group: new Map(), section: new Map() }, ops: new Map() };
@@ -136,6 +137,37 @@ export async function run() {
     A.close();
   }
 
-  for (const n of ["smoke:A", "smoke:B", "smoke:R", "smoke:V"]) await deleteLocalDb(n);
+  // Bulk cleanup must use the full account, survive an offline restart,
+  // and leave completed, undated and future-deadline tasks intact.
+  {
+    const srv = fakeServer();
+    await deleteLocalDb("smoke:cleanup");
+    const tasks = [
+      { id: "late", due_date: "2026-10-08" },
+      { id: "missed", planned_date: "2026-10-08" },
+      { id: "pastTime", due_date: "2026-10-09", due_time: "09:00" },
+      { id: "done", due_date: "2026-10-08", completed: true },
+      { id: "future", planned_date: "2026-10-08", due_date: "2026-10-10" },
+      { id: "undated" },
+      { id: "later", due_date: "2026-10-09", due_time: "18:00" },
+    ];
+    for (const t of tasks) srv.rows.task.set(t.id, { title: t.id, completed: false, ...t, revision: 1, seq: ++srv.seq, deleted_at: null });
+    let A = await open(srv, "smoke:cleanup");
+    await A.sync();
+    srv.offline = true;
+    const adapter = { userId: "u", get rows() { return A.view; }, deleteTask: (id) => A.deleteTask(id) };
+    const result = await clearOverdue(adapter, "2026-10-09", 600);
+    await A.sync();
+    ok("массовая очистка убрала только три просроченные задачи", result.moved === 3 && !result.failed && A.view.tasks.length === 4);
+    A.close();
+    A = await open(srv, "smoke:cleanup");
+    ok("массовая очистка без сети переживает переоткрытие", A.outbox.length === 3 && A.view.tasks.length === 4);
+    srv.offline = false;
+    await A.sync(); await A.sync();
+    ok("очистка синхронизирует мягкое удаление и сохраняет остальные задачи", A.outbox.length === 0 && ["late", "missed", "pastTime"].every((id) => srv.rows.task.get(id).deleted_at) && ["done", "future", "undated", "later"].every((id) => !srv.rows.task.get(id).deleted_at));
+    A.close();
+  }
+
+  for (const n of ["smoke:A", "smoke:B", "smoke:R", "smoke:V", "smoke:cleanup"]) await deleteLocalDb(n);
   return out.join("\n");
 }

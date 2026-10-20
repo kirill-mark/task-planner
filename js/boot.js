@@ -6,6 +6,9 @@
 // аккаунт откатили.
 
 import { getSession } from "./sync.js?v=13";
+import { getDeviceNotifications } from "./device-notifications.js";
+
+import { getDeviceWidget } from "./device-widget.js";
 
 function remembered(key, fallback) {
   try { return localStorage.getItem(key) || fallback; } catch { return fallback; }
@@ -18,6 +21,9 @@ const session = await getSession();
 const mode = session ? remembered("mark:mode:" + session.user.id, "v2") : "v2";
 
 if (mode === "legacy") {
+  await getDeviceWidget()?.update({ userId: null, tasks: [], ready: false, timezone: "UTC" });
+  // The legacy editor cannot maintain the native reminder queue safely.
+  await getDeviceNotifications()?.update({ userId: null, tasks: [], ready: false, timezone: "UTC" });
   document.getElementById("app-css")?.setAttribute("href", "css/style.css?v=13");
   document.documentElement.removeAttribute("data-theme");
   await import("./app.js?v=13");

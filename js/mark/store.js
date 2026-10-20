@@ -238,7 +238,7 @@ export class ModelStore {
   }
 
   deleteTask(id) {
-    if (this.engine) this.engine.deleteTask(id);
+    if (this.engine) return this.engine.deleteTask(id);
   }
 
   updateTask(id, patch) {
@@ -424,6 +424,23 @@ export class ModelStore {
   }
 
   restoreTask(id) { return this.engine?.restoreTask(id); }
+
+  async emptyTrash(tasks) {
+    const userId = this.userId;
+    const engine = this.engine;
+    if (!userId || !engine) return { ok: false, message: "Войдите в аккаунт и попробуйте снова." };
+    // Flush pending deletions/restores before taking an irreversible action.
+    await engine.sync();
+    if (this.userId !== userId || this.engine !== engine) return { ok: false, message: "Аккаунт изменился." };
+    if (engine.status().state !== "synced") return { ok: false, message: "Дождитесь синхронизации и попробуйте снова. Для очистки корзины нужна связь." };
+    const snapshot = tasks.map((t) => ({ id: t.id, deleted_at: t.deleted_at }));
+    const { data, error } = await this.supabase.rpc("mark_empty_trash", { p_tasks: snapshot, p_expected_user: userId });
+    if (error) return { ok: false, message: error.code === "PGRST202"
+      ? "Очистка корзины ещё не включена на сервере. Задачи сохранены."
+      : "Не удалось подтвердить очистку корзины. Обновите список и попробуйте снова." };
+    if (this.userId === userId && this.engine === engine) await engine.sync();
+    return { ok: true, count: Number(data?.tasks || 0) };
+  }
 
   // A14: правка задачи, которую тем временем удалили. Пользователь выбирает
   // явно — вернуть задачу и применить правку поверх или оставить удалённой и

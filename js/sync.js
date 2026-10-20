@@ -23,6 +23,12 @@ export async function signIn(email, password) {
   return supabase.auth.signInWithPassword({ email, password });
 }
 
+export async function requestPasswordReset(email) {
+  return supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: "https://kirill-mark.github.io/task-planner/recover.html",
+  });
+}
+
 export async function signOut() {
   return supabase.auth.signOut();
 }

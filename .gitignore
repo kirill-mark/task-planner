@@ -3,3 +3,13 @@ supabase/.temp/
 # macOS
 .DS_Store
 tests/.session.json
+
+# iOS build and local tooling
+node_modules/
+dist/
+.npm-cache/
+work/
+ios/App/App/public/
+ios/App/App/capacitor.config.json
+ios/App/App.xcodeproj/xcuserdata/
+ios/App/App.xcodeproj/project.xcworkspace/xcuserdata/
