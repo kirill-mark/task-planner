@@ -5,7 +5,7 @@ supabase/.temp/
 tests/.session.json
 
 # iOS build and local tooling
-node_modules/
+node_modules
 dist/
 .npm-cache/
 work/

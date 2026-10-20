@@ -744,7 +744,13 @@ function draftValue(ctx, k, v) {
   return String(v);
 }
 
-function renderDraft(ctx, d, i, msgIndex, locked) {
+// Итог одного действия — по его операции (пакет A ТЗ v1.1).
+const ACTION_LABEL = {
+  queued: ["", "ждёт отправки"], syncing: ["", "отправляется"], applied: ["ok", "применено"],
+  conflict: ["warn", "конфликт"], failed: ["bad", "не принято"], cancelled: ["", "отменено"],
+};
+
+function renderDraft(ctx, d, i, msgIndex, locked, result) {
   let body;
   if (d.type === "create") {
     const f = d.fields;
@@ -760,26 +766,65 @@ function renderDraft(ctx, d, i, msgIndex, locked) {
     const rows = Object.entries(d.fields).map(([k, v]) => `<span class="h">${esc(DRAFT_FIELD[k] || k)}</span><span>${esc(draftValue(ctx, k, d.before?.[k]))}</span><span>${esc(draftValue(ctx, k, v))}</span>`).join("");
     body = `<b>Изменить:</b> ${esc(d.before?.title || "")}<div class="conflict-grid"><span></span><span class="h">Было</span><span class="h">Станет</span>${rows}</div>`;
   }
+  const [cls, label] = result ? ACTION_LABEL[result.status] || ["", result.status] : locked && d.skip ? ["", "не выбрано"] : ["", ""];
+  const badge = label ? `<span class="form-msg ${cls}" style="font-size:12px">${esc(label)}${result?.reason ? ": " + esc(result.reason) : ""}</span>` : "";
   return `<label class="draft ${d.type === "delete" ? "danger" : ""}">
     ${locked ? "" : `<input type="checkbox" data-action="draft-pick" data-msg="${msgIndex}" data-i="${i}" ${d.skip ? "" : "checked"} aria-label="Применить это изменение">`}
-    <span style="display:flex;flex-direction:column;gap:4px;min-width:0">${body}</span></label>`;
+    <span style="display:flex;flex-direction:column;gap:4px;min-width:0">${body}${badge}</span></label>`;
+}
+
+// Итог предложения целиком: что сохранено на устройстве, что принял сервер,
+// что требует решения. «Применено» — только когда сервер принял весь
+// выбранный набор; частичный итог называется частичным.
+function proposalSummary(st) {
+  const n = st.total;
+  switch (st.state) {
+    case "applied": return ["ok", n > 1 ? `Применено: ${n} из ${n}` : "Применено"];
+    case "syncing": return ["", "Сохранено на устройстве, отправляется…"];
+    case "queued": return ["", "Сохранено на устройстве — отправится, когда появится связь"];
+    case "conflict": return ["warn", `${st.applied ? `Применено ${st.applied} из ${n}. ` : ""}Задачу успели изменить в другом месте — решите конфликт вверху экрана`];
+    case "failed": return ["bad", `${st.applied ? `Применено ${st.applied} из ${n}. ` : ""}Сервер не принял часть изменений — подробности у задач ниже`];
+    case "partial": return ["", `Применено ${st.applied} из ${n}, остальное отменено`];
+    default: return ["", "Отменено, ничего не изменено"];
+  }
 }
 
 function renderChatMessage(ctx, m, idx) {
   if (m.role === "user") return `<div class="bubble user">${esc(m.content)}${m.memoryNotice ? `<small class="assistant-memory-notice">✓ ${esc(m.memoryNotice)}</small>` : ""}</div>`;
   const refs = (m.refs || []).map((id) => ctx.rows.tasks.find((t) => t.id === id)).filter(Boolean);
   const drafts = m.drafts || [];
-  const locked = m.state === "applied" || m.state === "cancelled" || m.state === "auto";
+  // итог берётся из записи предложения на устройстве, а не из текста чата;
+  // «сохраняю» без записи и без идущего сохранения — прерванная попытка, её
+  // можно повторить с теми же ID
+  const st = m.proposal_id && ctx.proposalStatus ? ctx.proposalStatus(m.proposal_id) : null;
+  const saving = m.state === "saving" && !st && ctx.applyingProposal?.(m.proposal_id);
+  const pending = !st && (m.state === "pending" || (m.state === "saving" && !saving));
+  const locked = !pending;
   const chosen = drafts.filter((d) => !d.skip).length;
+  const results = new Map((st?.actions || []).map((a) => [a.action_id, a]));
+  let footer = "";
+  if (drafts.length) {
+    if (pending) {
+      footer = `${m.applyError ? `<span class="form-msg bad">${esc(m.applyError)}</span>` : ""}<div class="chips"><button type="button" class="btn small primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>${drafts.length > 1 ? `Применить ${chosen}` : "Применить"}</button>
+        <button type="button" class="btn small quiet" data-action="draft-cancel" data-msg="${idx}">Отмена</button></div>`;
+    } else if (saving) {
+      footer = `<div class="chips"><button type="button" class="btn small primary" disabled>Сохраняю…</button></div>`;
+    } else if (st) {
+      const [cls, text] = proposalSummary(st);
+      footer = `<span class="form-msg ${cls}">${esc(text)}</span>`;
+    } else if (m.state === "auto") {
+      footer = `<div class="row"><span class="form-msg ok">Добавлено</span><button type="button" class="btn small quiet" data-action="draft-undo" data-msg="${idx}">Отменить</button></div>`;
+    } else if (m.state === "applied") {
+      footer = `<span class="form-msg ok">Применено — изменения ушли в очередь</span>`; // чаты до пакета A
+    } else {
+      footer = `<span class="form-msg">Отменено, ничего не изменено</span>`;
+    }
+  }
   return `<div class="bubble bot">
     ${m.error ? `<span class="form-msg bad">${esc(m.error)}</span>` : `${renderAssistantText(m)}`}
     ${refs.length ? `<details class="assistant-refs" data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="chips">${refs.map((t) => `<button type="button" class="chip-btn" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
-    ${drafts.length && m.state === "pending" ? `<span class="eyebrow">Предлагаю — проверьте перед применением</span>` : ""}
-    ${drafts.length ? `<div style="display:flex;flex-direction:column;gap:8px">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked)).join("")}</div>
-      ${m.state === "pending" ? `<div class="chips"><button type="button" class="btn small primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>Применить${drafts.length > 1 ? ` (${chosen})` : ""}</button>
-        <button type="button" class="btn small quiet" data-action="draft-cancel" data-msg="${idx}">Отмена</button></div>`
-      : m.state === "auto" ? `<div class="row"><span class="form-msg ok">Добавлено</span><button type="button" class="btn small quiet" data-action="draft-undo" data-msg="${idx}">Отменить</button></div>`
-      : `<span class="form-msg ${m.state === "applied" ? "ok" : ""}">${m.state === "applied" ? "Применено — изменения ушли в очередь" : "Отменено, ничего не изменено"}</span>`}` : ""}
+    ${drafts.length && pending ? `<span class="eyebrow">Предлагаю — проверьте перед применением</span>` : ""}
+    ${drafts.length ? `<div style="display:flex;flex-direction:column;gap:8px">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked, results.get(d.action_id))).join("")}</div>${footer}` : ""}
     ${m.rejected?.length ? `<span class="muted" style="font-size:12px">Не принято сервером: ${esc(m.rejected.join("; "))}</span>` : ""}
   </div>`;
 }

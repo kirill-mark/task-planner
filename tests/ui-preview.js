@@ -132,6 +132,29 @@ function render() {
   if (route().name === 'assistant') ui.assistant.greetingAnimated = true;
 }
 
+// ?assistant=proposal — предложения помощника во всех состояниях (пакет A)
+const previewProposals = new Map();
+if (q.get("assistant") === "proposal") {
+  const c = (title, extra = {}) => ({ type: "create", entity: "task", id: "n-" + title, fields: { title, ...extra }, skip: false });
+  const msg = (pid, drafts, state = "submitted") => ({ role: "assistant", content: "Вот что предлагаю:", refs: [], proposal_id: pid, state,
+    drafts: drafts.map((d, i) => ({ ...d, action_id: pid + i, operation_id: pid + "o" + i })) });
+  const upd = { type: "update", entity: "task", id: "t1", base_revision: 1, fields: { planned_date: "2026-10-23" }, before: { title: "Встреча с Олегом", planned_date: "2026-10-22" }, skip: false };
+  ui.assistant.chat = [
+    { role: "user", content: "Завтра подготовить смету и позвонить Никите, встречу с Олегом перенеси на пятницу" },
+    msg("draft", [c("Смета", { planned_date: "2026-10-21" }), c("Позвонить Никите", { planned_date: "2026-10-21" }), upd], "pending"),
+    msg("queued", [c("Купить хлеб")]),
+    msg("applied", [c("Смета"), c("Звонок")]),
+    msg("conflict", [c("Тренировка"), upd]),
+    msg("failed", [c("Отчёт"), c("Счёт"), c("Договор")]),
+  ];
+  const st = (pid, statuses, state, reason) => previewProposals.set(pid, { proposal_id: pid, state, total: statuses.length,
+    applied: statuses.filter((x) => x === "applied").length, actions: statuses.map((status, i) => ({ action_id: pid + i, status, reason: status === "failed" ? reason : null })) });
+  st("queued", ["queued"], "queued");
+  st("applied", ["applied", "applied"], "applied");
+  st("conflict", ["applied", "conflict"], "conflict");
+  st("failed", ["applied", "applied", "failed"], "failed", "группа удалена");
+}
+
 function renderInner() {
   const r = route();
   if (r.name === "auth") { document.getElementById("app").innerHTML = renderAuth(ui.auth); return; }
@@ -139,7 +162,8 @@ function renderInner() {
     settings: { assistant_consent_at: q.get("assistant") === "consent" ? null : "preview", theme: document.documentElement.dataset.theme, timezone: "Europe/Moscow", morning_digest: true, evening_digest: true, task_reminders: true, workday: { start: "10:00", end: "19:00" } },
     telegram: { status: "linked", link: { telegram_username: "marchenkokirill" } }, tz: { prompt: q.get("tz") ? { account: "Europe/Moscow", device: "Asia/Almaty" } : null, device: "Europe/Moscow" },
     iphoneReminders: q.has("iphone-reminders") ? { available: true, enabled: true, permission: "granted", pending: 3, total: 3 } : null,
-    speechAvailable: true, trash: previewTrash, isDesktop: DESKTOP.matches };
+    speechAvailable: true, trash: previewTrash, isDesktop: DESKTOP.matches,
+    proposalStatus: (id) => previewProposals.get(id) || null, applyingProposal: () => false };
   const page = { home: renderHome, tasks: renderTasks, calendar: renderCalendar, assistant: renderAssistant, profile: renderProfile }[r.name] || renderHome;
   document.getElementById("app").innerHTML = renderShell(ctx, page(ctx));
 }

@@ -284,6 +284,7 @@ html { overflow-x: clip; }
 .form-msg { font-size: 13px; color: var(--text-dim); }
 .form-msg.bad { color: var(--danger); }
 .form-msg.ok { color: var(--accent); }
+.form-msg.warn { color: var(--warn); }
 
 /* ---------------------------------------------------------------- задачи */
 

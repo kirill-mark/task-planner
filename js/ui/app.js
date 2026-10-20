@@ -194,6 +194,7 @@ function context() {
   return {
     rows, status, today: todayIso(), nowMin: nowMinutes(), route, ui, session, settings,
     telegram, tz, trash, iphoneReminders, iphoneWidget, speechAvailable: !!deviceSpeech, isDesktop: DESKTOP.matches,
+    proposalStatus: (id) => store.proposalStatus(id), applyingProposal: (id) => applying.has(id),
   };
 }
 
@@ -347,7 +348,7 @@ if (deviceNotifications) {
 let lastStatusKey = "";
 store.onStatus((s) => {
   status = s;
-  const key = `${syncLabel(s).text}|${(s.conflicts || []).length}|${(s.failed || []).length}`;
+  const key = `${syncLabel(s).text}|${(s.conflicts || []).length}|${(s.failed || []).length}|${s.proposalsRev ?? 0}`;
   if (key !== lastStatusKey) { lastStatusKey = key; render(); }
   // модель аккаунта сменили на сервере (откат) — нужен прежний интерфейс
   if (s.mode === "legacy" && session) switchToLegacy(session.user.id);
@@ -782,14 +783,7 @@ const actions = {
       onOk: () => { ui.assistant.chat = []; ui.assistant.input = ""; saveChat(); activateChat(ui.assistant.threadId); } };
     render();
   },
-  "draft-apply": async (el) => {
-    const m = ui.assistant.chat[Number(el.dataset.msg)];
-    if (!m || m.state !== "pending") return;
-    await store.applyAssistantDrafts(m.drafts.filter((d) => !d.skip), { timezone: settings.timezone });
-    m.state = "applied";
-    saveChat();
-    render();
-  },
+  "draft-apply": (el) => applyProposal(ui.assistant.chat[Number(el.dataset.msg)]),
   "draft-cancel": (el) => { const m = ui.assistant.chat[Number(el.dataset.msg)]; if (m) { m.state = "cancelled"; saveChat(); render(); } },
   "draft-undo": (el) => {
     const m = ui.assistant.chat[Number(el.dataset.msg)];
@@ -944,6 +938,64 @@ function loadFacts() {
   return out;
 }
 
+// ------------------------------------------- предложения помощника (пакет A) --
+
+// Каждое действие черновика получает постоянные ID сразу при показе: action_id,
+// operation_id и ID объекта (для новой задачи — выданный сервером). Они
+// сохраняются в чате, поэтому повторное «Применить» — то же предложение, а не
+// новое: копий не будет ни при двойном нажатии, ни после перезапуска.
+function withActionIds(drafts) {
+  return drafts.map((d) => ({
+    ...d,
+    action_id: d.action_id || crypto.randomUUID(),
+    operation_id: d.operation_id || crypto.randomUUID(),
+    id: d.id || (d.type === "create" ? crypto.randomUUID() : d.id),
+  }));
+}
+
+const applying = new Set();
+
+async function applyProposal(m) {
+  if (!m || m.state !== "pending" || !m.drafts?.length) return;
+  const owner = session?.user?.id;
+  // Сообщение, сохранённое до появления ID (старые чаты), получает их сейчас —
+  // и они должны попасть на устройство раньше, чем операции в очередь.
+  if (!m.proposal_id || m.drafts.some((d) => !d.action_id || !d.operation_id)) {
+    m.proposal_id = m.proposal_id || crypto.randomUUID();
+    m.drafts = withActionIds(m.drafts);
+  }
+  const chosen = m.drafts.filter((d) => !d.skip);
+  if (!chosen.length || applying.has(m.proposal_id)) return;
+  applying.add(m.proposal_id);
+  m.state = "saving";
+  m.applyError = "";
+  if (!saveChat()) {
+    m.state = "pending";
+    m.applyError = "Не удалось сохранить чат на устройстве — ничего не применено. Освободите место и повторите.";
+    applying.delete(m.proposal_id);
+    render();
+    return;
+  }
+  render();
+  try {
+    await store.applyProposal({
+      proposal_id: m.proposal_id,
+      actions: chosen.map((d) => ({ action_id: d.action_id, operation_id: d.operation_id, type: d.type,
+        entity_id: d.id, base_revision: d.base_revision ?? null, fields: d.fields || {} })),
+    }, { timezone: settings.timezone });
+    if (owner !== session?.user?.id) return;
+    m.state = "submitted"; // дальше статус берётся из операций (store.proposalStatus)
+  } catch {
+    if (owner !== session?.user?.id) return;
+    m.state = "pending";
+    m.applyError = "Не удалось сохранить изменения на устройстве — ничего не применено. Попробуйте ещё раз.";
+  } finally {
+    applying.delete(m.proposal_id);
+  }
+  saveChat();
+  render();
+}
+
 async function askAssistant(text) {
   text = String(text || "").trim();
   const a = ui.assistant;
@@ -994,8 +1046,9 @@ async function askAssistant(text) {
       reply = { role: "assistant", error, at: Date.now() };
       if (!a.input) a.input = text; // черновик сообщения не теряется
     } else {
-      const drafts = (body.drafts || []).map((d) => ({ ...d, skip: false }));
-      reply = { role: "assistant", sections: body.sections || [], content: body.answer || (body.sections?.length ? "" : drafts.length ? "Вот что предлагаю:" : "Не получилось составить ответ. Попробуй уточнить вопрос."), refs: body.refs || [], drafts, rejected: body.rejected || [], state: drafts.length ? "pending" : "none", at: Date.now() };
+      const drafts = withActionIds((body.drafts || []).map((d) => ({ ...d, skip: false })));
+      reply = { role: "assistant", sections: body.sections || [], content: body.answer || (body.sections?.length ? "" : drafts.length ? "Вот что предлагаю:" : "Не получилось составить ответ. Попробуй уточнить вопрос."), refs: body.refs || [], drafts, rejected: body.rejected || [], state: drafts.length ? "pending" : "none", at: Date.now(),
+        ...(drafts.length ? { proposal_id: crypto.randomUUID() } : {}) };
 
     }
   } catch {
@@ -1161,7 +1214,7 @@ root.addEventListener("change", (e) => {
   if (el.dataset?.draft) setDraft(el.dataset.draft, el.value);
   if (el.dataset?.action === "draft-pick") {
     const m = ui.assistant.chat[Number(el.dataset.msg)];
-    if (m?.drafts?.[Number(el.dataset.i)]) { m.drafts[Number(el.dataset.i)].skip = !el.checked; render(); }
+    if (m?.state === "pending" && m.drafts?.[Number(el.dataset.i)]) { m.drafts[Number(el.dataset.i)].skip = !el.checked; render(); }
     return;
   }
   if (el.dataset?.action === "focus-toggle") {

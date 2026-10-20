@@ -168,6 +168,78 @@ export async function run() {
     A.close();
   }
 
+  // --- предложения помощника (пакет A ТЗ v1.1: T02–T05, статусы) ---
+  {
+    const uid = () => crypto.randomUUID();
+    const proposal = (actions) => ({ proposal_id: uid(), actions: actions.map((a) => ({ action_id: uid(), operation_id: uid(), entity: "task", ...a })) });
+    const srv = fakeServer();
+    for (const id of ["P1", "P2"]) await deleteLocalDb(id === "P1" ? "smoke:P" : "smoke:P2");
+    let A = await open(srv, "smoke:P");
+    await A.sync();
+
+    // AI01: возврат — только после записи на устройство
+    const p1 = proposal([{ type: "create", entity_id: uid(), changes: { title: "Смета" } }, { type: "create", entity_id: uid(), changes: { title: "Звонок" } }]);
+    srv.offline = true;
+    await A.applyProposal(p1);
+    const peek = await open(srv, "smoke:P"); // второй экземпляр видит записанное
+    ok("AI01: после ожидания весь набор уже в очереди на устройстве", peek.outbox.length === 2 && peek.proposals.has(p1.proposal_id));
+    peek.close();
+    ok("без сети предложение — «ждёт отправки», не «применено»", A.proposalStatus(p1.proposal_id).state === "queued");
+
+    // T02: двойное подтверждение одного набора
+    await Promise.all([A.applyProposal(p1), A.applyProposal(p1)]);
+    ok("T02: двойное подтверждение не удваивает операции", A.outbox.length === 2);
+
+    // T03: закрыть приложение после сохранения — после открытия набор на месте, повтор не пишет копий
+    A.close();
+    A = await open(srv, "smoke:P");
+    const again = await A.applyProposal(p1);
+    ok("T03: после перезапуска предложение восстановлено, повтор — без копий", again.repeat && A.outbox.length === 2);
+    srv.offline = false;
+    await A.sync(); await A.sync();
+    ok("после связи — «применено», задач ровно две", A.proposalStatus(p1.proposal_id).state === "applied" && srv.rows.task.size === 2);
+    A.close();
+    A = await open(srv, "smoke:P");
+    ok("итог «применено» переживает уход операций из очереди и перезапуск", A.outbox.length === 0 && A.proposalStatus(p1.proposal_id).state === "applied");
+
+    // T04: отказ записи на устройстве — нет ложного успеха, повтор возможен
+    const p2 = proposal([{ type: "create", entity_id: uid(), changes: { title: "Тренировка" } }]);
+    const real = A.db.appendProposal.bind(A.db);
+    A.db.appendProposal = async () => { throw new Error("QuotaExceededError"); };
+    let threw = false;
+    try { await A.applyProposal(p2); } catch { threw = true; }
+    ok("T04: отказ хранилища — ошибка, а не успех; ничего не записано", threw && A.outbox.length === 0 && !A.proposalStatus(p2.proposal_id));
+    A.db.appendProposal = real;
+    await A.applyProposal(p2); await A.sync(); await A.sync();
+    ok("T04: повтор после отказа применяет один раз", A.proposalStatus(p2.proposal_id).state === "applied" && srv.rows.task.size === 3);
+
+    // T05: ответ сервера потерян после записи — повтор с теми же ID без второй записи
+    const p3 = proposal([{ type: "create", entity_id: uid(), changes: { title: "Отчёт" } }]);
+    const send = srv.transport.sendOps;
+    srv.transport.sendOps = async (ops, source) => { await send(ops, source); return { kind: "retry", message: "lost" }; };
+    await A.applyProposal(p3); await A.sync();
+    ok("T05: пока ответ не дошёл — не «применено»", A.proposalStatus(p3.proposal_id).state !== "applied" && srv.rows.task.size === 4);
+    srv.transport.sendOps = send;
+    await A.sync(); await A.sync();
+    ok("T05: повтор узнан сервером, задача одна, итог «применено»", A.proposalStatus(p3.proposal_id).state === "applied" && srv.rows.task.size === 4);
+
+    // T06 и частичный итог: одну из задач успели изменить на другом устройстве
+    const [t1, t2] = [...srv.rows.task.values()].slice(0, 2);
+    srv.rows.task.set(t2.id, { ...t2, title: "чужая правка", revision: t2.revision + 1, seq: ++srv.seq });
+    const p4 = proposal([
+      { type: "update", entity_id: t1.id, base_revision: t1.revision, changes: { notes: "a" } },
+      { type: "update", entity_id: t2.id, base_revision: t2.revision, changes: { notes: "b" } },
+    ]);
+    await A.applyProposal(p4); await A.sync();
+    const st4 = A.proposalStatus(p4.proposal_id);
+    ok("T06: конфликт виден у нужной задачи, чужая правка не затёрта", st4.state === "conflict" && st4.applied === 1
+      && st4.actions.find((x) => x.entity_id === t2.id).status === "conflict" && srv.rows.task.get(t2.id).title === "чужая правка");
+    await A.discardOp(A.status().conflicts[0].seq); await A.sync();
+    ok("отказ от конфликтной правки — частичный итог «1 из 2», не «применено»", A.proposalStatus(p4.proposal_id).state === "partial");
+    A.close();
+    await deleteLocalDb("smoke:P");
+  }
+
   for (const n of ["smoke:A", "smoke:B", "smoke:R", "smoke:V", "smoke:cleanup"]) await deleteLocalDb(n);
   return out.join("\n");
 }

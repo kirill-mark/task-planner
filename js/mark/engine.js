@@ -54,6 +54,8 @@ export class SyncEngine {
     this.db = null;
     this.confirmed = { section: new Map(), group: new Map(), task: new Map() };
     this.outbox = [];
+    this.proposals = new Map(); // proposal_id → запись предложения помощника
+    this.proposalsRev = 0;      // растёт при каждом изменении итогов предложений
     this.meta = {};
     this.view = { sections: [], groups: [], tasks: [] };
     this.net = "unknown"; // unknown | ok | offline | auth | outdated | error
@@ -81,6 +83,8 @@ export class SyncEngine {
       this.confirmed[entity] = new Map(data[store].map((r) => [r.id, r]));
     }
     this.outbox = data.outbox.sort((a, b) => a.seq - b.seq);
+    this.proposals = new Map((data.proposals || []).map((p) => [p.proposal_id, p]));
+    this.proposalsRev++;
     this.meta = data.meta;
     this.recompute();
   }
@@ -139,6 +143,7 @@ export class SyncEngine {
       lastSyncedAt: this.meta.lastSyncedAt ?? null,
       cursor: this.meta.cursor ?? null,
       mode: this.serverMode ?? null,
+      proposalsRev: this.proposalsRev,
     };
   }
 
@@ -219,8 +224,9 @@ export class SyncEngine {
       local_at: new Date().toISOString(),
       ...(meta ? { meta } : {}),
     };
-    const saved = await this.db.appendOp(op);
+    const { op: saved, proposals } = await this.db.appendOp(op);
     this.outbox.push(saved);
+    this.mergeProposals(proposals);
     this.recompute();
     this.notify();
     this.sync("edit");
@@ -268,18 +274,112 @@ export class SyncEngine {
     for (const o of this.outbox) {
       if (o.seq > op.seq && o.entity === op.entity && o.entity_id === op.entity_id && o.state === "pending") drop.push(o.seq);
     }
-    await this.db.deleteOps(drop);
+    const cancelled = this.outbox.filter((o) => drop.includes(o.seq));
+    this.mergeProposals(await this.db.deleteOps(drop, cancelled));
     this.outbox = this.outbox.filter((o) => !drop.includes(o.seq));
     this.recompute();
     this.notify();
   }
 
+  // Повтор поверх актуальной версии — новая операция; связь с предложением
+  // помощника (meta) переходит к ней.
   async reapplyOp(seq) {
     const op = this.outbox.find((o) => o.seq === seq);
     if (!op || op.state !== "conflict") return;
     await this.db.deleteOps([op.seq]);
     this.outbox = this.outbox.filter((o) => o.seq !== op.seq);
-    await this.enqueue(op.entity, op.type, op.entity_id, op.changes);
+    await this.enqueue(op.entity, op.type, op.entity_id, op.changes, op.meta);
+  }
+
+  // ------------------------------------------------- предложения помощника --
+
+  // Принятое пользователем предложение: proposal несёт постоянные proposal_id,
+  // action_id, operation_id и entity_id, выданные ещё при показе черновика.
+  // Поэтому двойное нажатие, перезапуск и повтор после потери ответа не
+  // создают копий: локально повтор того же proposal_id ничего не пишет, а
+  // сервер узнаёт операции по operation_id. Возвращается только после того,
+  // как весь выбранный набор надёжно записан в очередь (AI01–AI02).
+  async applyProposal(proposal) {
+    if (this.closed || !this.db) throw new Error("local storage is not available");
+    const known = this.proposals.get(proposal.proposal_id);
+    if (known) return { proposal: known, repeat: true };
+    const ops = proposal.actions.map((a) => ({
+      operation_id: a.operation_id,
+      entity: a.entity,
+      type: a.type,
+      entity_id: a.entity_id,
+      base_revision: a.type === "create" ? null
+        : a.base_revision != null ? a.base_revision : this.expectedRevision(a.entity, a.entity_id),
+      changes: a.changes || {},
+      state: "pending",
+      attempts: 0,
+      local_at: new Date().toISOString(),
+      meta: { proposal_id: proposal.proposal_id, action_id: a.action_id },
+    }));
+    const record = {
+      ...proposal,
+      schema_version: 1,
+      actions: proposal.actions.map((a) => ({ ...a, status: "queued" })),
+      saved_at: new Date().toISOString(),
+    };
+    const res = await this.db.appendProposal(record, ops);
+    this.proposals.set(res.proposal.proposal_id, res.proposal);
+    this.proposalsRev++;
+    if (!res.repeat) {
+      this.outbox.push(...res.ops);
+      this.recompute();
+      this.sync("edit");
+    }
+    this.notify();
+    return { proposal: res.proposal, repeat: res.repeat };
+  }
+
+  // Итог предложения — по операциям, а не по тексту чата. Пока операция в
+  // очереди, её точное состояние берётся из очереди: в сети и при сверке —
+  // «отправляется», без сети — «ждёт отправки».
+  proposalStatus(id) {
+    const p = this.proposals.get(id);
+    if (!p) return null;
+    const live = new Map(this.outbox.map((o) => [o.operation_id, o]));
+    const sending = !!this.running && this.net !== "offline";
+    const actions = p.actions.map((a) => {
+      const op = live.get(a.operation_id);
+      let status = a.status;
+      if (op && op.state === "pending") status = sending || this.net === "ok" ? "syncing" : "queued";
+      return { action_id: a.action_id, entity_id: a.entity_id, status, reason: a.reason || null, seq: op?.seq ?? null };
+    });
+    const count = (s) => actions.filter((a) => a.status === s).length;
+    const total = actions.length;
+    let state;
+    if (count("applied") === total) state = "applied";
+    else if (count("cancelled") === total) state = "cancelled";
+    else if (count("conflict")) state = "conflict";
+    else if (count("failed")) state = "failed";
+    else if (count("syncing")) state = "syncing";
+    else if (count("queued")) state = "queued";
+    else state = count("applied") ? "partial" : "cancelled";
+    return { proposal_id: id, state, actions, applied: count("applied"), total };
+  }
+
+  // Записи о предложениях не нужны вечно: завершённые старше срока удаляются.
+  // Повтор такого старого предложения уже не создаст копий — его операции на
+  // сервере узнаются по operation_id.
+  async pruneProposals(days = 90) {
+    const edge = Date.now() - days * 86400000;
+    const old = [...this.proposals.values()].filter((p) => {
+      const st = this.proposalStatus(p.proposal_id)?.state;
+      return Date.parse(p.saved_at || 0) < edge && !["queued", "syncing", "conflict"].includes(st);
+    }).map((p) => p.proposal_id);
+    if (!old.length) return;
+    await this.db.deleteProposals(old);
+    for (const id of old) this.proposals.delete(id);
+    this.proposalsRev++;
+  }
+
+  mergeProposals(list) {
+    if (!list?.length) return;
+    for (const p of list) this.proposals.set(p.proposal_id, p);
+    this.proposalsRev++;
   }
 
   // ------------------------------------------------------------ сверка --
@@ -354,7 +454,7 @@ export class SyncEngine {
       if (r.kind !== "ok") {
         this.setNet(r.kind, r.message || "");
         const touched = batch.map((o) => ({ ...o, attempts: (o.attempts || 0) + 1 }));
-        await this.db.putOps(touched);
+        this.mergeProposals(await this.db.putOps(touched));
         this.mergeOps(touched);
         this.notify();
         return r.kind;
@@ -368,7 +468,7 @@ export class SyncEngine {
         const state = res.status === "applied" ? "applied" : res.status === "conflict" ? "conflict" : "rejected";
         updated.push({ ...op, state, result: res.result ?? { reason: res.reason }, attempts: (op.attempts || 0) + 1 });
       }
-      await this.db.putOps(updated);
+      this.mergeProposals(await this.db.putOps(updated));
       this.mergeOps(updated);
       this.setNet("ok");
       this.recompute();

@@ -143,6 +143,7 @@ export class ModelStore {
 
     this.installTriggers();
     engine.sync("open");
+    engine.pruneProposals().catch(() => { /* уборка не мешает работе */ });
   }
 
   detachUser() {
@@ -196,6 +197,7 @@ export class ModelStore {
       conflicts: s.conflicts,
       failed: s.failed,
       mode: s.mode,
+      proposalsRev: s.proposalsRev,
     });
     if (s.state === "synced") this.ensureStarter();
     // Стартовую структуру уже создало другое устройство — это не конфликт
@@ -398,22 +400,32 @@ export class ModelStore {
 
   // Черновики помощника, подтверждённые пользователем. Правки идут с версией,
   // от которой помощник их предложил (раздел 8).
-  async applyAssistantDrafts(drafts, { timezone } = {}) {
-    if (!this.engine) return [];
-    const created = [];
-    for (const d of drafts) {
-      if (d.type === "create") {
-        created.push(this.createTaskV2(d.fields, { timezone }));
-      } else if (d.type === "delete") {
-        await this.engine.enqueue("task", "delete", d.id, {}, undefined, { baseRevision: d.base_revision });
-      } else if (d.type === "update") {
-        const changes = this.taskFieldsFor(d.fields, timezone);
+  // Предложение помощника, принятое пользователем (пакет A ТЗ v1.1).
+  // spec: { proposal_id, actions: [{ action_id, operation_id, type, entity_id,
+  // base_revision, fields }] } — все ID выданы при показе черновика и сохранены
+  // в чате. Возвращается только после надёжной записи всего набора в очередь;
+  // нет локального хранилища или запись не удалась — исключение, а не
+  // «пустой успех».
+  async applyProposal(spec, { timezone } = {}) {
+    const engine = this.engine;
+    if (!engine) throw new Error("Хранилище на устройстве недоступно — ничего не применено.");
+    const actions = spec.actions.map((a) => {
+      let changes = {};
+      if (a.type === "create") {
+        const f = this.taskFieldsFor({ planned_time: null, due_time: null, ...a.fields }, timezone);
+        changes = { ...f, position: f.position ?? this.nextPosition(this.rows.tasks) };
+      } else if (a.type === "update") {
+        changes = this.taskFieldsFor(a.fields, timezone);
         if (!Object.keys(changes).some((k) => k.endsWith("_date") || k.endsWith("_time"))) delete changes.timezone;
-        await this.engine.enqueue("task", "update", d.id, changes, undefined, { baseRevision: d.base_revision });
       }
-    }
-    return created;
+      return { action_id: a.action_id, operation_id: a.operation_id, entity: "task", type: a.type,
+        entity_id: a.entity_id, base_revision: a.base_revision ?? null, changes };
+    });
+    const res = await engine.applyProposal({ proposal_id: spec.proposal_id, actions });
+    return engine.proposalStatus(res.proposal.proposal_id);
   }
+
+  proposalStatus(id) { return id ? this.engine?.proposalStatus(id) ?? null : null; }
 
   // ------------------------------------------------------------- корзина --
 
