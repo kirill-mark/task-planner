@@ -1,6 +1,6 @@
 {
   "appId": "com.kinomark.mark",
-  "appName": "MARK",
+  "appName": "Mark",
   "webDir": "dist",
   "plugins": {
     "LocalNotifications": {

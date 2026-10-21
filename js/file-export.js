@@ -31,7 +31,7 @@ export function createNativeExporter({ filesystem, share, cacheDirectory, utf8, 
         path: `${folder}/${name}`, data: text, directory: cacheDirectory,
         encoding: utf8, recursive: true,
       });
-      await share.share({ title: "Экспорт MARK", files: [uri] });
+      await share.share({ title: "Экспорт Mark", files: [uri] });
       return { kind: "shared" };
     } catch (error) {
       if (error?.message === "Share canceled") return { kind: "cancelled" };

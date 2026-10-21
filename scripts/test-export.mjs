@@ -20,7 +20,7 @@ test("native export preserves Cyrillic/BOM and shares a local file", async () =>
   assert.deepEqual(await run({ name, text: content }), { kind: "shared" });
   assert.deepEqual(calls, [
     ["write", { path: `mark-exports/synthetic-id/${name}`, data: content, directory: "CACHE", encoding: "utf8", recursive: true }],
-    ["share", { title: "Экспорт MARK", files: ["file:///synthetic-cache/export.csv"] }],
+    ["share", { title: "Экспорт Mark", files: ["file:///synthetic-cache/export.csv"] }],
     ["cleanup", { path: "mark-exports/synthetic-id", directory: "CACHE", recursive: true }],
   ]);
 });

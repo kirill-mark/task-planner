@@ -46,20 +46,20 @@ export function createDeviceWidget({ plugin, now = () => new Date() }) {
         await plugin.save({ snapshot: JSON.stringify(snapshot) });
         signature = key;
         emit({ status: input.userId ? "ready" : "signedOut", error: null });
-      } catch (e) { signature = null; emit({ status: "error", error: "Не удалось обновить виджет. Открой MARK ещё раз." }); }
+      } catch (e) { signature = null; emit({ status: "error", error: "Не удалось обновить виджет. Открой Mark ещё раз." }); }
     });
     return chain;
   }
   const deliver = () => { if (pending && openHandler) { const value = pending; pending = null; openHandler(value); } };
   async function consume() {
-    try { const value = await plugin.consumeOpen(); if (value.userId) { pending = value; deliver(); } } catch { /* opening MARK normally remains available */ }
+    try { const value = await plugin.consumeOpen(); if (value.userId) { pending = value; deliver(); } } catch { /* opening Mark normally remains available */ }
   }
   return { update, refresh: () => latest ? update(latest) : Promise.resolve(), getState: () => state,
     subscribe(fn) { subscribers.add(fn); fn(state); return () => subscribers.delete(fn); },
     onOpen(fn) { openHandler = fn; deliver(); },
     async listen() {
       try { await plugin.addListener("widgetOpen", consume); await consume(); }
-      catch { emit({ status: "error", error: "Не удалось подключить виджет. Открой MARK ещё раз." }); }
+      catch { emit({ status: "error", error: "Не удалось подключить виджет. Открой Mark ещё раз." }); }
     } };
 }
 

@@ -13,7 +13,7 @@ const message = document.getElementById("recovery-message");
 const button = form.querySelector("button");
 const result = await flow.initialize(hash);
 if (result.ok) {
-  message.textContent = "Задайте новый пароль для аккаунта MARK.";
+  message.textContent = "Задайте новый пароль для аккаунта Mark.";
   form.hidden = false;
 } else {
   message.textContent = result.message;
@@ -31,7 +31,7 @@ form.addEventListener("submit", async (event) => {
   form.reset();
   if (result.ok) {
     form.hidden = true;
-    message.textContent = "Пароль изменён. Вернитесь в приложение MARK и войдите с новым паролем.";
+    message.textContent = "Пароль изменён. Вернитесь в приложение Mark и войдите с новым паролем.";
   } else {
     message.textContent = result.message;
     message.classList.add("bad");

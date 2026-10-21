@@ -21,7 +21,7 @@ export function createDeviceSpeech(plugin) {
       const current = ++generation;
       publish({ phase: "starting", text: "", error: "" });
       try { await plugin.start({ generation: current }); }
-      catch { if (generation === current) publish({ phase: "idle", error: "Не удалось включить диктовку. Проверь разрешения для MARK в настройках iPhone." }); }
+      catch { if (generation === current) publish({ phase: "idle", error: "Не удалось включить диктовку. Проверь разрешения для Mark в настройках iPhone." }); }
     },
     async stop() { await plugin.stop(); },
     async cancel() {

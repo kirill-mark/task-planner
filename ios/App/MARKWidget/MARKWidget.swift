@@ -17,7 +17,7 @@ struct TodayProvider: TimelineProvider {
         let snapshot = WidgetStore.read(), now = Date()
         var cal = Calendar(identifier: .gregorian); cal.timeZone = snapshot.zone
         var dates = [now]
-        // Advance the nearest task while MARK is closed and change the day at midnight.
+        // Advance the nearest task while Mark is closed and change the day at midnight.
         for n in 1...32 { dates.append(now.addingTimeInterval(Double(n) * 15 * 60)) }
         for n in 1...8 { if let day = cal.date(byAdding: .day, value: n, to: cal.startOfDay(for: now)) { dates.append(day) } }
         let entries = Array(Set(dates)).sorted().map { TodayEntry(date: $0, snapshot: snapshot) }
@@ -56,7 +56,7 @@ struct TodayView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Сегодня").font(.system(size: small ? 17 : 18, weight: .bold))
                 Spacer(minLength: 4)
-                Text("MARK").font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(mint)
+                Text("Mark").font(.system(size: 10, weight: .bold)).tracking(1).foregroundColor(mint)
             }
             if let day = entry.day {
                 if day.tasks.isEmpty {
@@ -87,7 +87,7 @@ struct TodayView: View {
             } else {
                 Spacer(minLength: 0)
                 Image(systemName: "checklist").font(.title2).foregroundColor(mint)
-                Text(entry.snapshot.userId == nil ? "Войдите в MARK" : "Откройте MARK").font(.system(size: 15, weight: .semibold))
+                Text(entry.snapshot.userId == nil ? "Войдите в Mark" : "Откройте Mark").font(.system(size: 15, weight: .semibold))
                 Text(entry.snapshot.userId == nil ? "Ваши задачи появятся здесь" : "Чтобы обновить задачи").font(.system(size: 11)).foregroundColor(.white.opacity(0.55))
                 Spacer(minLength: 0)
             }
@@ -102,7 +102,7 @@ struct LockScreenView: View {
     let family: WidgetFamily
     private var remaining: Int { max(0, (entry.day?.total ?? 0) - (entry.day?.done ?? 0)) }
     private var task: WidgetTask? { entry.day?.nearest(at: entry.date, timezone: entry.snapshot.zone) }
-    private var emptyTitle: String { entry.day == nil ? "Откройте MARK" : entry.day!.total > 0 ? "Всё выполнено" : "Свободный день" }
+    private var emptyTitle: String { entry.day == nil ? "Откройте Mark" : entry.day!.total > 0 ? "Всё выполнено" : "Свободный день" }
     var body: some View {
         switch family {
         case .accessoryCircular:
@@ -111,7 +111,7 @@ struct LockScreenView: View {
                 VStack(spacing: 0) {
                     if entry.day == nil {
                         Image(systemName: "checklist").font(.system(size: 22))
-                        Text("MARK").font(.system(size: 9, weight: .semibold))
+                        Text("Mark").font(.system(size: 9, weight: .semibold))
                     } else if remaining == 0 {
                         Image(systemName: entry.day!.total > 0 ? "checkmark" : "sun.max").font(.system(size: 23, weight: .semibold))
                     } else {
@@ -119,13 +119,13 @@ struct LockScreenView: View {
                         Text("осталось").font(.system(size: 9, weight: .medium))
                     }
                 }
-            }.accessibilityLabel(entry.day == nil ? "Откройте MARK" : "Сегодня осталось задач: \(remaining)")
+            }.accessibilityLabel(entry.day == nil ? "Откройте Mark" : "Сегодня осталось задач: \(remaining)")
         case .accessoryInline:
             if let task { Label("\(task.label) · \(task.title)", systemImage: "checklist").lineLimit(1) }
             else { Label(emptyTitle, systemImage: "checklist").lineLimit(1) }
         default:
             VStack(alignment: .leading, spacing: 2) {
-                Text(task.map { "Сегодня · \($0.label)" } ?? "Сегодня · MARK").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                Text(task.map { "Сегодня · \($0.label)" } ?? "Сегодня · Mark").font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Text(task?.title ?? emptyTitle).font(.system(size: 14, weight: .semibold)).lineLimit(2)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -157,7 +157,7 @@ struct MARKWidget: Widget {
         StaticConfiguration(kind: kind, provider: TodayProvider()) { entry in
             MARKWidgetSurface(content: TodayView(entry: entry))
         }
-        .configurationDisplayName("Сегодня в MARK")
+        .configurationDisplayName("Сегодня в Mark")
         .description("Задачи на главном экране и экране блокировки.")
         .supportedFamilies(families)
     }

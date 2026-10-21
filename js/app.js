@@ -542,7 +542,7 @@ function renderSidebar() {
 function renderSplash() {
   return `
     <div class="splash">
-      <img src="icons/icon-512.png?v=6" alt="" class="splash-logo" />
+      <img src="icons/icon-512.png?v=7" alt="" class="splash-logo" />
       <div class="splash-bar"><i></i></div>
     </div>`;
 }
@@ -553,7 +553,7 @@ function renderAuthScreen() {
   return `
     <div class="auth-screen">
       <div class="auth-card">
-        <h1><img src="icons/icon-192.png?v=6" alt="" class="logo" />MARK</h1>
+        <h1><img src="icons/icon-192.png?v=7" alt="" class="logo" />Mark</h1>
         <p class="auth-subtitle">${recovery ? "Восстановление пароля" : "Планировщик задач"}</p>
         <form class="auth-form" data-action="auth-submit">
           <input type="email" name="email" placeholder="Email" required autocomplete="email" />
@@ -602,7 +602,7 @@ function renderWelcomeScreen() {
       <div class="welcome-inner">
         <div class="welcome-topbar">
           <div class="welcome-kicker">
-            <strong>MARK</strong>
+            <strong>Mark</strong>
             <span>your ideas</span>
             <span>into actions</span>
           </div>
@@ -614,7 +614,7 @@ function renderWelcomeScreen() {
         </div>
 
         <div class="welcome-hero">
-          <img class="welcome-logo" src="icons/icon-512.png?v=6" alt="MARK" />
+          <img class="welcome-logo" src="icons/icon-512.png?v=7" alt="Mark" />
 
           <div class="wcard wcard-voice">
             <div class="wcard-row">
@@ -660,7 +660,7 @@ function renderWelcomeScreen() {
           </div>
         </div>
 
-        <h1 class="welcome-title">Добро пожаловать<br />в <span>MARK</span></h1>
+        <h1 class="welcome-title">Добро пожаловать<br />в <span>Mark</span></h1>
         <p class="welcome-sub">
           Ваш AI-помощник, который превращает идеи, голос и заметки
           в понятные задачи и помогает доводить их до результата.
@@ -830,7 +830,7 @@ function render() {
   const viewLabel = { list: "Список", week: "Неделя", day: "День" };
   root.innerHTML = `
     <header class="app-header">
-      <h1><img src="icons/icon-192.png?v=6" alt="" class="logo" />MARK</h1>
+      <h1><img src="icons/icon-192.png?v=7" alt="" class="logo" />Mark</h1>
       <nav class="view-switch">
         ${["list", "week", "day"].map((v) => `
           <button data-action="switch-view" data-view="${v}" class="${ui.view === v ? "active" : ""}">
@@ -1044,7 +1044,7 @@ root.addEventListener("submit", (e) => {
         const { data: result, error } = mode === "recover" ? await requestPasswordReset(email)
           : mode === "signup" ? await signUp(email, password) : await signIn(email, password);
         if (error) authError = mode === "recover" ? "Не удалось отправить письмо. Проверьте соединение и попробуйте позже." : error.message;
-        else if (mode === "recover") authMessage = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в MARK для входа.";
+        else if (mode === "recover") authMessage = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в Mark для входа.";
         else if (mode === "signup" && !result.session) authMessage = "Проверь почту и перейди по ссылке для подтверждения, потом сможешь войти.";
       } catch {
         authError = "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
@@ -1130,7 +1130,7 @@ async function tryTelegramAutoLogin(tg) {
     if (existing) return; // onAuthChange already has it; splash gives way to the planner
     const result = await telegramMiniAppSignIn(tg.initData);
     if (!result.ok && result.reason === "not_linked") {
-      authMessage = "Этот Telegram ещё не привязан к аккаунту MARK. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
+      authMessage = "Этот Telegram ещё не привязан к аккаунту Mark. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
     }
   } finally {
     // Whatever happened, stop holding the splash: either a session arrived and

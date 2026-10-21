@@ -16,18 +16,16 @@
                         <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
-                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" image="MarkLogo" translatesAutoresizingMaskIntoConstraints="NO" id="mark-launch-logo">
-                                <rect key="frame" x="143.5" y="289.5" width="88" height="88"/>
-                                <constraints>
-                                    <constraint firstAttribute="width" constant="88" id="mark-logo-width"/>
-                                    <constraint firstAttribute="height" constant="88" id="mark-logo-height"/>
-                                </constraints>
+                            <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFill" image="MarkSplash" translatesAutoresizingMaskIntoConstraints="NO" id="mark-launch-logo">
+                                <rect key="frame" x="0.0" y="0.0" width="375" height="667"/>
                             </imageView>
                         </subviews>
-                        <color key="backgroundColor" systemColor="systemBackgroundColor"/>
+                        <color key="backgroundColor" red="0.0" green="0.231" blue="0.149" alpha="1" colorSpace="custom" customColorSpace="sRGB"/>
                         <constraints>
-                            <constraint firstItem="mark-launch-logo" firstAttribute="centerX" secondItem="snD-IY-ifK" secondAttribute="centerX" id="mark-logo-center-x"/>
-                            <constraint firstItem="mark-launch-logo" firstAttribute="centerY" secondItem="snD-IY-ifK" secondAttribute="centerY" id="mark-logo-center-y"/>
+                            <constraint firstItem="mark-launch-logo" firstAttribute="top" secondItem="snD-IY-ifK" secondAttribute="top" id="mark-splash-top"/>
+                            <constraint firstItem="mark-launch-logo" firstAttribute="bottom" secondItem="snD-IY-ifK" secondAttribute="bottom" id="mark-splash-bottom"/>
+                            <constraint firstItem="mark-launch-logo" firstAttribute="leading" secondItem="snD-IY-ifK" secondAttribute="leading" id="mark-splash-leading"/>
+                            <constraint firstItem="mark-launch-logo" firstAttribute="trailing" secondItem="snD-IY-ifK" secondAttribute="trailing" id="mark-splash-trailing"/>
                         </constraints>
                     </view>
                 </viewController>
@@ -37,7 +35,7 @@
         </scene>
     </scenes>
     <resources>
-        <image name="MarkLogo" width="512" height="512"/>
+        <image name="MarkSplash" width="1290" height="2796"/>
         <systemColor name="systemBackgroundColor">
             <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>

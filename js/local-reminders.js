@@ -126,7 +126,7 @@ export function createDeviceNotifications({ plugin, storage, now = Date.now }) {
           if (context.userId !== userId) return;
           publish({ permission: result.display });
           if (result.display === "granted") storage.setItem(keyFor(userId), "on");
-          else publish({ message: "Разрешите уведомления: Настройки iPhone → Уведомления → MARK." });
+          else publish({ message: "Разрешите уведомления: Настройки iPhone → Уведомления → Mark." });
           await reconcile();
         } finally { publish({ busy: false }); }
       });
@@ -144,7 +144,7 @@ export function createDeviceNotifications({ plugin, storage, now = Date.now }) {
           if (!userId || userId !== context.userId || !enabled()) return;
           if ((await plugin.checkPermissions()).display !== "granted") { await reconcile(); return; }
           if (userId !== context.userId || !enabled()) return;
-          await plugin.schedule({ notifications: [{ id: TEST_ID, title: "MARK · Проверка уведомлений",
+          await plugin.schedule({ notifications: [{ id: TEST_ID, title: "Mark · Проверка уведомлений",
             body: "Напоминания на iPhone работают. Задачи будут напоминать о себе за 30 минут.", sound: "default",
             schedule: { at: new Date(now() + 10000) }, extra: { kind: KIND, userId, test: true } }] });
           if (userId === context.userId) publish({ message: "Проверка запланирована. Заблокируйте iPhone — уведомление придёт через 10 секунд." });

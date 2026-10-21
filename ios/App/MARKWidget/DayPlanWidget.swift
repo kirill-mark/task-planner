@@ -8,7 +8,7 @@ struct DayPlanView: View {
     let entry: TodayEntry
     private var remaining: Int { max(0, (entry.day?.total ?? 0) - (entry.day?.done ?? 0)) }
     private var emptyTitle: String {
-        guard let day = entry.day else { return entry.snapshot.userId == nil ? "Войдите в MARK" : "Откройте MARK" }
+        guard let day = entry.day else { return entry.snapshot.userId == nil ? "Войдите в Mark" : "Откройте Mark" }
         return day.total > 0 ? "Всё выполнено" : "Свободный день"
     }
     var body: some View {
@@ -50,7 +50,7 @@ struct DayPlanView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("План на день").font(.system(size: 21, weight: .bold))
                     Spacer(minLength: 4)
-                    Text("MARK").font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(planMint)
+                    Text("Mark").font(.system(size: 11, weight: .bold)).tracking(1).foregroundColor(planMint)
                 }
                 if let day = entry.day {
                     Text("Осталось \(remaining) · \(day.done) из \(day.total) выполнено")
@@ -83,7 +83,7 @@ struct DayPlanView: View {
                         Spacer(minLength: 0)
                         Image(systemName: day.total > 0 ? "checkmark.circle.fill" : "sun.max").font(.system(size: 30)).foregroundColor(planMint)
                         Text(emptyTitle).font(.system(size: 19, weight: .semibold))
-                        Text(day.total > 0 ? "План на сегодня закрыт" : "Добавьте задачи в MARK")
+                        Text(day.total > 0 ? "План на сегодня закрыт" : "Добавьте задачи в Mark")
                             .font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
                         Spacer(minLength: 0)
                     }
@@ -91,7 +91,7 @@ struct DayPlanView: View {
                     Spacer(minLength: 0)
                     Image(systemName: "checklist").font(.system(size: 30)).foregroundColor(planMint)
                     Text(emptyTitle).font(.system(size: 19, weight: .semibold))
-                    Text("Ваш план появится здесь после открытия MARK")
+                    Text("Ваш план появится здесь после открытия Mark")
                         .font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
                     Spacer(minLength: 0)
                 }

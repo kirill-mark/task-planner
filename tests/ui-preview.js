@@ -63,6 +63,7 @@ const rows = {
     { id: "t11", title: "Купить подарок", group_id: "g4" },
     { id: "t12", title: "Смета для Palmira Istra", group_id: "g2", due_date: d(4) },
     { id: "t13", title: "Отчёт за сентябрь", group_id: "g2", planned_date: today, completed: true, completed_at: new Date().toISOString() },
+    { id: "t14", title: "Оплатить аренду студии", group_id: "g2", planned_date: today, due_date: today },
   ].map((t) => ({ notes: "", planned_date: null, planned_time: null, due_date: null, due_time: null, duration_minutes: null, priority: "normal", completed: false, position: 0, ...t })),
 };
 
@@ -159,7 +160,7 @@ function renderInner() {
   const r = route();
   if (r.name === "auth") { document.getElementById("app").innerHTML = renderAuth(ui.auth); return; }
   const ctx = { rows, status, today, nowMin: 10 * 60, route: r, ui, session,
-    settings: { assistant_consent_at: q.get("assistant") === "consent" ? null : "preview", theme: document.documentElement.dataset.theme, timezone: "Europe/Moscow", morning_digest: true, evening_digest: true, task_reminders: true, workday: { start: "10:00", end: "19:00" } },
+    settings: { focus: q.get("main") ? { date: today, ids: [q.get("main")] } : null, assistant_consent_at: q.get("assistant") === "consent" ? null : "preview", theme: document.documentElement.dataset.theme, timezone: "Europe/Moscow", morning_digest: true, evening_digest: true, task_reminders: true, workday: { start: "10:00", end: "19:00" } },
     telegram: { status: "linked", link: { telegram_username: "marchenkokirill" } }, tz: { prompt: q.get("tz") ? { account: "Europe/Moscow", device: "Asia/Almaty" } : null, device: "Europe/Moscow" },
     iphoneReminders: q.has("iphone-reminders") ? { available: true, enabled: true, permission: "granted", pending: 3, total: 3 } : null,
     speechAvailable: true, trash: previewTrash, isDesktop: DESKTOP.matches,
@@ -181,7 +182,12 @@ document.addEventListener("click", async (e) => {
   else if (a === "assistant-ask") { ui.assistant.input = el.dataset.text; }
   else if (a === "assistant-voice") { ui.assistant.voice = { phase: (ui.assistant.voice?.phase || "idle") === "idle" ? "recording" : "idle" }; }
   else if (a === "open-task") { const t = rows.tasks.find((x) => x.id === el.dataset.id); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
-  else if (a === "new-task") ui.editor = { id: null, error: "", draft: { title: "", notes: "", group_id: "", planned_date: el.dataset.date || "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
+  else if (a === "main-pick") ui.mainPick = true;
+  else if (a === "main-pick-close") ui.mainPick = false;
+  else if (a === "editor-more") ui.editor.mode = "full";
+  else if (a === "quick-date-pick") ui.editor.datePick = !ui.editor.datePick;
+  else if (a === "quick-date") { ui.editor.draft.planned_date = el.dataset.date; ui.editor.datePick = false; }
+  else if (a === "new-task") ui.editor = { id: null, error: "", mode: "quick", draft: { title: "", notes: "", group_id: "", planned_date: el.dataset.date || "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
   else if (a === "close-editor") ui.editor = null;
   else if (a === "clear-search") ui.search = "";
   else if (a === "toggle") { const t = rows.tasks.find((x) => x.id === el.dataset.id); t.completed = !t.completed; }
@@ -225,4 +231,5 @@ if (q.get("edit")) { const t = rows.tasks.find((x) => x.id === q.get("edit")); u
 if (q.get("manage")) ui.manage = { form: null };
 if (q.get("layout")) { ui.layoutDraft = { desktop: [{ type: "summary", col: "main" }, { type: "plan", col: "main" }, { type: "calendar", col: "side" }, { type: "upcoming", col: "side" }], phone: [{ type: "summary" }, { type: "upcoming" }, { type: "calendar" }, { type: "plan" }, { type: "progress" }] }; }
 if (q.get("focus")) ui.focusPick = true;
+if (q.get("quick")) ui.editor = { id: null, error: "", mode: "quick", restored: q.get("quick") === "draft", draft: { title: q.get("quick") === "empty" ? "" : "Забрать оборудование из проката на Старом Арбате и вернуть залог", notes: "", group_id: q.get("quick") === "draft" ? "g2" : "", planned_date: "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
 render();

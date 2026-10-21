@@ -7,7 +7,7 @@ export const recoveryAuthOptions = {
   storageKey: "mark-password-recovery",
 };
 
-const invalidLink = "Ссылка недействительна или устарела. Запросите новое письмо через «Забыли пароль?» в MARK.";
+const invalidLink = "Ссылка недействительна или устарела. Запросите новое письмо через «Забыли пароль?» в Mark.";
 
 export function createRecoveryFlow(auth) {
   let ready = false;

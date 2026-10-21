@@ -53,26 +53,32 @@ export function dayProgress(rows, day) {
   return { done: list.filter((t) => t.completed).length, total: list.length };
 }
 
-// Просроченное не переносится само: дедлайн прошёл — «просрочено»; прошёл
-// план без дедлайна — «не выполнено в срок». Оба в отдельном блоке.
+// Просрочено — только прошедший крайний срок (концепция C, docs/design-c/rules.md).
+// Пропущенное время «Когда сделать» просрочкой не считается — это missed().
+export function isOverdue(t, today, nowMin = null) {
+  if (t.completed || !t.due_date) return false;
+  if (t.due_date < today) return true;
+  return t.due_date === today && !!t.due_time && nowMin != null && minutesOf(t.due_time) <= nowMin;
+}
+
 export function overdue(rows, today, nowMin = null) {
-  return rows.tasks.filter((t) => {
-    if (t.completed) return false;
-    if (t.due_date) {
-      if (t.due_date < today) return true;
-      return t.due_date === today && t.due_time && nowMin != null && minutesOf(t.due_time) <= nowMin;
-    }
-    return !!t.planned_date && t.planned_date < today;
-  }).sort((a, b) => (a.due_date || a.planned_date).localeCompare(b.due_date || b.planned_date));
+  return rows.tasks.filter((t) => isOverdue(t, today, nowMin)).sort((a, b) => a.due_date.localeCompare(b.due_date));
+}
+
+// Не сделано в запланированный день, крайнего срока нет или он ещё не прошёл.
+export function missed(rows, today, nowMin = null) {
+  return rows.tasks.filter((t) => isOpen(t) && t.planned_date && t.planned_date < today && !isOverdue(t, today, nowMin))
+    .sort((a, b) => a.planned_date.localeCompare(b.planned_date));
 }
 
 export function overdueKind(t, today) {
   return t.due_date ? "overdue" : t.planned_date && t.planned_date < today ? "missed" : null;
 }
 
-// Входящие — задачи без даты или без группы: их ещё предстоит разобрать.
+// Входящие — записанное без проекта и без даты (концепция C, projects-migration.md).
+// Задача с датой, но без проекта, — в плане по своей дате, а не во входящих.
 export function inbox(rows) {
-  return rows.tasks.filter((t) => isOpen(t) && ((!t.planned_date && !t.due_date) || !t.group_id));
+  return rows.tasks.filter((t) => isOpen(t) && !t.group_id && !t.planned_date && !t.due_date);
 }
 
 export function nextDays(rows, today, days = 7) {

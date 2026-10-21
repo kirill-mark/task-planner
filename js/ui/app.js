@@ -103,6 +103,8 @@ const ui = {
   layoutKind: null,
   layoutMsg: "",
   focusPick: false,
+  mainPick: false,   // лист выбора главной задачи
+  toast: null,       // { text, label, action } — сообщение внизу на 5 секунд
   assistant: { chat: [], input: "", busy: false },
   editor: null,      // { id|null, draft, error }
   manage: null,      // { form: null|{kind,id,name,color,section_id} }
@@ -227,6 +229,7 @@ function render() {
   if (nextTranscript) nextTranscript.scrollTop = atEnd || ui.assistant.scrollEnd ? nextTranscript.scrollHeight : chatScroll;
   ui.assistant.scrollEnd = false;
   resizeComposer();
+  sizeQuickTitle();
   if (onChat && !ui.assistant.chat.length) ui.assistant.greetingAnimated = true;
 
 }
@@ -278,7 +281,16 @@ function restoreFocus(f) {
 function setDraft(path, value) {
   const [head, ...rest] = path.split(".");
   if (head === "quick") ui.quick = value;
-  else if (head === "editor" && ui.editor) ui.editor.draft[rest[0]] = value;
+  else if (head === "editor" && ui.editor) {
+    ui.editor.draft[rest[0]] = value;
+    if (!ui.editor.id) {
+      ui.editor.touched = true;
+      persistDraft();
+      const add = root.querySelector(".c-quick .c-add");
+      if (add) add.disabled = !String(ui.editor.draft.title || "").trim();
+      if (rest[0] === "title") sizeQuickTitle();
+    }
+  }
   else if (head === "manage" && ui.manage?.form) ui.manage.form[rest[1]] = value;
   else if (head === "confirm" && ui.confirm) ui.confirm.moveTo = value;
   else if (head === "profile") ui.profile[rest[0]] = value;
@@ -481,7 +493,7 @@ async function tryTelegramAutoLogin() {
     if (await getSession()) return;
     const result = await telegramMiniAppSignIn(tg.initData);
     if (!result.ok && result.reason === "not_linked") {
-      ui.auth.message = "Этот Telegram ещё не привязан к аккаунту MARK. Войдите по email, затем в кабинете подключите Telegram.";
+      ui.auth.message = "Этот Telegram ещё не привязан к аккаунту Mark. Войдите по email, затем в кабинете подключите Telegram.";
     }
   } finally {
     tgLoginInFlight = false;
@@ -496,6 +508,67 @@ const emptyDraft = (over = {}) => ({
   duration_minutes: "", priority: "normal", ...over,
 });
 
+// Черновик новой задачи (решение владельца, docs/design-c/scope.md): начатая
+// запись сохраняется на устройстве при каждом изменении и возвращается при
+// следующем открытии формы; очищается после добавления или «Удалить черновик».
+const draftKey = () => `mark:task-draft:v1:${session?.user?.id || "anon"}`;
+const DRAFT_FIELDS = ["title", "notes", "group_id", "planned_date", "planned_time", "due_date", "due_time", "duration_minutes", "priority"];
+const draftHasContent = (d) => !!(String(d.title || "").trim() || String(d.notes || "").trim() || d.group_id || d.planned_date || d.due_date);
+
+function readDraft() {
+  try {
+    const d = JSON.parse(localStorage.getItem(draftKey()) || "null");
+    return d && typeof d === "object" && draftHasContent(d) ? d : null;
+  } catch { return null; }
+}
+
+function writeDraft(d) {
+  try { localStorage.setItem(draftKey(), JSON.stringify(Object.fromEntries(DRAFT_FIELDS.map((k) => [k, d[k] ?? ""])))); } catch { /* хранилище недоступно */ }
+}
+
+function clearDraft() {
+  try { localStorage.removeItem(draftKey()); } catch { /* хранилище недоступно */ }
+}
+
+// Запись черновика только для новой задачи и только после действий человека.
+function persistDraft() {
+  const ed = ui.editor;
+  if (!ed || ed.id || !ed.touched) return;
+  if (draftHasContent(ed.draft)) writeDraft(ed.draft); else clearDraft();
+}
+
+let toastTimer = null;
+function showToast(text, label = "", action = null) {
+  clearTimeout(toastTimer);
+  ui.toast = { text, label, action };
+  toastTimer = setTimeout(() => { ui.toast = null; render(); }, 5000);
+}
+
+function closeEditor() {
+  const ed = ui.editor;
+  if (!ed) return;
+  ui.editor = null;
+  if (!ed.id && ed.touched && draftHasContent(ed.draft)) {
+    writeDraft(ed.draft);
+    showToast("Черновик сохранён", "Продолжить", () => openEditor(null));
+  } else if (!ed.id && !ed.restored) clearDraft();
+  render();
+}
+
+function sizeQuickTitle() {
+  const el = root.querySelector("#quick-title");
+  if (!el) return;
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, parseFloat(getComputedStyle(el).lineHeight) * 5 + 22) + "px";
+}
+
+async function setMainTask(id) {
+  settings.focus = { date: todayIso(), ids: id ? [id] : [] };
+  ui.mainPick = false;
+  render();
+  await saveSetting("focus", { focus: settings.focus }, "focus");
+}
+
 function openEditor(id, defaults = {}) {
   if (id) {
     const t = rows.tasks.find((x) => x.id === id);
@@ -506,7 +579,10 @@ function openEditor(id, defaults = {}) {
       duration_minutes: t.duration_minutes ? String(t.duration_minutes) : "", priority: t.priority || "normal",
     }) };
   } else {
-    ui.editor = { id: null, error: "", draft: emptyDraft(defaults) };
+    const saved = DESKTOP.matches ? null : readDraft();
+    ui.editor = saved
+      ? { id: null, error: "", mode: "quick", restored: true, touched: true, draft: emptyDraft(saved) }
+      : { id: null, error: "", mode: DESKTOP.matches ? "full" : "quick", draft: emptyDraft(defaults) };
   }
   if (DESKTOP.matches && !id && route.name !== "tasks") { /* на компьютере новая задача — диалогом поверх */ }
   render();
@@ -527,7 +603,21 @@ function saveEditor() {
   };
   const exists = ed.id && rows.tasks.some((t) => t.id === ed.id);
   if (exists) store.updateTaskV2(ed.id, fields, { timezone: settings.timezone });
-  else store.createTaskV2(fields, { timezone: settings.timezone });
+  else {
+    const id = store.createTaskV2(fields, { timezone: settings.timezone });
+    if (!id) {
+      ed.error = "Хранилище на телефоне ещё не готово. Текст остался в форме — попробуйте ещё раз через пару секунд.";
+      render();
+      return;
+    }
+    clearDraft();
+    const today = todayIso();
+    const where = fields.group_id ? `в проект «${rows.groups.find((g) => g.id === fields.group_id)?.name || ""}»`
+      : fields.planned_date === today ? "в план на сегодня"
+      : fields.planned_date ? `в план на ${shortDate(fields.planned_date, { today })}`
+      : !fields.due_date ? "во «Входящие»" : "";
+    showToast(`Задача добавлена${where ? " " + where : ""}`, "Отменить", () => store.deleteTask(id));
+  }
   ui.editor = null;
   render();
 }
@@ -636,7 +726,42 @@ const actions = {
     openEditor(null, defaults);
   },
   "open-task": (el) => openEditor(el.dataset.id),
-  "close-editor": () => { ui.editor = null; render(); },
+  "close-editor": () => closeEditor(),
+  "editor-more": () => { if (ui.editor) { ui.editor.mode = "full"; ui.editor.datePick = false; render(); } },
+  "quick-date-pick": () => { if (ui.editor) { ui.editor.datePick = !ui.editor.datePick; render(); } },
+  "quick-date": (el) => {
+    const ed = ui.editor;
+    if (!ed) return;
+    ed.draft.planned_date = el.dataset.date || "";
+    if (!ed.draft.planned_date) ed.draft.planned_time = "";
+    ed.datePick = false;
+    ed.touched = true;
+    persistDraft();
+    render();
+  },
+  "quick-project-clear": () => {
+    if (!ui.editor) return;
+    ui.editor.draft.group_id = "";
+    ui.editor.touched = true;
+    persistDraft();
+    render();
+  },
+  "draft-delete": () => {
+    clearDraft();
+    if (ui.editor) ui.editor = { id: null, error: "", mode: "quick", draft: emptyDraft({}) };
+    render();
+  },
+  "main-pick": () => { ui.mainPick = true; render(); },
+  "main-pick-close": () => { ui.mainPick = false; render(); },
+  "main-set": (el) => setMainTask(el.dataset.id),
+  "main-clear": () => setMainTask(null),
+  "toast-act": () => {
+    const t = ui.toast;
+    clearTimeout(toastTimer);
+    ui.toast = null;
+    t?.action?.();
+    render();
+  },
   toggle: (el) => {
     const t = rows.tasks.find((x) => x.id === el.dataset.id);
     if (!t) return;
@@ -1180,7 +1305,7 @@ const submits = {
       const { data, error } = mode === "recover" ? await requestPasswordReset(email)
         : mode === "signup" ? await signUp(email, password) : await signIn(email, password);
       if (error) ui.auth.error = mode === "recover" ? "Не удалось отправить письмо. Проверьте соединение и попробуйте позже." : error.message;
-      else if (mode === "recover") ui.auth.message = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в MARK для входа.";
+      else if (mode === "recover") ui.auth.message = "Если аккаунт с этим email существует, придёт письмо. Откройте ссылку в браузере, задайте новый пароль и вернитесь в Mark для входа.";
       else if (mode === "signup" && !data.session) ui.auth.message = "Проверьте почту и перейдите по ссылке для подтверждения, потом войдите.";
     } catch {
       ui.auth.error = "Не удалось связаться с сервером. Проверьте соединение и попробуйте снова.";
@@ -1256,9 +1381,16 @@ document.addEventListener("keydown", (e) => {
   if (ui.confirm) ui.confirm = null;
   else if (ui.assistant.panel) ui.assistant.panel = null;
   else if (ui.manage) ui.manage = null;
-  else if (ui.editor) ui.editor = null;
+  else if (ui.mainPick) ui.mainPick = false;
+  else if (ui.editor) { closeEditor(); return; }
   else return;
   render();
+});
+
+root.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.target.id !== "quick-title") return;
+  e.preventDefault();
+  e.target.form?.requestSubmit();
 });
 
 DESKTOP.addEventListener("change", () => render());

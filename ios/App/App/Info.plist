@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>ru</string>
 	<key>CFBundleDisplayName</key>
-	<string>MARK</string>
+	<string>Mark</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -25,7 +25,7 @@
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Микрофон нужен, чтобы надиктовать сообщение помощнику. Текст можно проверить перед отправкой.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>MARK превращает речь в текст на iPhone, когда это доступно. Иначе распознавание выполняет сервис Apple.</string>
+	<string>Mark превращает речь в текст на iPhone, когда это доступно. Иначе распознавание выполняет сервис Apple.</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

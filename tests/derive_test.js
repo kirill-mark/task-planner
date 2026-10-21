@@ -1,6 +1,6 @@
 // deno test tests/derive_test.js — правила подсчёта из ТЗ для интерфейса.
 import { assert, assertEquals } from "jsr:@std/assert@1";
-import { dayLoad, dayOrder, dayProgress, inbox, monthGrid, monthMarks, overdue, tasksOfDay, upcoming } from "../js/ui/derive.js";
+import { dayLoad, dayOrder, dayProgress, inbox, monthGrid, monthMarks, overdue, tasksOfDay, upcoming, missed } from "../js/ui/derive.js";
 import { longDate, plural, relativeDay, shortDate } from "../js/ui/lib.js";
 
 const T = (id, o = {}) => ({ id, title: id, group_id: "g1", planned_date: null, planned_time: null, due_date: null, due_time: null, duration_minutes: null, completed: false, position: 0, ...o });
@@ -49,7 +49,7 @@ Deno.test("порядок дня: события по времени, дела �
   assertEquals(list.map((t) => t.id), ["t09", "t15", "plain", "due", "done"]);
 });
 
-Deno.test("просроченное: прошедший дедлайн и прошедший план без дедлайна; не переносится", () => {
+Deno.test("просрочено — только прошедший крайний срок; пропущенный план — отдельно (концепция C)", () => {
   const r = rows([
     T("late", { due_date: "2026-09-25" }),
     T("missed", { planned_date: "2026-09-28" }),
@@ -58,12 +58,14 @@ Deno.test("просроченное: прошедший дедлайн и про
     T("todayLater", { due_date: "2026-09-29", due_time: "18:00" }),
     T("done", { due_date: "2026-09-20", completed: true }),
   ]);
-  assertEquals(overdue(r, "2026-09-29", 10 * 60).map((t) => t.id), ["late", "missed", "todayPast"]);
+  assertEquals(overdue(r, "2026-09-29", 10 * 60).map((t) => t.id), ["late", "todayPast"]);
+  assertEquals(missed(r, "2026-09-29", 10 * 60).map((t) => t.id), ["missed", "planWithFutureDue"]);
 });
 
-Deno.test("входящие: без даты или без группы", () => {
-  const r = rows([T("nodate"), T("nogroup", { group_id: null, planned_date: "2026-09-29" }), T("ok", { planned_date: "2026-09-29" })]);
-  assertEquals(inbox(r).map((t) => t.id), ["nodate", "nogroup"]);
+Deno.test("входящие: без проекта и без даты", () => {
+  const r = rows([T("inbox", { group_id: null }), T("nodate"), T("nogroup", { group_id: null, planned_date: "2026-09-29" }),
+    T("due", { group_id: null, due_date: "2026-10-01" }), T("ok", { planned_date: "2026-09-29" })]);
+  assertEquals(inbox(r).map((t) => t.id), ["inbox"]);
 });
 
 Deno.test("ближайшие дела: только будущие события со временем; дедлайны отдельно", () => {

@@ -1,4 +1,4 @@
-// Экраны интерфейса этапа 2 (макеты «MARK — макеты этапа 2»). Каждая
+// Экраны интерфейса этапа 2 (макеты «Mark — макеты этапа 2»). Каждая
 // функция — данные контекста → разметка; состояние и события живут в app.js.
 //
 // ctx: { rows, status, today, nowMin, route, ui, session, settings, telegram,
@@ -7,9 +7,9 @@
 import { esc, plural, longDate, shortDate, relativeDay, hhmm, minutesOf, timeOf, durationText,
   weekHeader, monthTitle, addDays, parseIso, capitalize } from "./lib.js";
 import { tasksOfDay, dayProgress, overdue, overdueKind, inbox, nextDays, upcoming, monthMarks,
-  monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder } from "./derive.js";
+  monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder, isOverdue, missed } from "./derive.js";
 import { greetingText } from "../assistant-chats.js";
-import { icons, blob } from "./icons.js";
+import { icons, blob, markSymbol } from "./icons.js";
 
 const NAV = [
   { id: "home", label: "Главная", href: "#/home", icon: icons.home },
@@ -96,7 +96,7 @@ export function renderShell(ctx, content) {
   return `
   <div class="shell">
     <nav class="sidebar" aria-label="Основная навигация">
-      <div class="brand"><span class="brand-mark">M</span>MARK</div>
+      <div class="brand">${markSymbol(20, { label: null })}Mark</div>
       <button type="button" class="btn primary" data-action="new-task">${icons.plus(18)}Добавить задачу</button>
       <div class="nav-list">${NAV.map(navItem).join("")}</div>
       <div class="nav-list">
@@ -116,7 +116,7 @@ export function renderShell(ctx, content) {
       </a>
     </nav>
     <main class="main" id="main">
-      ${route !== "profile" ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
+      ${route !== "profile" && route !== "home" ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
       ${content}
     </main>
     <nav class="bottom-nav" aria-label="Основная навигация">
@@ -127,7 +127,14 @@ export function renderShell(ctx, content) {
     ${ctx.ui.editor && !(ctx.isDesktop && route === "tasks") ? renderEditorSheet(ctx) : ""}
     ${ctx.ui.manage ? renderManageSheet(ctx) : ""}
     ${ctx.ui.confirm ? renderConfirm(ctx.ui.confirm) : ""}
+    ${ctx.ui.toast ? renderToast(ctx.ui.toast) : ""}
   </div>`;
+}
+
+// Сообщение об успехе внизу экрана, 5 секунд, с отменой, если она возможна.
+function renderToast(t) {
+  return `<div class="c-toast" role="status"><span class="grow">${esc(t.text)}</span>
+    ${t.action ? `<button type="button" class="c-toast-act" data-action="toast-act">${esc(t.label)}</button>` : ""}</div>`;
 }
 
 // Вопросы о поясе и конфликты показываются на всех экранах.
@@ -188,36 +195,69 @@ function renderConflict(ctx, op, isConflict) {
 
 // ------------------------------------------------------------- строка задачи --
 
-function planPill(t, today) {
+// Подписи сроков по единому правилу (docs/design-c/rules.md): «Когда сделать» и
+// будущий крайний срок — нейтрально; срок сегодня — жёлтая метка со словами;
+// прошедший срок — красная «Просрочено». Цвет всегда дублируется словом.
+function planPill(t, today, { dayView = false } = {}) {
   if (!t.planned_date) return "";
   const time = hhmm(t.planned_time);
-  if (t.planned_date === today) return `<span class="pill plan">${time ? time : "сегодня"}</span>`;
-  return `<span class="pill plan">на ${esc(shortDate(t.planned_date, { today }))}${time ? " · " + time : ""}</span>`;
+  if (t.planned_date === today) return `<span class="meta-plan">${time || (dayView ? "без времени" : "сегодня")}</span>`;
+  if (t.planned_date < today && !t.completed) return `<span>было на ${esc(shortDate(t.planned_date, { today }))}</span>`;
+  return `<span class="meta-plan">${esc(shortDate(t.planned_date, { today }))}${time ? " · " + time : ""}</span>`;
 }
 
-function duePill(t, today) {
+function duePill(t, today, nowMin = null) {
   if (!t.due_date) return "";
   const time = hhmm(t.due_time);
-  if (!t.completed && t.due_date < today) return `<span class="pill late">просрочено с ${esc(shortDate(t.due_date, { today }))}</span>`;
-  const when = t.due_date === today ? "сегодня" : shortDate(t.due_date, { weekday: true, today });
-  return `<span class="pill due">до ${esc(when)}${time ? " " + time : ""}</span>`;
+  const date = shortDate(t.due_date, { today });
+  if (isOverdue(t, today, nowMin)) return `<span class="badge bad">${icons.alert(13)}Просрочено</span><span>срок ${esc(t.due_date === today ? "сегодня" : date)}${time ? " " + time : ""}</span>`;
+  if (!t.completed && t.due_date === today) return `<span class="badge warn">${icons.flag(13)}Срок сегодня</span><span>${time ? "до " + time : "до конца дня"}</span>`;
+  return `<span>до ${esc(t.due_date === today ? "сегодня" : shortDate(t.due_date, { weekday: true, today }))}${time ? " " + time : ""}</span>`;
+}
+
+// Проект — название группы. Разделы в интерфейсе не показываются; если две
+// группы называются одинаково, к названию добавляется раздел (projects-migration.md).
+export function projectName(rows, groupId) {
+  const g = rows.groups.find((x) => x.id === groupId);
+  if (!g) return "";
+  const twins = rows.groups.filter((x) => x.name.trim().toLowerCase() === g.name.trim().toLowerCase());
+  if (twins.length < 2) return g.name;
+  const s = rows.sections.find((x) => x.id === g.section_id);
+  return s ? `${s.name} · ${g.name}` : g.name;
+}
+
+const STARTER_GROUPS = { work: "Работа", personal: "Личное", study: "Учёба" };
+
+// Пустые стартовые группы, созданные приложением, не показываются. Пустота
+// проверяется и по выполненным задачам, и по корзине; пока корзина не
+// загружена, группа остаётся видимой.
+export function visibleGroups(ctx) {
+  const tr = ctx.trash;
+  return ctx.rows.groups.filter((g) => {
+    if (STARTER_GROUPS[g.id] !== g.name) return true;
+    if (ctx.rows.tasks.some((t) => t.group_id === g.id)) return true;
+    if (tr?.status !== "ok") return true;
+    return tr.tasks.some((t) => t.group_id === g.id);
+  });
 }
 
 export function taskRow(ctx, t, { showPath = true, when = null, selected = false, compactDay = false } = {}) {
   const today = ctx.today;
-  const path = pathOf(ctx.rows, t);
-  const missed = !t.completed && !t.due_date && t.planned_date && t.planned_date < today;
+  const project = projectName(ctx.rows, t.group_id);
+  const inInbox = !t.group_id && !t.planned_date && !t.due_date && !t.completed;
+  const showPlan = !(when !== null && t.planned_date === today);
   return `<div class="task ${t.completed ? "done" : ""} ${selected ? "selected" : ""} ${compactDay ? "task-compact-day" : ""}">
     ${when !== null ? `<span class="when ${when.cls || ""}">${esc(when.text)}</span>` : ""}
     <button type="button" class="check ${t.completed ? "done" : ""}" data-action="toggle" data-id="${esc(t.id)}" aria-pressed="${t.completed ? "true" : "false"}" aria-label="${t.completed ? "Вернуть в работу" : "Отметить выполненной"}: ${esc(t.title)}">${t.completed ? icons.check() : ""}</button>
     <button type="button" class="task-body" data-action="open-task" data-id="${esc(t.id)}">
       <span class="task-title">${esc(t.title)}</span>
       <span class="task-meta">
-        ${showPath ? `${path.color ? `<span class="sq" style="background:${esc(path.color)}"></span>` : ""}<span>${esc(path.label)}</span>` : ""}
-        ${missed ? `<span class="pill late">не выполнено ${esc(shortDate(t.planned_date, { today }))}</span>` : (when !== null || (compactDay && !t.planned_time)) && t.planned_date === ctx.today ? "" : planPill(t, today)}
-        ${duePill(t, today)}
+        ${showPlan ? planPill(t, today, { dayView: compactDay }) : ""}
         ${t.duration_minutes ? `<span>${esc(durationText(t.duration_minutes))}</span>` : ""}
-        ${t.priority === "high" ? '<span class="pill due">важно</span>' : ""}
+        ${duePill(t, today, ctx.nowMin)}
+        ${showPath && project ? `<span>${esc(project)}</span>` : ""}
+        ${showPath && inInbox ? `<span class="badge">${icons.inbox(13)}Входящие</span>` : ""}
+        ${t.priority === "high" && !t.completed ? '<span class="badge">Важно</span>' : ""}
         ${t._pending ? '<span class="pill pending" title="Сохранено на устройстве, ещё не подтверждено сервером">ждёт синхронизации</span>' : ""}
       </span>
     </button>
@@ -474,7 +514,101 @@ function editFrame(ctx, w, i, n, inner) {
     <div class="widget-preview" aria-hidden="true">${inner}</div></div>`;
 }
 
+// ------------------------------------------------- главная телефона, концепция C --
+// Макеты H01–H15 (docs/design-c). Главная задача — первая из settings.focus на
+// сегодня; в плане дня она не дублируется, но в счётчике учитывается один раз.
+
+export function mainTaskOf(ctx) {
+  const f = ctx.settings.focus;
+  const id = f?.date === ctx.today ? (f.ids || [])[0] : null;
+  return id ? ctx.rows.tasks.find((t) => t.id === id) || null : null;
+}
+
+function untilText(mins) {
+  if (mins < 1) return "сейчас";
+  const h = Math.floor(mins / 60), m = mins % 60;
+  return "через " + (h ? `${h} ч` : "") + (h && m ? " " : "") + (m ? `${m} мин` : "");
+}
+
+function statusBanner(ctx) {
+  const st = ctx.status?.state;
+  if (!st || st === "synced" || st === "saving" || st === "idle" || st === "loading") return "";
+  const s = syncLabel(ctx.status);
+  const tone = st === "offline" ? "" : s.cls === "bad" ? "bad" : "warn";
+  const sub = st === "offline" ? "Изменения сохранены на телефоне и отправятся, когда появится связь" : "";
+  return `<div class="c-banner ${tone}" role="status"><span class="grow"><b>${esc(s.text)}</b>${sub ? `<span>${sub}</span>` : ""}</span>
+    ${st === "offline" ? "" : `<button type="button" class="btn small quiet" data-action="sync-now">Повторить</button>`}</div>`;
+}
+
+function renderMainPick(ctx, main) {
+  const { rows, today, nowMin } = ctx;
+  const seen = new Set();
+  const list = tasksOfDay(rows, today).filter(isOpen).concat(overdue(rows, today, nowMin))
+    .filter((t) => !seen.has(t.id) && seen.add(t.id));
+  const opts = list.map((t) => `<button type="button" class="c-option" role="radio" aria-checked="${main?.id === t.id}" data-action="main-set" data-id="${esc(t.id)}">
+      <span class="c-radio" aria-hidden="true"></span><span class="grow"><span class="task-title">${esc(t.title)}</span>
+      <span class="task-meta">${planPill(t, today, { dayView: true })}${duePill(t, today, nowMin)}${projectName(rows, t.group_id) ? `<span>${esc(projectName(rows, t.group_id))}</span>` : ""}</span></span></button>`).join("");
+  return `<div class="sheet-scrim" data-action="main-pick-close"></div>
+    <section class="sheet c-sheet" role="dialog" aria-modal="true" aria-label="Главная задача">
+      <span class="handle"></span>
+      <div class="sheet-header"><button type="button" class="btn quiet small" data-action="main-pick-close">Отмена</button><h2>Главная задача</h2><span aria-hidden="true"></span></div>
+      <p class="c-note">Главная задача показывается первой и не повторяется в плане дня. Выполненную выбрать нельзя.</p>
+      <div role="radiogroup" aria-label="Задачи на сегодня">${opts || '<div class="empty">На сегодня нет открытых задач.</div>'}</div>
+      ${main ? `<button type="button" class="btn quiet" data-action="main-clear">Не выбирать главную задачу</button>` : ""}
+    </section>`;
+}
+
+function renderHomePhone(ctx) {
+  const { rows, today, nowMin } = ctx;
+  const name = firstName(ctx.session);
+  const main = mainTaskOf(ctx);
+  const head = `<header class="c-head">${markSymbol(22)}
+      <div class="c-head-text"><span class="c-date">${esc(longDate(today))}</span><h1>${esc(greeting(nowMin))}${name ? ", " + esc(name) : ""}</h1></div>
+      <a class="c-avatar" href="#/profile" aria-label="Кабинет">${esc((name || "?")[0])}</a></header>`;
+
+  const mainHtml = main ? `<section class="c-main" aria-label="Главная задача">
+      <div class="c-main-top"><span class="c-main-label">Главная задача</span><button type="button" class="c-link" data-action="main-pick">Сменить</button></div>
+      <div class="c-main-row">
+        <button type="button" class="check ${main.completed ? "done" : ""}" data-action="toggle" data-id="${esc(main.id)}" aria-pressed="${main.completed}" aria-label="${main.completed ? "Вернуть в работу" : "Отметить выполненной"}: ${esc(main.title)}">${main.completed ? icons.check() : ""}</button>
+        <button type="button" class="task-body" data-action="open-task" data-id="${esc(main.id)}">
+          <span class="c-main-title ${main.completed ? "done" : ""}">${esc(main.title)}</span>
+          <span class="task-meta">${main.completed ? "<span>выполнено</span>" : duePill(main, today, nowMin) || planPill(main, today, { dayView: true })}${projectName(rows, main.group_id) ? `<span>${esc(projectName(rows, main.group_id))}</span>` : ""}</span>
+        </button></div></section>`
+    : `<section class="c-main empty-main" aria-label="Главная задача">
+      <span class="grow"><b>Главная задача не выбрана</b><span>Выберите одну задачу, которую важно сделать сегодня</span></span>
+      <button type="button" class="btn small" data-action="main-pick">Выбрать</button></section>`;
+
+  const next = rows.tasks.filter((t) => isOpen(t) && t.planned_date === today && hasTime(t) && minutesOf(t.planned_time) >= nowMin && t.id !== main?.id)
+    .sort(dayOrder)[0];
+  const nextHtml = next ? `<button type="button" class="c-next" data-action="open-task" data-id="${esc(next.id)}">
+      <span class="c-label">Ближайшее по времени</span>
+      <span class="c-next-row"><span class="c-next-time">${hhmm(next.planned_time)}</span>
+      <span class="grow"><span class="c-next-title">${esc(next.title)}</span><span class="task-meta"><span>${untilText(minutesOf(next.planned_time) - nowMin)}${next.duration_minutes ? " · до " + timeOf(minutesOf(next.planned_time) + next.duration_minutes) : ""}</span></span></span></span></button>` : "";
+
+  const day = tasksOfDay(rows, today).filter((t) => t.id !== main?.id);
+  const p = dayProgress(rows, today);
+  const late = missed(rows, today, nowMin).filter((t) => t.id !== main?.id);
+  const plan = `<section class="c-plan" aria-label="План дня">
+      <div class="c-plan-head"><div><h2>План дня</h2><span class="c-label">${p.total ? `Выполнено ${p.done} из ${p.total}` : "Задач на сегодня нет"}</span></div>
+        <a class="c-soft-btn" href="#/assistant">${icons.spark(16)}Обсудить план</a></div>
+      ${day.length ? `<div class="task-list">${day.map((t) => taskRow(ctx, t, { compactDay: true })).join("")}</div>`
+        : !main ? `<div class="empty">На сегодня задач нет. Можно добавить задачу или взять что-то из входящих.<button type="button" class="btn small" data-action="new-task" data-date="${today}">Добавить задачу</button></div>` : ""}
+      ${late.length ? `<div class="c-sub"><span class="c-label">С прошлых дней · ${late.length}</span>
+        <div class="task-list">${late.slice(0, 5).map((t) => taskRow(ctx, t, { compactDay: true })).join("")}</div>
+        ${late.length > 5 ? `<a class="c-link" href="#/tasks?view=overdue">Все ${late.length}</a>` : ""}</div>` : ""}
+    </section>`;
+
+  const nIn = inbox(rows).length, nLate = overdue(rows, today, nowMin).length;
+  const chips = nIn || nLate ? `<nav class="c-chips" aria-label="Другие задачи">
+      ${nIn ? `<a class="c-chip" href="#/tasks?view=inbox">Входящие · ${nIn}</a>` : ""}
+      ${nLate ? `<a class="c-chip bad" href="#/tasks?view=overdue">${icons.alert(14)}Просрочено · ${nLate}</a>` : ""}</nav>` : "";
+
+  return `<div class="c-home">${head}${statusBanner(ctx)}${renderNotices(ctx)}${mainHtml}${nextHtml}${plan}${chips}</div>
+    ${ctx.ui.mainPick ? renderMainPick(ctx, main) : ""}`;
+}
+
 export function renderHome(ctx) {
+  if (!ctx.isDesktop) return renderHomePhone(ctx);
   const name = firstName(ctx.session);
   const { kind, list } = layoutOf(ctx);
   const editing = !!ctx.ui.layoutDraft;
@@ -532,7 +666,7 @@ export function renderTasks(ctx0) {
     const list = inbox(rows);
     const pg = paged(ctx, "inbox", list);
     body = card(list.length ? `<div class="task-list">${pg.shown.map((t) => taskRow(ctx, t, { selected: t.id === selectedId })).join("")}</div>${pg.more}`
-      : '<div class="empty">Входящие пусты: у всех задач есть дата и группа.</div>', "Входящие", "Задачи без даты или без группы — разберите: назначьте день или группу");
+      : '<div class="empty">Входящие пусты: всё записанное уже разобрано.</div>', "Входящие", "Записано без даты и проекта. Дата или проект уберут задачу отсюда");
   } else if (view === "week") {
     const list = nextDays(rows, today);
     const byDay = {};
@@ -553,7 +687,12 @@ export function renderTasks(ctx0) {
       card(list.length ? `<div class="task-list">${pg.shown.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
       <div class="chips" style="padding:0 0 10px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button>
       <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>${pg.more}`
-      : '<div class="empty">Просроченных задач нет.</div>', "Просроченные", "Ничего не переносится автоматически");
+      : '<div class="empty">Просроченных задач нет.</div>', "Просроченные", "Крайний срок прошёл. Ничего не переносится автоматически") +
+      (() => { const late = missed(rows, today, nowMin); const pgm = paged(ctx, "missed", late);
+        return late.length ? card(`<div class="task-list">${pgm.shown.map((t) => `${taskRow(ctx, t, { selected: t.id === selectedId })}
+      <div class="chips" style="padding:0 0 10px 36px"><button type="button" class="btn small" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button>
+      <button type="button" class="btn small quiet" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`).join("")}</div>${pgm.more}`,
+          "Не сделано в запланированный день", "Это не просрочка: крайнего срока нет или он ещё впереди") : ""; })();
   } else if (view === "trash") {
     body = renderTrash(ctx, q);
   } else if (view === "done") {
@@ -591,8 +730,9 @@ function renderTrash(ctx, q) {
     d.setDate(d.getDate() + (tr.keep_days || 30));
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   };
-  return `${tr.tasks.length ? `<div class="alert info overdue-cleanup"><div class="grow"><b>Задач в корзине: ${tr.tasks.length}</b><span class="muted">Очистка удалит их без возможности восстановления.</span></div><button type="button" class="btn danger" data-action="empty-trash" ${cleanup?.busy ? "disabled" : ""}>${cleanup?.busy ? "Очищаем…" : "Очистить корзину"}</button></div>` : ""}
-    ${cleanup ? `<div class="alert ${cleanup.failed ? "warn" : "info"}" role="status"><div class="grow">${esc(cleanup.text)}</div></div>` : ""}` +
+  // «Очистить корзину» скрыта, пока на сервере не применена и не проверена
+  // миграция 0014_mark_empty_trash (решение владельца, docs/design-c/scope.md).
+  return `${cleanup ? `<div class="alert ${cleanup.failed ? "warn" : "info"}" role="status"><div class="grow">${esc(cleanup.text)}</div></div>` : ""}` +
     card(list.length ? `<div class="task-list">${list.map((t) => `<div class="task">
       <div class="task-body"><span class="task-title">${esc(t.title)}</span>
         <span class="task-meta"><span>${esc(pathOf(ctx.rows, t).label)}</span><span>удалится окончательно ${esc(shortDate(until(t), { today: ctx.today }))}</span></span></div>
@@ -856,11 +996,11 @@ export function renderAssistant(ctx) {
     ${a.chat.length ? '<button type="button" data-action="assistant-clear">Очистить этот чат</button>' : ""}
     ${enabled ? '<button type="button" data-action="assistant-revoke">Выключить помощника</button>' : ""}
     <small>Чаты и память хранятся на этом устройстве.</small></div></details>`;
-  return `<header class="assistant-header" ${a.panel ? 'inert aria-hidden="true"' : ""}><a href="#/home" class="assistant-icon" aria-label="Назад в MARK"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg></a><span>MARK <span class="assistant-header-label">/ помощник</span></span>${menu}</header>
+  return `<header class="assistant-header" ${a.panel ? 'inert aria-hidden="true"' : ""}><a href="#/home" class="assistant-icon" aria-label="Назад в Mark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg></a><span>Mark <span class="assistant-header-label">/ помощник</span></span>${menu}</header>
     <div class="assistant-transcript" ${a.panel ? 'inert aria-hidden="true"' : ""} role="log" aria-label="Диалог с помощником" aria-live="polite">
       ${renderNotices(ctx)}
-      ${a.chat.length && enabled ? `<div class="assistant-messages">${a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("")}${a.busy ? '<div class="assistant-thinking"><span></span><span></span><span></span><span class="sr-only">Думаю…</span></div>' : ""}</div>` : `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}"><span class="assistant-mark">MARK AI ${icons.spark(14)}</span><p>Твой помощник по делам.</p><h1>${esc(greetingText(a.greetingIndex, name))}</h1><span class="assistant-intro">Освободим голову.<br>Соберём день по твоим задачам.</span>
-        ${enabled ? `<div class="assistant-starters">${["План на сегодня", "Что сделать первым?", "Разобрать входящие"].map((label, i) => `<button type="button" data-action="assistant-ask" data-text="${["Покажи мои задачи на сегодня и предложи порядок выполнения", "Что мне сделать первым сегодня? Объясни почему", "Помоги разобрать входящие: что нужно уточнить?"][i]}" ${offline || a.busy ? "disabled" : ""}>${label}<span>↗</span></button>`).join("")}</div>` : `<div class="assistant-consent"><p>Чтобы отвечать по делу, помощник передаёт твой вопрос, историю текущего чата, подходящие фрагменты твоих сообщений из прошлых чатов и сохранённые тобой заметки памяти и до 60 подходящих задач с описаниями на сервер MARK и провайдеру Groq.</p><p>Любые изменения задач — после твоего подтверждения.</p><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button>${ctx.ui.saved?.assistant?.cls === "bad" ? `<p role="alert">${esc(ctx.ui.saved.assistant.text)}</p>` : ""}</div>`}
+      ${a.chat.length && enabled ? `<div class="assistant-messages">${a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("")}${a.busy ? '<div class="assistant-thinking"><span></span><span></span><span></span><span class="sr-only">Думаю…</span></div>' : ""}</div>` : `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}"><span class="assistant-mark">Mark AI ${icons.spark(14)}</span><p>Твой помощник по делам.</p><h1>${esc(greetingText(a.greetingIndex, name))}</h1><span class="assistant-intro">Освободим голову.<br>Соберём день по твоим задачам.</span>
+        ${enabled ? `<div class="assistant-starters">${["План на сегодня", "Что сделать первым?", "Разобрать входящие"].map((label, i) => `<button type="button" data-action="assistant-ask" data-text="${["Покажи мои задачи на сегодня и предложи порядок выполнения", "Что мне сделать первым сегодня? Объясни почему", "Помоги разобрать входящие: что нужно уточнить?"][i]}" ${offline || a.busy ? "disabled" : ""}>${label}<span>↗</span></button>`).join("")}</div>` : `<div class="assistant-consent"><p>Чтобы отвечать по делу, помощник передаёт твой вопрос, историю текущего чата, подходящие фрагменты твоих сообщений из прошлых чатов и сохранённые тобой заметки памяти и до 60 подходящих задач с описаниями на сервер Mark и провайдеру Groq.</p><p>Любые изменения задач — после твоего подтверждения.</p><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button>${ctx.ui.saved?.assistant?.cls === "bad" ? `<p role="alert">${esc(ctx.ui.saved.assistant.text)}</p>` : ""}</div>`}
       </div>`}
     </div>
     ${enabled ? `<div class="assistant-bottom" ${a.panel ? 'inert aria-hidden="true"' : ""}>
@@ -882,16 +1022,16 @@ export function renderAssistant(ctx) {
 
 // ------------------------------------------------------------------ редактор --
 
+// Проекты — группы одним списком, без разделов и цветов (решения владельца,
+// docs/design-c/scope.md). Выбранная группа видна всегда, даже скрытая стартовая.
 function groupOptions(ctx, selected) {
-  const opts = [`<option value="" ${!selected ? "selected" : ""}>Входящие — без группы</option>`];
-  for (const s of ctx.rows.sections) {
-    const gs = ctx.rows.groups.filter((g) => g.section_id === s.id);
-    if (!gs.length) continue;
-    opts.push(`<optgroup label="${esc(s.name)}">${gs.map((g) => `<option value="${esc(g.id)}" ${g.id === selected ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</optgroup>`);
-  }
-  const orphan = ctx.rows.groups.filter((g) => !ctx.rows.sections.some((s) => s.id === g.section_id));
-  if (orphan.length) opts.push(`<optgroup label="Без раздела">${orphan.map((g) => `<option value="${esc(g.id)}" ${g.id === selected ? "selected" : ""}>${esc(g.name)}</option>`).join("")}</optgroup>`);
-  return opts.join("");
+  const list = visibleGroups(ctx);
+  const sel = ctx.rows.groups.find((g) => g.id === selected);
+  if (sel && !list.includes(sel)) list.push(sel);
+  const named = list.map((g) => ({ id: g.id, name: projectName(ctx.rows, g.id) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  return [`<option value="" ${!selected ? "selected" : ""}>Без проекта</option>`]
+    .concat(named.map((g) => `<option value="${esc(g.id)}" ${g.id === selected ? "selected" : ""}>${esc(g.name)}</option>`)).join("");
 }
 
 function editorFields(ctx) {
@@ -901,14 +1041,14 @@ function editorFields(ctx) {
   const dur = [["", "не указана"], ["15", "15 мин"], ["30", "30 мин"], ["45", "45 мин"], ["60", "1 ч"], ["90", "1 ч 30 мин"], ["120", "2 ч"], ["180", "3 ч"], ["240", "4 ч"]];
   if (d.duration_minutes && !dur.some(([v]) => v === String(d.duration_minutes))) dur.push([String(d.duration_minutes), durationText(d.duration_minutes)]);
   return `
-    ${task ? `<div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${esc(pathOf(ctx.rows, task).label)}</span>${task._pending ? '<span class="muted" title="Сохранено на устройстве, ещё не подтверждено сервером">Ждёт синхронизации</span>' : '<span style="color:var(--accent)">Сохранено</span>'}</div>` : ""}
+    ${task ? `<div class="row" style="justify-content:space-between;font-size:12px"><span class="muted">${esc(projectName(ctx.rows, task.group_id) || "Без проекта")}</span>${task._pending ? '<span class="muted" title="Сохранено на устройстве, ещё не подтверждено сервером">Ждёт синхронизации</span>' : '<span style="color:var(--accent)">Сохранено</span>'}</div>` : ""}
     <label class="field"><span>Название</span>
       <input class="input" name="title" data-key="ed-title" data-draft="editor.title" value="${esc(d.title)}" required maxlength="200" autocomplete="off" ${ed.id ? "" : "autofocus"}></label>
     <label class="field"><span>Описание</span>
       <textarea class="textarea" name="notes" data-key="ed-notes" data-draft="editor.notes" maxlength="5000" rows="3">${esc(d.notes)}</textarea></label>
-    <label class="field"><span>Раздел и группа</span><select class="select" name="group_id" data-draft="editor.group_id">${groupOptions(ctx, d.group_id)}</select></label>
+    <label class="field"><span>Проект</span><select class="select" name="group_id" data-draft="editor.group_id">${groupOptions(ctx, d.group_id)}</select></label>
     <div class="two editor-schedule">
-      <div class="date-box plan"><span class="t">Запланировать на</span>
+      <div class="date-box plan"><span class="t">Когда сделать</span>
         <div class="date-fields">
           <label class="field"><span>Дата</span><input class="input" type="date" name="planned_date" data-key="ed-pd" data-draft="editor.planned_date" value="${esc(d.planned_date || "")}" aria-label="Дата, на которую запланировано"></label>
           <label class="field"><span>Время</span><input class="input" type="time" name="planned_time" data-key="ed-pt" data-draft="editor.planned_time" value="${esc(hhmm(d.planned_time))}" aria-label="Время, на которое запланировано"></label>
@@ -919,7 +1059,7 @@ function editorFields(ctx) {
           <label class="field"><span>Время</span><input class="input" type="time" name="due_time" data-key="ed-dt" data-draft="editor.due_time" value="${esc(hhmm(d.due_time))}" aria-label="Время крайнего срока"></label>
         </div></div>
     </div>
-    <span class="muted" style="font-size:13px">Перенос работы на другой день не сдвигает дедлайн. Без даты задача попадёт во «Входящие».</span>
+    <span class="muted" style="font-size:13px">Перенос «Когда сделать» не меняет крайний срок. Без даты и проекта задача попадёт во «Входящие».</span>
     <div class="two">
       <label class="field"><span>Длительность</span><select class="select" name="duration_minutes" data-draft="editor.duration_minutes">${dur.map(([v, l]) => `<option value="${v}" ${String(d.duration_minutes || "") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
       <label class="field"><span>Приоритет</span><select class="select" name="priority" data-draft="editor.priority">${[["normal", "Обычный"], ["high", "Высокий"], ["low", "Низкий"]].map(([v, l]) => `<option value="${v}" ${d.priority === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
@@ -940,8 +1080,43 @@ function renderEditorPanel(ctx) {
     ${editorFields(ctx)}</form>`;
 }
 
+// Короткая форма новой задачи (макеты C01–C15): обязательно только название,
+// поле растёт по тексту, «Ещё» открывает подробную форму с тем же вводом.
+// Черновик живёт на устройстве; восстановленный проект показан плашкой.
+function renderQuickSheet(ctx) {
+  const ed = ctx.ui.editor, d = ed.draft, today = ctx.today, tomorrow = addDays(today, 1);
+  const pd = d.planned_date;
+  const dateLabel = !pd ? "Без даты" : pd === today ? "Сегодня" : pd === tomorrow ? "Завтра" : shortDate(pd, { weekday: true, today });
+  const project = d.group_id ? projectName(ctx.rows, d.group_id) : "";
+  const hint = project ? `Задача попадёт в проект «${esc(project)}».`
+    : pd === today ? "Задача появится в плане на сегодня."
+    : pd ? `Задача появится в плане на ${esc(pd === tomorrow ? "завтра, " + shortDate(pd, { today }) : shortDate(pd, { weekday: true, today }))}.`
+    : "Задача попадёт во «Входящие».";
+  const cap = (action, label, on, extra = "") => `<button type="button" class="cap${on ? " sel" : ""}" data-action="${action}" aria-pressed="${on}" ${extra}>${label}</button>`;
+  const dates = ed.datePick ? `<div class="c-caps" role="group" aria-label="Дата">
+      ${cap("quick-date", "Сегодня", pd === today, `data-date="${today}"`)}${cap("quick-date", "Завтра", pd === tomorrow, `data-date="${tomorrow}"`)}
+      ${pd ? cap("quick-date", "Без даты", false, 'data-date=""') : ""}${cap("editor-more", "Другая дата…", false)}</div>` : "";
+  return `<div class="sheet-scrim" data-action="close-editor"></div>
+    <form class="sheet task-editor c-quick" role="dialog" aria-modal="true" aria-label="Новая задача" data-action="save-task">
+      <span class="handle"></span>
+      ${ed.error ? `<div class="c-banner bad" role="alert"><span class="grow"><b>Задача не сохранилась</b><span>${esc(ed.error)}</span></span></div>` : ""}
+      <div class="c-quick-label"><label for="quick-title">Новая задача</label>
+        ${ed.restored ? `<button type="button" class="c-link" data-action="draft-delete">Удалить черновик</button>` : ""}</div>
+      <textarea id="quick-title" class="c-title-field" name="title" data-key="ed-title" data-draft="editor.title" rows="1" maxlength="200" placeholder="Что нужно сделать?" autofocus enterkeyhint="done">${esc(d.title)}</textarea>
+      ${project ? `<div class="c-caps"><button type="button" class="cap sel" data-action="quick-project-clear" aria-label="Убрать проект ${esc(project)}">${icons.folder(16)}${esc(project)}<span class="cap-x" aria-hidden="true">${icons.close(14)}</span></button></div>` : ""}
+      <div class="c-caps">
+        ${cap("quick-date-pick", `${icons.cal(16)}${esc(dateLabel)}`, !!pd)}
+        ${cap("editor-more", `${icons.more(16)}Ещё`, false)}
+      </div>
+      ${dates}
+      <span class="c-note">${hint}</span>
+      <button type="submit" class="btn primary c-add" ${String(d.title || "").trim() ? "" : "disabled"}>Добавить</button>
+    </form>`;
+}
+
 function renderEditorSheet(ctx) {
   const ed = ctx.ui.editor;
+  if (!ed.id && ed.mode === "quick") return renderQuickSheet(ctx);
   return `<div class="sheet-scrim" data-action="close-editor"></div>
     <form class="sheet task-editor" role="dialog" aria-modal="true" aria-label="${ed.id ? "Задача" : "Новая задача"}" data-action="save-task">
       <span class="handle"></span>
@@ -1019,7 +1194,7 @@ const ZONES = ["Europe/Kaliningrad", "Europe/Moscow", "Europe/Samara", "Asia/Yek
 export function renderIphoneReminders(s) {
   if (!s?.available) return "";
   const permitted = s.permission === "granted";
-  const text = s.permission === "denied" ? "Разрешите уведомления: Настройки iPhone → Уведомления → MARK."
+  const text = s.permission === "denied" ? "Разрешите уведомления: Настройки iPhone → Уведомления → Mark."
     : s.enabled && permitted ? `Включены · за 30 минут. Запланировано: ${s.pending}.`
       : "Включите напоминания о задачах на этом iPhone.";
   return `<section class="card" aria-label="Уведомления на iPhone">
@@ -1030,10 +1205,10 @@ export function renderIphoneReminders(s) {
       <button type="button" class="btn ${s.enabled && permitted ? "quiet" : "primary"}" data-action="${s.enabled && permitted ? "disable" : "enable"}-iphone-reminders" ${s.busy ? "disabled" : ""}>${s.busy ? "Подождите…" : s.enabled && permitted ? "Выключить" : "Включить уведомления"}</button>
       ${s.enabled && permitted ? `<button type="button" class="btn" data-action="test-iphone-reminders" ${s.busy ? "disabled" : ""}>Проверить уведомление</button>` : ""}
     </div>
-    ${s.total > s.pending && !s.error ? '<span class="muted" style="font-size:13px">Запланированы ближайшие напоминания. Остальные добавятся при следующем открытии MARK.</span>' : ""}
+    ${s.total > s.pending && !s.error ? '<span class="muted" style="font-size:13px">Запланированы ближайшие напоминания. Остальные добавятся при следующем открытии Mark.</span>' : ""}
     ${s.message ? `<span class="form-msg" role="status">${esc(s.message)}</span>` : ""}
     ${s.error ? `<span class="form-msg bad" role="alert">${esc(s.error)}</span><button type="button" class="btn small" data-action="retry-iphone-reminders">Повторить</button>` : ""}
-    <span class="muted" style="font-size:13px">Изменения с другого устройства учитываются после синхронизации MARK на этом iPhone. Если до задачи осталось меньше 30 минут, новое напоминание уже не ставится.</span>
+    <span class="muted" style="font-size:13px">Изменения с другого устройства учитываются после синхронизации Mark на этом iPhone. Если до задачи осталось меньше 30 минут, новое напоминание уже не ставится.</span>
   </section>`;
 }
 
@@ -1090,9 +1265,9 @@ export function renderProfile(ctx) {
       ${renderIphoneReminders(ctx.iphoneReminders)}
       ${ctx.iphoneWidget ? `<section class="card" aria-label="Виджет на iPhone">
         <div class="card-head"><h2>Виджет на iPhone</h2></div>
-        <p class="muted">Зажми свободное место на главном экране iPhone → «Изменить» → «Добавить виджет» → MARK. «Сегодня в MARK» — маленький и средний. «План на день» — большой список задач.</p>
-        <p class="muted">Для экрана блокировки: зажми экран → «Настроить» → «Экран блокировки» → область виджетов под часами → MARK → «План на день». Карточка показывает до трёх задач; нажатие открывает весь список.</p>
-        <p class="muted">Виджет «Сегодня» показывает задачи и открывает их по нажатию. После изменений открой MARK — iOS обновит виджет.</p>
+        <p class="muted">Зажми свободное место на главном экране iPhone → «Изменить» → «Добавить виджет» → Mark. «Сегодня в Mark» — маленький и средний. «План на день» — большой список задач.</p>
+        <p class="muted">Для экрана блокировки: зажми экран → «Настроить» → «Экран блокировки» → область виджетов под часами → Mark → «План на день». Карточка показывает до трёх задач; нажатие открывает весь список.</p>
+        <p class="muted">Виджет «Сегодня» показывает задачи и открывает их по нажатию. После изменений открой Mark — iOS обновит виджет.</p>
         ${ctx.iphoneWidget.error ? `<p class="error">${esc(ctx.iphoneWidget.error)}</p>` : ""}
       </section>` : ""}
 
@@ -1168,14 +1343,15 @@ function isoFromMs(ms) {
 // ------------------------------------------------------------ вход, заставка --
 
 export function renderSplash() {
-  return `<div class="center-screen"><div class="brand" style="font-size:22px"><span class="brand-mark">M</span>MARK</div></div>`;
+  // Совпадает с экраном загрузки iOS (LaunchScreen): переход незаметен.
+  return `<div class="c-splash" role="img" aria-label="Mark">${markSymbol(84, { color: "#FFFFFF", label: null })}</div>`;
 }
 
 export function renderAuth(a) {
   const recovery = a.mode === "recover";
   return `<div class="center-screen"><section class="card auth-card" aria-label="${recovery ? "Восстановление пароля" : a.mode === "signup" ? "Регистрация" : "Вход"}">
-    <div class="brand"><span class="brand-mark">M</span>MARK</div>
-    <span class="muted" style="text-align:center;font-size:14px">${recovery ? "Восстановление пароля" : "Планировщик задач"}</span>
+    <div class="c-auth-brand"><img src="icons/icon-180.png?v=7" alt="" width="72" height="72"><span>Mark</span></div>
+    <span class="muted" style="text-align:center;font-size:15px">${recovery ? "Восстановление пароля" : a.mode === "signup" ? "Регистрация" : "Вход"}</span>
     <form data-action="auth-submit">
       <label class="field"><span>Email</span><input class="input" type="email" name="email" data-key="au-email" data-draft="auth.email" value="${esc(a.email || "")}" autocomplete="username" required></label>
       ${recovery ? "" : `<label class="field"><span>Пароль</span><input class="input" type="password" name="password" data-key="au-pass" autocomplete="${a.mode === "signup" ? "new-password" : "current-password"}" minlength="6" required></label>`}
