@@ -827,8 +827,13 @@ const actions = {
   toggle: (el) => {
     const t = rows.tasks.find((x) => x.id === el.dataset.id);
     if (!t) return;
-    store.setCompleted(t.id, !t.completed);
+    const completing = !t.completed;
+    store.setCompleted(t.id, completing);
     if (el.dataset.close) ui.editor = null;
+    // Случайное завершение отменяется сразу; повторное касание отметки — тоже отмена.
+    if (completing) showToast("Задача выполнена", "Отменить", () => store.setCompleted(t.id, false));
+    else if (ui.toast?.text === "Задача выполнена") { clearTimeout(toastTimer); ui.toast = null; }
+    render();
   },
   "delete-task": (el) => {
     const t = rows.tasks.find((x) => x.id === el.dataset.id);

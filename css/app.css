@@ -814,3 +814,25 @@ html { overflow-x: clip; }
   .sheet { bottom: var(--kb, 0px); max-height: calc(100dvh - var(--kb, 0px) - var(--safe-top) - 16px); transition: bottom var(--kb-dur, 0.25s) cubic-bezier(0.38, 0.7, 0.125, 1); }
   .kb-open .sheet { padding-bottom: 16px; }
 }
+
+/* Выбранный день календаря: «По времени», «В течение дня», «Выполнено» */
+.c-day { display: flex; flex-direction: column; gap: 16px; }
+.c-day-head { display: flex; flex-direction: column; gap: 2px; }
+.c-day-head h2 { font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }
+.c-cal-row { align-items: flex-start; }
+.c-cal-row .check { margin-top: 2px; }
+.c-cal-row .task-body { min-height: 26px; }
+.c-time { width: 48px; flex-shrink: 0; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; line-height: 1.35; padding-top: 1px; }
+.c-time b { font-size: 16px; font-weight: 600; }
+.c-time small { font-size: 13px; color: var(--text-dim); }
+.c-done { border-top: 1px solid var(--divider); }
+.c-done summary {
+  list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  min-height: 48px; font-size: 16px; font-weight: 600; color: var(--text-dim); cursor: pointer;
+}
+.c-done summary::-webkit-details-marker { display: none; }
+.c-done summary svg { transition: transform 0.2s ease; }
+.c-done[open] summary svg { transform: rotate(90deg); }
+.c-done .task-title { color: var(--text-dim); }
+.c-day-add { align-self: flex-start; }
+.c-done .task.done .task-title { text-decoration: none; }

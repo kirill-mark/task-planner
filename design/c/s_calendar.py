@@ -145,3 +145,80 @@ def build():
     add("K08", "Light", "Светлая тема", L, day20(L))
     n = Ctx(w=360, h=780)
     add("K09", "Narrow", "360 × 780", n, day20(n))
+
+    # Выбранный день, упрощённый (ТЗ «упростить отображение задач в календаре»)
+    build_day_list()
+
+
+# Данные со скриншота владельца: суббота, 24 октября
+TIMED = [("13:30", None, "Созвон The Religion", []), ("16:00", "17:30", "Выкладка шестой серии «МАЖОРЧИК»", ["KINOMARK"])]
+ALLDAY = [("Посмотреть договор «МАЖОРЧИК»", [], None), ("Обложка 6-ая серия «МАЖОРЧИК»", ["KINOMARK"], None),
+          ("написать сценаристам под проекты Herbalife и The Religion", [], None),
+          ("Отправить договор The Religion", ["The Religion"], ("today", "до 15:00")),
+          ("Закрыть акт за сентябрь", ["KINOMARK"], ("overdue", "22 окт"))]
+DONE = ["Упаковать идею The Religion", "Созвон с Жазирой"]
+
+
+def day_row(c, title, extra=(), time=None, end=None, due=None, done=False):
+    t, s = c.t, c.s
+    tm = ""
+    if time:
+        small = f'<small style="font-size: {s["small"]}px; color: {t["text2"]}">{end}</small>' if end else ""
+        tm = f'<span aria-hidden="true" style="width: {round(s["base"] * 3)}px; flex-shrink: 0; display: flex; flex-direction: column; font-variant-numeric: tabular-nums; line-height: 1.35"><b style="font-weight: 600">{time}</b>{small}</span>'
+    meta_parts = []
+    if due:
+        kind, val = due
+        meta_parts.append(when(c, None, val, kind))
+    meta_parts += [f"<span>{esc(x)}</span>" for x in extra]
+    meta = f'<div class="meta">{"".join(meta_parts)}</div>' if meta_parts else ""
+    ttl_style = f"color: {t['text2']};" if done else ""
+    return f'<div class="row" style="align-items: flex-start">{tm}{check(c, done)}<div style="flex: 1; min-width: 0"><div style="{ttl_style}">{esc(title)}</div>{meta}</div></div>'
+
+
+def day_list(c, timed=TIMED, allday=ALLDAY, done=DONE, done_open=False, state=None, date="Суббота, 24 октября"):
+    t, s = c.t, c.s
+    n_open = len(timed) + len(allday)
+    sub = " · ".join(x for x in [f"{n_open} {'задача осталась' if n_open == 1 else 'задачи осталось' if 2 <= n_open <= 4 else 'задач осталось'}" if n_open else "", f"{len(done)} выполнено" if done else ""] if x)
+    sec = lambda title, rows: f'<section style="display: flex; flex-direction: column"><h2 class="sec" style="font-size: {s["base"]}px">{title}</h2><div>{"".join(rows)}</div></section>' if rows else ""
+    head = f'<div style="display: flex; flex-direction: column; gap: 2px"><h2 style="margin: 0; font-size: {s["h2"] + 3}px; font-weight: 700">{date}</h2>{f"<span class=lbl>{sub}</span>" if sub else ""}</div>'
+    st = ""
+    if state == "empty":
+        st = f'<div style="text-align: center; padding: 28px 0 8px; font-weight: 600; font-size: {s["h2"]}px">На этот день пока нет задач</div>'
+    elif state == "alldone":
+        st = f'<div style="text-align: center; padding: 28px 0 8px; font-weight: 600; font-size: {s["h2"]}px">Все задачи на сегодня выполнены</div>'
+    done_rows = "".join(day_row(c, x, done=True) for x in done) if done_open else ""
+    done_html = (f'<div style="border-top: 1px solid {t["divider"]}"><div style="display: flex; justify-content: space-between; align-items: center; min-height: 48px; font-weight: 600; color: {t["text2"]}">'
+                 f'<span>Выполнено · {len(done)}</span><span style="display: flex; transform: rotate({90 if done_open else 0}deg)">{icon("chev", 16)}</span></div>{done_rows}</div>') if done else ""
+    add_btn = f'<a href="C-C05-AddDate.dc.html" style="align-self: flex-start; min-height: 40px; padding: 0 14px; border-radius: 20px; background: {t["surface"]}; border: 1px solid {t["border"]}; display: flex; align-items: center; gap: 6px; font-size: {s["pill"]}px">{icon("plus", 16)}Добавить задачу</a>'
+    return f'''{cal_head(c)}
+    {week(c, 24, 24, dots=(19, 20, 21, 22, 23, 24))}
+    {head}
+    {st}
+    {sec("По времени", [day_row(c, n, e, tm, en) for tm, en, n, e in timed])}
+    {sec("В течение дня", [day_row(c, n, e, due=d) for n, e, d in allday])}
+    {done_html}
+    {add_btn}'''
+
+
+def build_day_list():
+    D = Ctx()
+    add("K10", "DayList", "День — по времени и в течение дня", D, root(D, day_list(D), nav="cal"), True)
+    L = Ctx(LIGHT)
+    add("K11", "DayListLight", "День — светлая тема", L, root(L, day_list(L), nav="cal"))
+    c = Ctx()
+    add("K12", "DayDoneOpen", "День — раскрыто «Выполнено»", c, root(c, day_list(c, done_open=True), nav="cal", scroll_end=True))
+    c = Ctx()
+    ov = toast(c, "Задача выполнена", "Отменить", "C-K10-DayList.dc.html", ic="check")
+    add("K13", "DayCompleted", "День — задача выполнена, «Отменить»", c, root(c, day_list(c, allday=ALLDAY[1:], done=["Посмотреть договор «МАЖОРЧИК»"] + DONE), nav="cal", overlay=ov), True)
+    c = Ctx()
+    add("K14", "DayEmpty", "День — задач нет", c, root(c, day_list(c, [], [], [], state="empty", date="Воскресенье, 25 октября"), nav="cal"))
+    c = Ctx()
+    add("K15", "DayAllDone", "День — всё выполнено", c, root(c, day_list(c, [], [], DONE + ["Отправить договор The Religion"], state="alldone"), nav="cal"))
+    L = Ctx(LIGHT)
+    add("K16", "DayAllDoneLight", "День — всё выполнено, светлая тема", L, root(L, day_list(L, [], [], DONE, done_open=True, state="alldone"), nav="cal"))
+    n = Ctx(w=360, h=780)
+    add("K17", "DayNarrow", "День — 360 × 780, длинные названия", n, root(n, day_list(n), nav="cal", scroll_end=True))
+    g = Ctx(s=LARGE)
+    add("K18", "DayLarge", "День — крупный текст", g, root(g, day_list(g), nav="cal", scroll_end=True))
+    gl = Ctx(LIGHT, LARGE)
+    add("K19", "DayLargeLight", "День — крупный текст, светлая тема", gl, root(gl, day_list(gl), nav="cal"))

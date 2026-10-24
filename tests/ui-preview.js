@@ -64,6 +64,9 @@ const rows = {
     { id: "t12", title: "Смета для Palmira Istra", group_id: "g2", due_date: d(4) },
     { id: "t13", title: "Отчёт за сентябрь", group_id: "g2", planned_date: today, completed: true, completed_at: new Date().toISOString() },
     { id: "t14", title: "Оплатить аренду студии", group_id: "g2", planned_date: today, due_date: today },
+    { id: "t15", title: "написать сценаристам под проекты Herbalife и The Religion", group_id: null, planned_date: today, position: 3 },
+    { id: "t16", title: "Отправить договор The Religion", group_id: "g1", due_date: today, due_time: "15:00:00", position: 4 },
+    { id: "t17", title: "Созвон с Жазирой", group_id: null, planned_date: today, planned_time: "09:00:00", completed: true },
   ].map((t) => ({ notes: "", planned_date: null, planned_time: null, due_date: null, due_time: null, duration_minutes: null, priority: "normal", completed: false, position: 0, ...t })),
 };
 

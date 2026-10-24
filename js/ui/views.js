@@ -7,7 +7,7 @@
 import { esc, plural, longDate, shortDate, relativeDay, hhmm, minutesOf, timeOf, durationText,
   weekHeader, monthTitle, addDays, parseIso, capitalize } from "./lib.js";
 import { tasksOfDay, dayProgress, overdue, overdueKind, inbox, nextDays, upcoming, monthMarks,
-  monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder, isOverdue, missed } from "./derive.js";
+  monthGrid, dayLoad, pathOf, hasTime, isOpen, dayOrder, isOverdue, missed, onDay } from "./derive.js";
 import { greetingText } from "../assistant-chats.js";
 import { icons, blob, markSymbol } from "./icons.js";
 
@@ -1049,10 +1049,9 @@ export function renderCalendar(ctx) {
   const grid = monthGrid(y, m - 1, ctx.settings.week_start);
   const marks = monthMarks(ctx.rows, grid[0].iso, grid[grid.length - 1].iso);
   const sel = ctx.ui.selectedDate || ctx.today;
-  const legend = ctx.rows.sections.map((s) => `<span class="row" style="gap:6px"><span class="sq" style="background:${esc(s.color)};width:6px;height:6px"></span>${esc(s.name)}</span>`).join("");
   const month = `<section class="card cal-big" aria-label="Месяц">
       <div class="cal-grid">${weekHeader(ctx.settings.week_start).map((w) => `<span class="cal-wd">${w}</span>`).join("")}${grid.map((c) => dayCell(ctx, c, marks[c.iso], sel, true)).join("")}</div>
-      <div class="row muted" style="flex-wrap:wrap;gap:14px;font-size:12px">${legend}<span style="margin-left:auto">Точки — есть открытые дела, не часы занятости</span></div>
+      <span class="c-note">Точка — в этот день есть открытые задачи.</span>
     </section>`;
   return `<header class="page-head">
       <div class="row" style="flex-wrap:wrap"><h1>Календарь</h1>
@@ -1065,42 +1064,51 @@ export function renderCalendar(ctx) {
     <div class="grid-home"><div class="col">${month}</div><div class="col">${renderDayPanel(ctx, sel)}</div></div>`;
 }
 
+// Выбранный день (ТЗ «упростить отображение задач в календаре»): «По времени» —
+// незавершённые задачи с назначенным временем; «В течение дня» — без времени, в
+// порядке пользователя; внизу свёрнутое «Выполнено». Без шкалы, расчёта
+// свободного времени и подписей о неуказанной длительности.
+function calRow(ctx, t, { timed = false } = {}) {
+  const today = ctx.today;
+  const project = projectName(ctx.rows, t.group_id);
+  const start = timed ? minutesOf(t.planned_time) : null;
+  const time = timed ? `<span class="c-time" aria-hidden="true"><b>${hhmm(t.planned_time)}</b>${t.duration_minutes ? `<small>${timeOf(start + t.duration_minutes)}</small>` : ""}</span>` : "";
+  const meta = [
+    duePill(t, today, ctx.nowMin),
+    t.duration_minutes && !timed ? `<span>${esc(durationText(t.duration_minutes))}</span>` : "",
+    project ? `<span>${esc(project)}</span>` : "",
+    t.priority === "high" && !t.completed ? '<span class="badge">Важно</span>' : "",
+  ].join("");
+  const label = (timed ? hhmm(t.planned_time) + (t.duration_minutes ? "–" + timeOf(start + t.duration_minutes) : "") + ", " : "") + t.title;
+  return `<div class="task c-cal-row ${t.completed ? "done" : ""}">${time}
+    <button type="button" class="check ${t.completed ? "done" : ""}" data-action="toggle" data-id="${esc(t.id)}" aria-pressed="${t.completed ? "true" : "false"}" aria-label="${t.completed ? "Вернуть в работу" : "Отметить выполненной"}: ${esc(label)}">${t.completed ? icons.check() : ""}</button>
+    <button type="button" class="task-body" data-action="open-task" data-id="${esc(t.id)}"><span class="task-title">${esc(t.title)}</span>${meta.trim() ? `<span class="task-meta">${meta}</span>` : ""}</button>
+  </div>`;
+}
+
 function renderDayPanel(ctx, day) {
   const { rows } = ctx;
-  const list = tasksOfDay(rows, day);
-  const load = dayLoad(rows, day, ctx.settings.workday);
-  const ws = load.workday.start, we = load.workday.end;
-  const startH = Math.floor(Math.min(ws, ...load.blocks.map((b) => b.start)) / 60);
-  const endH = Math.ceil(Math.max(we, ...load.blocks.map((b) => b.end)) / 60);
-  const H = 34;
-  const hours = [];
-  for (let h = startH; h <= endH; h++) hours.push(`<div class="hour" style="top:${(h - startH) * H}px"><span>${String(h).padStart(2, "0")}:00</span><i></i></div>`);
-  const blocks = load.blocks.map((b) => {
-    const top = ((b.start - startH * 60) / 60) * H;
-    const height = Math.max(22, (b.task.duration_minutes / 60) * H - 2);
-    return `<button type="button" class="block" style="top:${top}px;height:${height}px" data-action="open-task" data-id="${esc(b.task.id)}">
-      <b>${esc(b.task.title)}</b>${height > 34 ? `<small>${timeOf(b.start)}–${timeOf(b.end)}</small>` : ""}</button>`;
-  }).join("");
-  const timedNoDur = list.filter((t) => isOpen(t) && t.planned_date === day && t.planned_time && !t.duration_minutes);
-  const noTime = list.filter((t) => isOpen(t) && t.planned_date === day && !t.planned_time);
-  const dues = list.filter((t) => isOpen(t) && t.due_date === day && t.planned_date !== day);
+  const list = rows.tasks.filter((t) => onDay(t, day));
+  const open = list.filter(isOpen);
   const done = list.filter((t) => t.completed);
-  const openCount = list.length - done.length; // то же число, что в ячейке месяца (A33)
-  const freeText = load.free.length ? load.free.map((f) => `${timeOf(f.start)}–${timeOf(f.end)}`).join(" · ") : "нет";
-  const busyText = load.busy ? `Занято ${load.unknown ? "минимум " : ""}${durationText(load.busy)}` : load.unknown ? "Занятость неизвестна" : "Ничего не запланировано по времени";
-  const sectionList = (title, items, fmt) => items.length ? `<div style="display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--divider);padding-top:10px">
-      <span class="eyebrow">${title}</span>${items.map((t) => `<button type="button" class="up-item" style="justify-content:space-between;min-height:36px" data-action="open-task" data-id="${esc(t.id)}"><span class="task-title">${esc(t.title)}</span><span class="muted" style="font-size:13px;white-space:nowrap">${esc(fmt(t))}</span></button>`).join("")}</div>` : "";
-  return `<section class="card" aria-label="${esc(longDate(day))}">
-    <div class="card-head"><h2>${esc(longDate(day))}</h2><span class="meta">${openCount} ${plural(openCount, "открытое", "открытых", "открытых")}${done.length ? ` · ${done.length} ${plural(done.length, "выполнено", "выполнено", "выполнено")}` : ""}</span></div>
-    <div class="free-box"><span>Рабочий день ${timeOf(ws)}–${timeOf(we)}. ${esc(busyText)}${load.unknown ? `; у ${load.unknown} ${plural(load.unknown, "дела", "дел", "дел")} длительность не указана` : ""}.</span>
-      <span class="ok">Свободно: ${esc(freeText)}${load.unknown ? " — без учёта дел без длительности" : ""}</span></div>
-    ${load.blocks.length ? `<div class="timeline" style="height:${(endH - startH) * H + 8}px">${hours.join("")}${blocks}</div>` : ""}
-    ${sectionList("Время есть, длительность не указана", timedNoDur, (t) => hhmm(t.planned_time))}
-    ${sectionList("Без времени", noTime, (t) => t.duration_minutes ? durationText(t.duration_minutes) : "длительность не указана")}
-    ${sectionList("Дедлайны — время не занимают", dues, (t) => t.due_time ? "до " + hhmm(t.due_time) : "до конца дня")}
-    ${sectionList("Выполнено", done, () => "")}
-    ${list.length ? "" : '<div class="empty">На этот день пока нет задач.</div>'}
-    <button type="button" class="btn small" style="align-self:flex-start" data-action="new-task" data-date="${day}">${icons.plus(16)}Задача на этот день</button>
+  const timed = open.filter((t) => t.planned_date === day && t.planned_time)
+    .sort((a, b) => hhmm(a.planned_time).localeCompare(hhmm(b.planned_time)) || (a.position ?? 0) - (b.position ?? 0));
+  const timedIds = new Set(timed.map((t) => t.id));
+  const allDay = open.filter((t) => !timedIds.has(t.id)).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const isToday = day === ctx.today;
+  const sub = list.length ? [open.length ? `${open.length} ${plural(open.length, "задача осталась", "задачи осталось", "задач осталось")}` : "",
+    done.length ? `${done.length} выполнено` : ""].filter(Boolean).join(" · ") : "";
+  const section = (title, rowsHtml) => rowsHtml ? `<section class="c-section" aria-label="${title}"><div class="c-section-head"><h2>${title}</h2></div><div class="task-list">${rowsHtml}</div></section>` : "";
+  const state = !list.length ? `<div class="c-empty"><b>На этот день пока нет задач</b></div>`
+    : !open.length ? `<div class="c-empty"><b>${isToday ? "Все задачи на сегодня выполнены" : "Все задачи на этот день выполнены"}</b></div>` : "";
+  return `<section class="c-day" aria-label="${esc(longDate(day))}">
+    <div class="c-day-head"><h2>${esc(longDate(day))}</h2>${sub ? `<span class="c-label">${sub}</span>` : ""}</div>
+    ${state}
+    ${section("По времени", timed.map((t) => calRow(ctx, t, { timed: true })).join(""))}
+    ${section("В течение дня", allDay.map((t) => calRow(ctx, t)).join(""))}
+    ${done.length ? `<details class="c-done" data-detail="cal-done-${day}"><summary><span>Выполнено · ${done.length}</span>${icons.right(16)}</summary>
+      <div class="task-list">${done.map((t) => calRow(ctx, t)).join("")}</div></details>` : ""}
+    <button type="button" class="c-soft-btn c-day-add" data-action="new-task" data-date="${day}">${icons.plus(16)}Добавить задачу</button>
   </section>`;
 }
 

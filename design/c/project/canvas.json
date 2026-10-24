@@ -820,6 +820,88 @@
    "title": "K09. 360 × 780",
    "page": "calendar"
   },
+  "C-K10-DayList.dc.html": {
+   "x": 1380,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K10. День — по времени и в течение дня",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K11-DayListLight.dc.html": {
+   "x": 1850,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K11. День — светлая тема",
+   "page": "calendar"
+  },
+  "C-K12-DayDoneOpen.dc.html": {
+   "x": 2320,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K12. День — раскрыто «Выполнено»",
+   "page": "calendar"
+  },
+  "C-K13-DayCompleted.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K13. День — задача выполнена, «Отменить»",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K14-DayEmpty.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K14. День — задач нет",
+   "page": "calendar"
+  },
+  "C-K15-DayAllDone.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K15. День — всё выполнено",
+   "page": "calendar"
+  },
+  "C-K16-DayAllDoneLight.dc.html": {
+   "x": 1410,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K16. День — всё выполнено, светлая тема",
+   "page": "calendar"
+  },
+  "C-K17-DayNarrow.dc.html": {
+   "x": 1880,
+   "y": 2008,
+   "w": 360,
+   "h": 780,
+   "title": "K17. День — 360 × 780, длинные названия",
+   "page": "calendar"
+  },
+  "C-K18-DayLarge.dc.html": {
+   "x": 2320,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K18. День — крупный текст",
+   "page": "calendar"
+  },
+  "C-K19-DayLargeLight.dc.html": {
+   "x": 0,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "K19. День — крупный текст, светлая тема",
+   "page": "calendar"
+  },
   "C-A01-Start.dc.html": {
    "x": 0,
    "y": 0,
@@ -1158,6 +1240,16 @@
   "C-K07-End.dc.html",
   "C-K08-Light.dc.html",
   "C-K09-Narrow.dc.html",
+  "C-K10-DayList.dc.html",
+  "C-K11-DayListLight.dc.html",
+  "C-K12-DayDoneOpen.dc.html",
+  "C-K13-DayCompleted.dc.html",
+  "C-K14-DayEmpty.dc.html",
+  "C-K15-DayAllDone.dc.html",
+  "C-K16-DayAllDoneLight.dc.html",
+  "C-K17-DayNarrow.dc.html",
+  "C-K18-DayLarge.dc.html",
+  "C-K19-DayLargeLight.dc.html",
   "C-A01-Start.dc.html",
   "C-A02-Typing.dc.html",
   "C-A03-Waiting.dc.html",
