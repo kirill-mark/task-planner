@@ -182,6 +182,15 @@ document.addEventListener("click", async (e) => {
   else if (a === "assistant-ask") { ui.assistant.input = el.dataset.text; }
   else if (a === "assistant-voice") { ui.assistant.voice = { phase: (ui.assistant.voice?.phase || "idle") === "idle" ? "recording" : "idle" }; }
   else if (a === "open-task") { const t = rows.tasks.find((x) => x.id === el.dataset.id); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
+  else if (a === "search-open") ui.searchOpen = true;
+  else if (a === "search-close") { ui.searchOpen = false; ui.search = ""; }
+  else if (a === "tasks-mode-menu") ui.tasksMenu = !ui.tasksMenu;
+  else if (a === "tasks-mode") { ui.tasksMode = el.dataset.mode; ui.tasksMenu = false; }
+  else if (a === "tasks-filters") ui.tasksFilters = true;
+  else if (a === "tasks-filters-close") { ui.tasksFilters = false; if (el.tagName === "A") { location.hash = el.getAttribute("href"); } }
+  else if (a === "project-menu") ui.projectMenu = !ui.projectMenu;
+  else if (a === "project-new") ui.projectForm = { id: null, name: "" };
+  else if (a === "project-form-close") ui.projectForm = null;
   else if (a === "main-pick") ui.mainPick = true;
   else if (a === "main-pick-close") ui.mainPick = false;
   else if (a === "editor-more") ui.editor.mode = "full";
@@ -231,5 +240,7 @@ if (q.get("edit")) { const t = rows.tasks.find((x) => x.id === q.get("edit")); u
 if (q.get("manage")) ui.manage = { form: null };
 if (q.get("layout")) { ui.layoutDraft = { desktop: [{ type: "summary", col: "main" }, { type: "plan", col: "main" }, { type: "calendar", col: "side" }, { type: "upcoming", col: "side" }], phone: [{ type: "summary" }, { type: "upcoming" }, { type: "calendar" }, { type: "plan" }, { type: "progress" }] }; }
 if (q.get("focus")) ui.focusPick = true;
+if (q.get("mode")) ui.tasksMode = q.get("mode");
+if (q.get("searching")) ui.searchOpen = true;
 if (q.get("quick")) ui.editor = { id: null, error: "", mode: "quick", restored: q.get("quick") === "draft", draft: { title: q.get("quick") === "empty" ? "" : "Забрать оборудование из проката на Старом Арбате и вернуть залог", notes: "", group_id: q.get("quick") === "draft" ? "g2" : "", planned_date: "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
 render();

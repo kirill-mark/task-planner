@@ -96,6 +96,10 @@ function syncWorkday() {
 }
 
 const today0 = todayIso();
+function readTasksMode() {
+  try { return localStorage.getItem("mark:tasks-mode") === "projects" ? "projects" : "list"; } catch { return "list"; }
+}
+
 const ui = {
   quick: "",
   search: "",
@@ -104,6 +108,9 @@ const ui = {
   layoutMsg: "",
   focusPick: false,
   mainPick: false,   // лист выбора главной задачи
+  tasksMode: readTasksMode(), // «Списком» | «По проектам», хранится на телефоне
+  tasksMenu: false, tasksFilters: false, searchOpen: false,
+  projectQuery: "", projectMenu: false, projectForm: null, // { id|null, name, error }
   toast: null,       // { text, label, action } — сообщение внизу на 5 секунд
   assistant: { chat: [], input: "", busy: false },
   editor: null,      // { id|null, draft, error }
@@ -164,6 +171,8 @@ window.addEventListener("hashchange", () => {
   const from = lastHash;
   lastHash = location.hash || "#/home";
   route = parseRoute();
+  ui.tasksMenu = false; ui.tasksFilters = false; ui.projectMenu = false;
+  if (route.name !== "tasks") ui.searchOpen = false;
   if (route.name === "assistant" && !from.startsWith("#/assistant")) createFreshChat();
   if (route.name !== "assistant") deviceSpeech?.cancel();
   if (route.name === "profile" && !from.startsWith("#/profile")) ui.profileFrom = from;
@@ -296,6 +305,13 @@ function setDraft(path, value) {
   else if (head === "profile") ui.profile[rest[0]] = value;
   else if (head === "auth") ui.auth[rest[0]] = value;
   else if (head === "search") { ui.search = value; render(); }
+  else if (head === "projectQuery") { ui.projectQuery = value; render(); }
+  else if (head === "projectForm" && ui.projectForm) {
+    ui.projectForm.name = value;
+    ui.projectForm.error = "";
+    const ok = root.querySelector(".c-sheet-ok");
+    if (ok) ok.disabled = !value.trim();
+  }
   else if (head === "assistantMemory") ui.assistant.memoryDraft = value;
   else if (head === "assistantInput") {
     ui.assistant.input = value;
@@ -723,6 +739,9 @@ const actions = {
     else if (route.name === "tasks" && route.params.view === "today") defaults.planned_date = todayIso();
     else if (settings.new_task_date === "today") defaults.planned_date = todayIso();
     if (el.dataset.group) defaults.group_id = el.dataset.group;
+    else if (route.name === "tasks" && route.params.project) defaults.group_id = route.params.project;
+    if (el.dataset.title) defaults.title = el.dataset.title;
+    ui.searchOpen = false;
     openEditor(null, defaults);
   },
   "open-task": (el) => openEditor(el.dataset.id),
@@ -749,6 +768,42 @@ const actions = {
   "draft-delete": () => {
     clearDraft();
     if (ui.editor) ui.editor = { id: null, error: "", mode: "quick", draft: emptyDraft({}) };
+    render();
+  },
+  "search-open": () => { ui.searchOpen = true; render(); },
+  "search-close": () => { ui.searchOpen = false; ui.search = ""; render(); },
+  "tasks-mode-menu": () => { ui.tasksMenu = !ui.tasksMenu; render(); },
+  "tasks-mode": (el) => {
+    ui.tasksMode = el.dataset.mode === "projects" ? "projects" : "list";
+    try { localStorage.setItem("mark:tasks-mode", ui.tasksMode); } catch { /* хранилище недоступно */ }
+    ui.tasksMenu = false;
+    if (route.params.view && route.params.view !== "all") go("#/tasks"); else render();
+  },
+  "tasks-filters": () => { ui.tasksFilters = true; render(); },
+  "tasks-filters-close": (el) => { ui.tasksFilters = false; if (el.tagName === "A") go(el.getAttribute("href")); else render(); },
+  "project-menu": () => { ui.projectMenu = !ui.projectMenu; render(); },
+  "project-new": () => { ui.projectForm = { id: null, name: "", error: "" }; render(); },
+  "project-rename": (el) => {
+    const g = rows.groups.find((x) => x.id === el.dataset.id);
+    ui.projectMenu = false;
+    if (g) ui.projectForm = { id: g.id, name: g.name, error: "" };
+    render();
+  },
+  "project-form-close": () => { ui.projectForm = null; render(); },
+  "project-delete": (el) => {
+    const g = rows.groups.find((x) => x.id === el.dataset.id);
+    ui.projectMenu = false;
+    if (!g) return render();
+    const n = rows.tasks.filter((t) => t.group_id === g.id).length;
+    ui.confirm = { title: `Удалить проект «${g.name}»?`, danger: true, ok: "Удалить проект",
+      text: n ? `Удалится только проект. ${n} ${plural(n, "задача останется", "задачи останутся", "задач останутся")} и будут без проекта — их можно найти в общем списке.`
+        : "В проекте нет задач. Удалится только сам проект.",
+      onOk: async () => {
+        await store.deleteProject(g.id);
+        go("#/tasks?view=projects");
+        showToast(`Проект «${g.name}» удалён`);
+        render();
+      } };
     render();
   },
   "main-pick": () => { ui.mainPick = true; render(); },
@@ -1268,6 +1323,23 @@ const submits = {
   "quick-add": (form) => quickAdd(new FormData(form).get("title") || ""),
   "assistant-send": (form) => askAssistant(new FormData(form).get("message") || ""),
   "save-structure": () => saveStructure(),
+  "project-save": () => {
+    const f = ui.projectForm;
+    const name = String(f?.name || "").trim();
+    if (!f || !name) return;
+    const taken = rows.groups.some((g) => g.id !== f.id && g.name.trim().toLowerCase() === name.toLowerCase());
+    if (taken) { f.error = "Проект с таким названием уже есть. Выберите другое название."; render(); return; }
+    if (f.id) store.updateGroup(f.id, { name });
+    else {
+      const id = store.createGroupV2({ name, section_id: null });
+      if (!id) { f.error = "Хранилище на телефоне ещё не готово. Попробуйте через пару секунд."; render(); return; }
+      ui.projectForm = null;
+      go(`#/tasks?project=${encodeURIComponent(id)}`);
+      return;
+    }
+    ui.projectForm = null;
+    render();
+  },
   "confirm-submit": async () => {
     const cf = ui.confirm;
     ui.confirm = null;
@@ -1382,6 +1454,8 @@ document.addEventListener("keydown", (e) => {
   else if (ui.assistant.panel) ui.assistant.panel = null;
   else if (ui.manage) ui.manage = null;
   else if (ui.mainPick) ui.mainPick = false;
+  else if (ui.projectForm) ui.projectForm = null;
+  else if (ui.tasksMenu || ui.tasksFilters || ui.projectMenu) { ui.tasksMenu = ui.tasksFilters = ui.projectMenu = false; }
   else if (ui.editor) { closeEditor(); return; }
   else return;
   render();

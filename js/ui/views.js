@@ -116,7 +116,7 @@ export function renderShell(ctx, content) {
       </a>
     </nav>
     <main class="main" id="main">
-      ${route !== "profile" && route !== "home" ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
+      ${!["profile", "home", "tasks"].includes(route) ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
       ${content}
     </main>
     <nav class="bottom-nav" aria-label="Основная навигация">
@@ -643,7 +643,245 @@ export function renderHome(ctx) {
 
 // -------------------------------------------------------------------- задачи --
 
+// ------------------------------------------- задачи и проекты телефона, концепция C --
+// Макеты T01–T17 и P01–P10 (docs/design-c). Вид «Списком» или «По проектам»
+// сохраняется на телефоне; фильтры — «Все», «Сегодня», «Входящие» и лист «Ещё».
+
+function cSection(title, count, rows, { tone = "", more = "" } = {}) {
+  if (!rows) return "";
+  return `<section class="c-section" aria-label="${esc(title)}">
+    <div class="c-section-head"><h2 class="${tone}">${esc(title)}</h2>${count !== "" ? `<span class="c-label">${count}</span>` : ""}</div>
+    <div class="task-list">${rows}</div>${more}</section>`;
+}
+
+function rowsOf(ctx, list, key, opts = {}) {
+  if (!list.length) return "";
+  const pg = paged(ctx, key, list, opts.step || 50);
+  return pg.shown.map((t) => taskRow(ctx, t, opts)).join("") + pg.more;
+}
+
+function iconBtn(action, label, icon, extra = "") {
+  return `<button type="button" class="c-icon-btn" data-action="${action}" aria-label="${esc(label)}" ${extra}>${icon}</button>`;
+}
+
+function backBar(href, label, right = "") {
+  return `<div class="c-back"><a href="${href}">${icons.left(20)}${esc(label)}</a><span class="grow"></span>${right}</div>`;
+}
+
+// Все открытые задачи по датам: просрочено, сегодня, завтра, позже, без даты.
+function byDate(ctx) {
+  const { rows, today, nowMin } = ctx;
+  const tomorrow = addDays(today, 1);
+  const open = rows.tasks.filter(isOpen);
+  const firstDate = (t) => [t.planned_date, t.due_date].filter((d) => d && d >= today).sort()[0] || null;
+  const late = overdue(rows, today, nowMin);
+  const lateIds = new Set(late.map((t) => t.id));
+  const missedList = missed(rows, today, nowMin);
+  const missedIds = new Set(missedList.map((t) => t.id));
+  const rest = open.filter((t) => !lateIds.has(t.id) && !missedIds.has(t.id));
+  const day = (d) => rest.filter((t) => firstDate(t) === d).sort(dayOrder);
+  const later = rest.filter((t) => firstDate(t) && firstDate(t) > tomorrow).sort((a, b) => firstDate(a).localeCompare(firstDate(b)) || dayOrder(a, b));
+  const nodate = rest.filter((t) => !t.planned_date && !t.due_date);
+  const doneToday = rows.tasks.filter((t) => t.completed && onDayOrDone(t, today)).length;
+  return { late, missedList, today: day(today), tomorrow: day(tomorrow), later, nodate, doneToday, tomorrowIso: tomorrow };
+}
+
+function onDayOrDone(t, today) {
+  return t.planned_date === today || t.due_date === today || String(t.completed_at || "").slice(0, 10) === today;
+}
+
+function listByDate(ctx) {
+  const g = byDate(ctx);
+  const done = g.doneToday ? `<a class="c-done-link" href="#/tasks?view=done">${icons.check(14)}Выполнено сегодня · ${g.doneToday}</a>` : "";
+  const out = [
+    cSection("Просрочено", g.late.length, rowsOf(ctx, g.late, "c-late"), { tone: "bad" }),
+    cSection("Сегодня", g.today.length, rowsOf(ctx, g.today, "c-today", { compactDay: true }), { more: done }),
+    cSection(`Завтра, ${shortDate(g.tomorrowIso, { today: ctx.today })}`, g.tomorrow.length, rowsOf(ctx, g.tomorrow, "c-tomorrow")),
+    cSection("Позже", g.later.length, rowsOf(ctx, g.later, "c-later")),
+    cSection("С прошлых дней", g.missedList.length, rowsOf(ctx, g.missedList, "c-missed")),
+    cSection("Без даты", g.nodate.length, rowsOf(ctx, g.nodate, "c-nodate")),
+  ].join("");
+  return out || (!g.today.length && done ? done : "") || `<div class="empty">Открытых задач нет. Новая задача — кнопкой «+».</div>`;
+}
+
+function listByProject(ctx) {
+  const { rows } = ctx;
+  const open = rows.tasks.filter(isOpen);
+  const groups = visibleGroups(ctx).map((g) => ({ g, name: projectName(rows, g.id), list: open.filter((t) => t.group_id === g.id).sort(dayOrder) }))
+    .filter((x) => x.list.length).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const none = open.filter((t) => !t.group_id).sort(dayOrder);
+  const block = (href, name, list) => `<section class="c-section" aria-label="${esc(name)}">
+      <a class="c-project-head" href="${href}">${icons.folder(18)}<h2>${esc(name)}</h2><span class="c-label">${list.length}</span>${icons.right(16)}</a>
+      <div class="task-list">${list.slice(0, 3).map((t) => taskRow(ctx, t, { showPath: false })).join("")}</div>
+      ${list.length > 3 ? `<a class="c-link c-more" href="${href}">Ещё ${list.length - 3}</a>` : ""}</section>`;
+  return groups.map((x) => block(`#/tasks?project=${encodeURIComponent(x.g.id)}`, x.name, x.list)).join("")
+    + (none.length ? block("#/tasks?view=noproject", "Без проекта", none) : "")
+    + `<a class="c-soft-btn c-all-projects" href="#/tasks?view=projects">${icons.folder(16)}Все проекты</a>`;
+}
+
+function renderFiltersSheet(ctx, c) {
+  const row = (href, label, n, icon) => `<a class="c-li" href="${href}" data-action="tasks-filters-close">${icon}<span class="grow">${label}</span>${n !== "" ? `<span class="c-label">${n}</span>` : ""}${icons.right(16)}</a>`;
+  return `<div class="sheet-scrim" data-action="tasks-filters-close"></div>
+    <section class="sheet c-sheet" role="dialog" aria-modal="true" aria-label="Фильтры">
+      <span class="handle"></span>
+      <div class="sheet-header"><span></span><h2>Показать</h2><button type="button" class="btn quiet small" data-action="tasks-filters-close">Готово</button></div>
+      <div class="c-group">
+        ${row("#/tasks?view=week", "Ближайшие 7 дней", c.week, icons.cal(18))}
+        ${row("#/tasks?view=nodate", "Без даты", c.nodate, icons.inbox(18))}
+        ${row("#/tasks?view=overdue", "Просроченные", c.overdue, icons.alert(18))}
+        ${row("#/tasks?view=done", "Выполненные", "", icons.check(18))}
+        ${row("#/tasks?view=trash", "Корзина", ctx.trash?.status === "ok" ? ctx.trash.tasks.length : "", icons.trash(18))}
+        ${row("#/tasks?view=projects", "Проекты", visibleGroups(ctx).length, icons.folder(18))}
+      </div>
+    </section>`;
+}
+
+function renderSearchPhone(ctx) {
+  const q = (ctx.ui.search || "").trim();
+  const found = q ? ctx.rows.tasks.filter((t) => matchesSearch(t, q)).sort((a, b) => Number(!!a.completed) - Number(!!b.completed) || dayOrder(a, b)) : [];
+  const body = !q ? `<p class="c-note">Поиск по названиям и описаниям, включая выполненные.</p>`
+    : found.length ? `<span class="c-label">Найдено ${found.length}</span><div class="task-list">${rowsOf(ctx, found, "c-search")}</div>`
+    : `<div class="c-empty"><b>Ничего не нашлось</b><span>По запросу «${esc(q)}» задач нет. Поиск идёт по названиям и описаниям, включая выполненные.</span>
+        <button type="button" class="btn small" data-action="new-task" data-title="${esc(q)}">Создать задачу «${esc(q)}»</button></div>`;
+  return `<div class="c-page"><div class="c-search-bar">
+      <label class="c-search-field">${icons.search(18)}<input type="search" data-key="search" data-draft="search" value="${esc(ctx.ui.search || "")}" aria-label="Поиск по задачам" placeholder="Поиск" autocomplete="off" autofocus enterkeyhint="search"></label>
+      <button type="button" class="c-link c-cancel" data-action="search-close">Отмена</button></div>
+    ${body}</div>`;
+}
+
+function renderProjectsPhone(ctx) {
+  const { rows, today, nowMin } = ctx;
+  const q = String(ctx.ui.projectQuery || "").trim().toLowerCase().replace(/ё/g, "е");
+  const list = visibleGroups(ctx).map((g) => {
+    const open = rows.tasks.filter((t) => isOpen(t) && t.group_id === g.id);
+    return { g, name: projectName(rows, g.id), n: open.length, late: open.filter((t) => isOverdue(t, today, nowMin)).length };
+  }).filter((x) => !q || x.name.toLowerCase().replace(/ё/g, "е").includes(q)).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+  const items = list.map((x) => `<a class="c-li" href="#/tasks?project=${encodeURIComponent(x.g.id)}">${icons.folder(18)}
+      <span class="grow"><span>${esc(x.name)}</span><span class="c-label">${x.n ? `${x.n} ${plural(x.n, "задача", "задачи", "задач")}` : "нет задач"}${x.late ? ` · <span class="bad">${x.late} просрочено</span>` : ""}</span></span>${icons.right(16)}</a>`).join("");
+  const empty = !visibleGroups(ctx).length;
+  return `<div class="c-page">${backBar("#/tasks", "Задачи")}
+    <header class="c-title"><div><h1>Проекты</h1>${empty ? "" : `<span class="c-label">${visibleGroups(ctx).length} ${plural(visibleGroups(ctx).length, "проект", "проекта", "проектов")}</span>`}</div></header>
+    ${empty ? `<div class="c-empty"><b>Проектов пока нет</b><span>Проект помогает собрать задачи по одной теме: работа, дом, учёба. Можно обойтись и без проектов.</span>
+        <button type="button" class="btn small" data-action="project-new">Создать проект</button></div>`
+      : `<label class="c-search-field">${icons.search(18)}<input type="search" data-key="project-q" data-draft="projectQuery" value="${esc(ctx.ui.projectQuery || "")}" aria-label="Найти проект" placeholder="Найти проект" autocomplete="off"></label>
+        ${items ? `<div class="c-group">${items}</div>` : `<p class="c-note">Проектов с таким названием нет.</p>`}
+        <button type="button" class="c-soft-btn" data-action="project-new">${icons.plus(16)}Новый проект</button>
+        <p class="c-note">Проект — необязательная группа задач. Задачи без проекта видны в общем списке.</p>`}
+  </div>${renderProjectSheets(ctx)}`;
+}
+
+function renderProjectPhone(ctx, id) {
+  const { rows, today, nowMin } = ctx;
+  const g = rows.groups.find((x) => x.id === id);
+  if (!g) return `<div class="c-page">${backBar("#/tasks?view=projects", "Проекты")}<div class="c-empty"><b>Проект не найден</b><span>Возможно, его удалили на другом устройстве.</span></div></div>`;
+  const all = rows.tasks.filter((t) => t.group_id === id);
+  const open = all.filter(isOpen);
+  const late = open.filter((t) => isOverdue(t, today, nowMin));
+  const lateIds = new Set(late.map((t) => t.id));
+  const todayList = open.filter((t) => !lateIds.has(t.id) && (t.planned_date === today || t.due_date === today)).sort(dayOrder);
+  const todayIds = new Set(todayList.map((t) => t.id));
+  const later = open.filter((t) => !lateIds.has(t.id) && !todayIds.has(t.id) && (t.planned_date || t.due_date))
+    .sort((a, b) => String(a.planned_date || a.due_date).localeCompare(String(b.planned_date || b.due_date)));
+  const nodate = open.filter((t) => !t.planned_date && !t.due_date);
+  const done = all.length - open.length;
+  const opt = { showPath: false };
+  return `<div class="c-page">${backBar("#/tasks?view=projects", "Проекты", iconBtn("project-menu", "Действия с проектом", icons.more(20)))}
+    <header class="c-title"><div><h1>${esc(projectName(rows, id))}</h1><span class="c-label">${open.length} ${plural(open.length, "задача", "задачи", "задач")}${done ? ` · ${done} выполнено` : ""}</span></div></header>
+    ${open.length ? [cSection("Просрочено", late.length, rowsOf(ctx, late, "p-late", opt), { tone: "bad" }),
+      cSection("Сегодня", todayList.length, rowsOf(ctx, todayList, "p-today", { ...opt, compactDay: true })),
+      cSection("Позже", later.length, rowsOf(ctx, later, "p-later", opt)),
+      cSection("Без даты", nodate.length, rowsOf(ctx, nodate, "p-nodate", opt))].join("")
+      : `<div class="c-empty"><b>В проекте нет открытых задач</b><span>Новая задача, добавленная отсюда, попадёт в этот проект.</span></div>`}
+    <button type="button" class="c-soft-btn" data-action="new-task" data-group="${esc(id)}">${icons.plus(16)}Задача в этот проект</button>
+  </div>
+  ${ctx.ui.projectMenu ? `<div class="c-menu-scrim" data-action="project-menu"></div><div class="c-menu" role="menu">
+      <button type="button" role="menuitem" data-action="project-rename" data-id="${esc(id)}">${icons.edit(18)}Переименовать</button>
+      <button type="button" role="menuitem" class="bad" data-action="project-delete" data-id="${esc(id)}">${icons.trash(18)}Удалить проект</button></div>` : ""}
+  ${renderProjectSheets(ctx)}`;
+}
+
+// Создание и переименование: обязательно только название, цвета нет (решение 5).
+function renderProjectSheets(ctx) {
+  const f = ctx.ui.projectForm;
+  if (!f) return "";
+  const title = f.id ? "Переименовать" : "Новый проект";
+  return `<div class="sheet-scrim" data-action="project-form-close"></div>
+    <form class="sheet c-sheet" role="dialog" aria-modal="true" aria-label="${title}" data-action="project-save">
+      <span class="handle"></span>
+      <div class="sheet-header"><button type="button" class="btn quiet small" data-action="project-form-close">Отмена</button><h2>${title}</h2>
+        <button type="submit" class="btn quiet small c-sheet-ok" ${String(f.name || "").trim() ? "" : "disabled"}>${f.id ? "Сохранить" : "Создать"}</button></div>
+      <label class="c-quick-label" for="project-name">Название проекта</label>
+      <input id="project-name" class="c-title-field" name="name" data-key="project-name" data-draft="projectForm.name" value="${esc(f.name || "")}" maxlength="80" autocomplete="off" autofocus enterkeyhint="done">
+      ${f.error ? `<span class="c-note bad" role="alert">${esc(f.error)}</span>` : `<span class="c-note">Обязательно только название.</span>`}
+    </form>`;
+}
+
+function renderTasksPhone(ctx) {
+  const params = ctx.route.params;
+  if (params.project) return renderProjectPhone(ctx, params.project);
+  if (params.view === "projects") return renderProjectsPhone(ctx);
+  if (ctx.ui.searchOpen) return renderSearchPhone(ctx);
+  const { rows, today, nowMin } = ctx;
+  const view = params.view || "all";
+  const mode = ctx.ui.tasksMode === "projects" ? "projects" : "list";
+  const c = { ...counts(ctx), nodate: rows.tasks.filter((t) => isOpen(t) && !t.planned_date && !t.due_date).length };
+  const openCount = rows.tasks.filter(isOpen).length;
+  const filter = (id, label) => `<a class="c-filter" href="#/tasks${id === "all" ? "" : "?view=" + id}" aria-current="${view === id}">${label}</a>`;
+  const head = `<header class="c-title"><div><h1>Задачи</h1><span class="c-label">${openCount} ${plural(openCount, "открытая", "открытые", "открытых")}</span></div>
+      <div class="c-title-actions">${iconBtn("search-open", "Поиск", icons.search(20))}${iconBtn("tasks-mode-menu", "Вид списка", icons.layers(20), `aria-expanded="${!!ctx.ui.tasksMenu}"`)}</div></header>
+    <nav class="c-filters" aria-label="Фильтр">${filter("all", "Все")}${filter("today", `Сегодня${c.today ? " · " + c.today : ""}`)}${filter("inbox", `Входящие${c.inbox ? " · " + c.inbox : ""}`)}
+      ${iconBtn("tasks-filters", "Другие фильтры", icons.filter(18), `class="c-filter c-filter-icon${["week", "nodate", "overdue", "done", "trash", "noproject"].includes(view) ? " on" : ""}"`)}</nav>`;
+  const titled = (title, sub, inner) => `<div class="c-view-head"><h2>${esc(title)}</h2>${sub ? `<p class="c-note">${sub}</p>` : ""}</div>${inner}`;
+  let body;
+  if (view === "today") {
+    const late = overdue(rows, today, nowMin);
+    const list = tasksOfDay(rows, today);
+    const p = dayProgress(rows, today);
+    body = cSection("Просрочено", late.length, rowsOf(ctx, late, "t-late"), { tone: "bad" })
+      + (list.length ? cSection(`Сегодня · выполнено ${p.done} из ${p.total}`, "", rowsOf(ctx, list, "t-today", { compactDay: true })) : emptyDay(today));
+  } else if (view === "inbox") {
+    const list = inbox(rows);
+    body = titled("Входящие", "Сюда попадает всё, что записано без даты и проекта. Дата или проект уберут задачу отсюда.",
+      list.length ? `<div class="task-list">${rowsOf(ctx, list, "t-inbox", { showPath: false })}</div>` : `<div class="c-empty"><b>Входящие пусты</b><span>Всё записанное уже разобрано.</span></div>`);
+  } else if (view === "week") {
+    const list = nextDays(rows, today);
+    const byDay = {};
+    for (const t of list) { const d = [t.planned_date, t.due_date].filter((x) => x && x >= today).sort()[0]; (byDay[d] ||= []).push(t); }
+    body = titled("Ближайшие 7 дней", "", Object.keys(byDay).sort().map((d) => cSection(relativeDay(d, today), byDay[d].length, rowsOf(ctx, byDay[d], "w:" + d))).join("") || `<div class="c-empty"><b>На неделю задач нет</b></div>`);
+  } else if (view === "nodate") {
+    const list = rows.tasks.filter((t) => isOpen(t) && !t.planned_date && !t.due_date);
+    body = titled("Без даты", "", list.length ? `<div class="task-list">${rowsOf(ctx, list, "t-nodate")}</div>` : `<div class="c-empty"><b>Задач без даты нет</b></div>`);
+  } else if (view === "noproject") {
+    const list = rows.tasks.filter((t) => isOpen(t) && !t.group_id).sort(dayOrder);
+    body = titled("Без проекта", "", list.length ? `<div class="task-list">${rowsOf(ctx, list, "t-noproject")}</div>` : `<div class="c-empty"><b>Все задачи в проектах</b></div>`);
+  } else if (view === "overdue") {
+    const late = overdue(rows, today, nowMin), miss = missed(rows, today, nowMin);
+    const cleanup = ctx.ui.overdueCleanup;
+    const act = (t) => `<div class="c-row-actions"><button type="button" class="cap" data-action="move-today" data-id="${esc(t.id)}">На сегодня</button><button type="button" class="cap" data-action="open-task" data-id="${esc(t.id)}">Перенести…</button></div>`;
+    body = titled("Просроченные", "Крайний срок прошёл. Ничего не переносится автоматически.",
+      (late.length ? `<div class="task-list">${late.map((t) => taskRow(ctx, t) + act(t)).join("")}</div>` : `<div class="c-empty"><b>Просроченных задач нет</b></div>`)
+      + (late.length ? `<button type="button" class="c-soft-btn bad" data-action="clear-overdue" ${cleanup?.busy ? "disabled" : ""}>${icons.trash(16)}${cleanup?.busy ? "Убираем…" : "Убрать все в корзину"}</button>` : "")
+      + (cleanup ? `<p class="c-note" role="status">${esc(cleanup.text)}</p>` : "")
+      + cSection("Не сделано в запланированный день", miss.length, miss.map((t) => taskRow(ctx, t) + act(t)).join(""))
+      + (miss.length ? `<p class="c-note">Это не просрочка: крайнего срока нет или он ещё впереди.</p>` : ""));
+  } else if (view === "done") {
+    const list = rows.tasks.filter((t) => t.completed).sort((a, b) => String(b.completed_at || "").localeCompare(String(a.completed_at || "")));
+    body = titled("Выполненные", "Нажмите на отметку, чтобы вернуть задачу в работу.", list.length ? `<div class="task-list">${rowsOf(ctx, list, "t-done")}</div>` : `<div class="c-empty"><b>Выполненных задач пока нет</b></div>`);
+  } else if (view === "trash") {
+    body = titled("Корзина", "Удалённые задачи можно восстановить.", renderTrash(ctx, ""));
+  } else {
+    body = mode === "projects" ? listByProject(ctx) : listByDate(ctx);
+  }
+  const menu = ctx.ui.tasksMenu ? `<div class="c-menu-scrim" data-action="tasks-mode-menu"></div><div class="c-menu" role="menu">
+      <button type="button" role="menuitemradio" aria-checked="${mode === "list"}" data-action="tasks-mode" data-mode="list">${icons.tasks(18)}Списком${mode === "list" ? icons.check(16) : ""}</button>
+      <button type="button" role="menuitemradio" aria-checked="${mode === "projects"}" data-action="tasks-mode" data-mode="projects">${icons.folder(18)}По проектам${mode === "projects" ? icons.check(16) : ""}</button>
+      <a role="menuitem" href="#/tasks?view=projects" data-action="tasks-mode-menu">${icons.folder(18)}Все проекты</a></div>` : "";
+  const back = view !== "all" && !["today", "inbox"].includes(view) ? backBar("#/tasks", "Все задачи") : "";
+  return `<div class="c-page">${back}${head}${renderNotices(ctx)}${body}</div>${menu}${ctx.ui.tasksFilters ? renderFiltersSheet(ctx, c) : ""}`;
+}
+
 export function renderTasks(ctx0) {
+  if (!ctx0.isDesktop) return renderTasksPhone(ctx0);
   const q = (ctx0.ui.search || "").trim();
   // поиск сужает текущее представление, поэтому сочетается с датой, разделом и группой
   const ctx = q ? { ...ctx0, rows: { ...ctx0.rows, tasks: ctx0.rows.tasks.filter((t) => matchesSearch(t, q)) } } : ctx0;

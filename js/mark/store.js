@@ -387,6 +387,14 @@ export class ModelStore {
     await this.engine.deleteGroup(id);
   }
 
+  // Удаление проекта (решение владельца): задачи остаются без проекта, массового
+  // удаления задач здесь нет. Задачи в корзине сохраняют ссылку для восстановления.
+  async deleteProject(id) {
+    if (!this.engine) return;
+    for (const t of this.rows.tasks.filter((x) => x.group_id === id)) await this.engine.updateTask(t.id, { group_id: null });
+    await this.engine.deleteGroup(id);
+  }
+
   async deleteSectionV2(id, { moveTo = null } = {}) {
     if (!this.engine) return;
     for (const g of this.rows.groups.filter((x) => x.section_id === id)) {
