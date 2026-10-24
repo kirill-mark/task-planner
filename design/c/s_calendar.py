@@ -96,20 +96,23 @@ def day20(c, scroll_end=False, overlay="", nav=True):
 
 
 def build():
+    # Сначала — упрощённый день (принят 24.10); ниже — прежние макеты со шкалой, отложены.
+    build_day_list()
     c = Ctx()
-    add("K01", "Week", "Неделя и выбранный день", c, day20(c), True)
+    add("K01", "Week", "Отложено: шкала дня", c, day20(c), True)
+    SCREENS[-1]["newrow"] = True
 
     c = Ctx()
     inner = f'''{sheet_head(c, "Перейти к дате", "Отмена", "Готово", "C-K01-Week.dc.html", "C-K01-Week.dc.html")}
     {month(c, 2026, 10, 23, 20, marks=(19, 20, 21, 22, 23, 27))}
     <a href="C-K01-Week.dc.html" class="tbtn" style="align-self: flex-start">Сегодня</a>'''
-    add("K02", "PickDate", "Переход к другой неделе и дате", c, day20(c, overlay=scrim(c) + sheet(c, inner, 0, "Перейти к дате", pad="8px 20px 34px")), True)
+    add("K02", "PickDate", "Отложено: переход к дате", c, day20(c, overlay=scrim(c) + sheet(c, inner, 0, "Перейти к дате", pad="8px 20px 34px")), True)
 
     c = Ctx()
     body = f'''{cal_head(c)}
     {week(c, 25)}
 {empty(c, "cal", "Воскресенье, 25 октября — пусто", "Задач и встреч на этот день нет.", "Добавить задачу на 25 октября", "C-C05-AddDate.dc.html")}'''
-    add("K03", "EmptyDay", "Пустой день", c, root(c, body, nav="cal"))
+    add("K03", "EmptyDay", "Отложено: пустой день", c, root(c, body, nav="cal"))
 
     c = Ctx()
     t = c.t
@@ -119,7 +122,7 @@ def build():
     tl = timeline(c, 9, 15, [(10 * 60, 11 * 60, "Планёрка KINOMARK", "10:00–11:00", "event", 0, 1),
                              (12 * 60, 12 * 60 + 30, "Созвон с монтажёром", "12:00–12:30", "task", 0, 1)],
                   note="Пятница, 23 октября. Крайние сроки не занимают время в расписании — они показаны отдельно.")
-    add("K04", "Deadlines", "Задачи без времени и крайние сроки", c, root(c, f"{cal_head(c)}\n    {week(c, 23)}\n{unt}\n{tl}", nav="cal"))
+    add("K04", "Deadlines", "Отложено: сроки отдельно", c, root(c, f"{cal_head(c)}\n    {week(c, 23)}\n{unt}\n{tl}", nav="cal"))
 
     c = Ctx()
     tl = timeline(c, 10, 17, [(11 * 60, 12 * 60, "Созвон с монтажёром", "11:00–12:00", "task", 0, 1),
@@ -127,7 +130,7 @@ def build():
                               (13 * 60, 14 * 60, "Проверить договор", "13:00–14:00", "task", 1, 2),
                               (15 * 60, 16 * 60 + 30, "Монтаж ролика", "15:00–16:30", "task", 0, 1)],
                   note="Четверг, 22 октября. С 13:00 до 14:00 две записи пересекаются — они стоят рядом.")
-    add("K05", "Overlap", "Пересекающиеся события", c, root(c, f"{cal_head(c)}\n    {week(c, 22)}\n{tl}", nav="cal"))
+    add("K05", "Overlap", "Отложено: пересечения на шкале", c, root(c, f"{cal_head(c)}\n    {week(c, 22)}\n{tl}", nav="cal"))
 
     c = Ctx()
     t = c.t
@@ -137,17 +140,15 @@ def build():
     <div style="display: flex; flex-direction: column; gap: 8px"><span class="flabel">Начало</span><div style="display: flex; gap: 6px; flex-wrap: wrap">{times}</div></div>
     {group(c, [setting_row(c, "Длительность", "1 ч", "repeat"), setting_row(c, "Дата", "Сегодня", "cal")])}
     <a href="C-E01-TaskView.dc.html" class="tbtn">Открыть задачу полностью</a>'''
-    add("K06", "Open", "Открытая запись и изменение времени", c, day20(c, overlay=scrim(c) + sheet(c, inner, 0, "Тренировка", pad="8px 20px 34px", gap=14)), True)
+    add("K06", "Open", "Отложено: изменение времени", c, day20(c, overlay=scrim(c) + sheet(c, inner, 0, "Тренировка", pad="8px 20px 34px", gap=14)), True)
 
     c = Ctx()
-    add("K07", "End", "Конец прокрутки", c, day20(c, scroll_end=True))
+    add("K07", "End", "Отложено: конец прокрутки", c, day20(c, scroll_end=True))
     L = Ctx(LIGHT)
-    add("K08", "Light", "Светлая тема", L, day20(L))
+    add("K08", "Light", "Отложено: светлая тема", L, day20(L))
     n = Ctx(w=360, h=780)
-    add("K09", "Narrow", "360 × 780", n, day20(n))
+    add("K09", "Narrow", "Отложено: 360 × 780", n, day20(n))
 
-    # Выбранный день, упрощённый (ТЗ «упростить отображение задач в календаре»)
-    build_day_list()
 
 
 # Данные со скриншота владельца: суббота, 24 октября

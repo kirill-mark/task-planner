@@ -53,12 +53,15 @@ def main():
             col += 1
             row_h = max(row_h, h)
         notes[f"t_{pid}"] = {"x": 0, "y": -300, "text": pname, "kind": "title1", "maxW": 2400, "page": pid}
+        if pid == "calendar":
+            notes["t_calendar"]["text"] = "Календарь — выбранный день"
+            notes["t_calendar_old"] = {"x": 0, "y": 1781, "text": "Отложено: шкала и свободное время", "kind": "title1", "maxW": 2400, "page": pid}
     # Удалить файлы экранов, которых больше нет
     for f in os.listdir(OUT):
         if f.endswith(".dc.html") and f not in boards:
             os.remove(os.path.join(OUT, f))
     idx = {"v": 3, "createdOnFiles": created or {"v": 1, "at": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")},
-           "title": "Mark — концепция C", "launch": {"view": "canvas", "page": "home"}, "pages": pages,
+           "title": "Mark — концепция C", "launch": {"view": "canvas", "page": "calendar"}, "pages": pages,
            "boards": boards, "order": order, "notes": notes, "designSystems": []}
     json.dump(idx, open(idx_path, "w"), ensure_ascii=False, indent=1)
     print(len(boards), "экранов")

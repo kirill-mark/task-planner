@@ -7,7 +7,7 @@
  "title": "Mark — концепция C",
  "launch": {
   "view": "canvas",
-  "page": "home"
+  "page": "calendar"
  },
  "pages": [
   {
@@ -745,84 +745,9 @@
    "title": "P10. Светлая тема — внутри проекта",
    "page": "projects"
   },
-  "C-K01-Week.dc.html": {
-   "x": 0,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K01. Неделя и выбранный день",
-   "page": "calendar",
-   "is_interactive": true
-  },
-  "C-K02-PickDate.dc.html": {
-   "x": 470,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K02. Переход к другой неделе и дате",
-   "page": "calendar",
-   "is_interactive": true
-  },
-  "C-K03-EmptyDay.dc.html": {
-   "x": 940,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K03. Пустой день",
-   "page": "calendar"
-  },
-  "C-K04-Deadlines.dc.html": {
-   "x": 1410,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K04. Задачи без времени и крайние сроки",
-   "page": "calendar"
-  },
-  "C-K05-Overlap.dc.html": {
-   "x": 1880,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K05. Пересекающиеся события",
-   "page": "calendar"
-  },
-  "C-K06-Open.dc.html": {
-   "x": 2350,
-   "y": 0,
-   "w": 390,
-   "h": 844,
-   "title": "K06. Открытая запись и изменение времени",
-   "page": "calendar",
-   "is_interactive": true
-  },
-  "C-K07-End.dc.html": {
-   "x": 0,
-   "y": 1004,
-   "w": 390,
-   "h": 844,
-   "title": "K07. Конец прокрутки",
-   "page": "calendar"
-  },
-  "C-K08-Light.dc.html": {
-   "x": 470,
-   "y": 1004,
-   "w": 390,
-   "h": 844,
-   "title": "K08. Светлая тема",
-   "page": "calendar"
-  },
-  "C-K09-Narrow.dc.html": {
-   "x": 940,
-   "y": 1004,
-   "w": 360,
-   "h": 780,
-   "title": "K09. 360 × 780",
-   "page": "calendar"
-  },
   "C-K10-DayList.dc.html": {
-   "x": 1380,
-   "y": 1004,
+   "x": 0,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K10. День — по времени и в течение дня",
@@ -830,24 +755,24 @@
    "is_interactive": true
   },
   "C-K11-DayListLight.dc.html": {
-   "x": 1850,
-   "y": 1004,
+   "x": 470,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K11. День — светлая тема",
    "page": "calendar"
   },
   "C-K12-DayDoneOpen.dc.html": {
-   "x": 2320,
-   "y": 1004,
+   "x": 940,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K12. День — раскрыто «Выполнено»",
    "page": "calendar"
   },
   "C-K13-DayCompleted.dc.html": {
-   "x": 0,
-   "y": 2008,
+   "x": 1410,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K13. День — задача выполнена, «Отменить»",
@@ -855,51 +780,126 @@
    "is_interactive": true
   },
   "C-K14-DayEmpty.dc.html": {
-   "x": 470,
-   "y": 2008,
+   "x": 1880,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K14. День — задач нет",
    "page": "calendar"
   },
   "C-K15-DayAllDone.dc.html": {
-   "x": 940,
-   "y": 2008,
+   "x": 2350,
+   "y": 0,
    "w": 390,
    "h": 844,
    "title": "K15. День — всё выполнено",
    "page": "calendar"
   },
   "C-K16-DayAllDoneLight.dc.html": {
-   "x": 1410,
-   "y": 2008,
+   "x": 0,
+   "y": 1004,
    "w": 390,
    "h": 844,
    "title": "K16. День — всё выполнено, светлая тема",
    "page": "calendar"
   },
   "C-K17-DayNarrow.dc.html": {
-   "x": 1880,
-   "y": 2008,
+   "x": 470,
+   "y": 1004,
    "w": 360,
    "h": 780,
    "title": "K17. День — 360 × 780, длинные названия",
    "page": "calendar"
   },
   "C-K18-DayLarge.dc.html": {
-   "x": 2320,
-   "y": 2008,
+   "x": 910,
+   "y": 1004,
    "w": 390,
    "h": 844,
    "title": "K18. День — крупный текст",
    "page": "calendar"
   },
   "C-K19-DayLargeLight.dc.html": {
+   "x": 1380,
+   "y": 1004,
+   "w": 390,
+   "h": 844,
+   "title": "K19. День — крупный текст, светлая тема",
+   "page": "calendar"
+  },
+  "C-K01-Week.dc.html": {
+   "x": 0,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K01. Отложено: шкала дня",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K02-PickDate.dc.html": {
+   "x": 470,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K02. Отложено: переход к дате",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K03-EmptyDay.dc.html": {
+   "x": 940,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K03. Отложено: пустой день",
+   "page": "calendar"
+  },
+  "C-K04-Deadlines.dc.html": {
+   "x": 1410,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K04. Отложено: сроки отдельно",
+   "page": "calendar"
+  },
+  "C-K05-Overlap.dc.html": {
+   "x": 1880,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K05. Отложено: пересечения на шкале",
+   "page": "calendar"
+  },
+  "C-K06-Open.dc.html": {
+   "x": 2350,
+   "y": 2008,
+   "w": 390,
+   "h": 844,
+   "title": "K06. Отложено: изменение времени",
+   "page": "calendar",
+   "is_interactive": true
+  },
+  "C-K07-End.dc.html": {
    "x": 0,
    "y": 3012,
    "w": 390,
    "h": 844,
-   "title": "K19. День — крупный текст, светлая тема",
+   "title": "K07. Отложено: конец прокрутки",
+   "page": "calendar"
+  },
+  "C-K08-Light.dc.html": {
+   "x": 470,
+   "y": 3012,
+   "w": 390,
+   "h": 844,
+   "title": "K08. Отложено: светлая тема",
+   "page": "calendar"
+  },
+  "C-K09-Narrow.dc.html": {
+   "x": 940,
+   "y": 3012,
+   "w": 360,
+   "h": 780,
+   "title": "K09. Отложено: 360 × 780",
    "page": "calendar"
   },
   "C-A01-Start.dc.html": {
@@ -1231,15 +1231,6 @@
   "C-P08-Delete.dc.html",
   "C-P09-Menu.dc.html",
   "C-P10-ProjectLight.dc.html",
-  "C-K01-Week.dc.html",
-  "C-K02-PickDate.dc.html",
-  "C-K03-EmptyDay.dc.html",
-  "C-K04-Deadlines.dc.html",
-  "C-K05-Overlap.dc.html",
-  "C-K06-Open.dc.html",
-  "C-K07-End.dc.html",
-  "C-K08-Light.dc.html",
-  "C-K09-Narrow.dc.html",
   "C-K10-DayList.dc.html",
   "C-K11-DayListLight.dc.html",
   "C-K12-DayDoneOpen.dc.html",
@@ -1250,6 +1241,15 @@
   "C-K17-DayNarrow.dc.html",
   "C-K18-DayLarge.dc.html",
   "C-K19-DayLargeLight.dc.html",
+  "C-K01-Week.dc.html",
+  "C-K02-PickDate.dc.html",
+  "C-K03-EmptyDay.dc.html",
+  "C-K04-Deadlines.dc.html",
+  "C-K05-Overlap.dc.html",
+  "C-K06-Open.dc.html",
+  "C-K07-End.dc.html",
+  "C-K08-Light.dc.html",
+  "C-K09-Narrow.dc.html",
   "C-A01-Start.dc.html",
   "C-A02-Typing.dc.html",
   "C-A03-Waiting.dc.html",
@@ -1332,7 +1332,15 @@
   "t_calendar": {
    "x": 0,
    "y": -300,
-   "text": "Календарь",
+   "text": "Календарь — выбранный день",
+   "kind": "title1",
+   "maxW": 2400,
+   "page": "calendar"
+  },
+  "t_calendar_old": {
+   "x": 0,
+   "y": 1781,
+   "text": "Отложено: шкала и свободное время",
    "kind": "title1",
    "maxW": 2400,
    "page": "calendar"
