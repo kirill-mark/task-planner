@@ -1,4 +1,5 @@
 import Capacitor
+import WebKit
 import WidgetKit
 
 // Scene callbacks run on the main thread. Keep the cold-start link until JS can consume it.
@@ -70,5 +71,29 @@ class MARKBridgeViewController: CAPBridgeViewController {
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(MARKWidgetPlugin())
         bridge?.registerPluginInstance(MARKSpeechPlugin())
+        webView?.hideFormAccessoryBar()
+    }
+}
+
+// Mark hides the system bar with arrows and «Done» above the keyboard: forms have
+// their own buttons. Same technique as @capacitor/keyboard setAccessoryBarVisible(false).
+private final class NoAccessoryView: NSObject {
+    @objc var inputAccessoryView: AnyObject? { nil }
+}
+
+extension WKWebView {
+    func hideFormAccessoryBar() {
+        guard let content = scrollView.subviews.first(where: { String(describing: type(of: $0)).hasPrefix("WKContent") }),
+              let base = object_getClass(content) else { return }
+        let name = "\(NSStringFromClass(base))_MarkNoAccessory"
+        var cls: AnyClass? = NSClassFromString(name)
+        if cls == nil, let made = objc_allocateClassPair(base, name, 0) {
+            if let method = class_getInstanceMethod(NoAccessoryView.self, #selector(getter: NoAccessoryView.inputAccessoryView)) {
+                class_addMethod(made, #selector(getter: NoAccessoryView.inputAccessoryView), method_getImplementation(method), method_getTypeEncoding(method))
+            }
+            objc_registerClassPair(made)
+            cls = made
+        }
+        if let cls { object_setClass(content, cls) }
     }
 }

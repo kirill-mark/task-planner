@@ -253,6 +253,11 @@ function chatViewport() {
   const v = window.visualViewport;
   document.documentElement.style.setProperty("--chat-height", (v?.height || window.innerHeight) + "px");
   document.documentElement.style.setProperty("--chat-top", (v?.offsetTop || 0) + "px");
+  // Высота клавиатуры: на iPhone она перекрывает страницу, не уменьшая её, —
+  // листы внизу экрана поднимаются на эту величину и остаются над клавиатурой.
+  const kb = v ? Math.max(0, Math.round(window.innerHeight - v.height - v.offsetTop)) : 0;
+  document.documentElement.style.setProperty("--kb", (kb > 80 ? kb : 0) + "px");
+  document.documentElement.classList.toggle("kb-open", kb > 80);
 }
 window.visualViewport?.addEventListener("resize", chatViewport);
 window.visualViewport?.addEventListener("scroll", chatViewport);

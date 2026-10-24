@@ -808,3 +808,9 @@ html { overflow-x: clip; }
 .c-sheet-ok { color: var(--accent); font-weight: 600; justify-self: end; }
 .c-sheet-ok:disabled { color: var(--text-faint); }
 .c-page > .c-soft-btn { align-self: flex-start; }
+
+/* Лист над клавиатурой: --kb — высота клавиатуры (app.js, chatViewport). */
+@media (max-width: 767px) {
+  .sheet { bottom: var(--kb, 0px); max-height: calc(100dvh - var(--kb, 0px) - var(--safe-top) - 16px); transition: bottom 0.2s ease; }
+  .kb-open .sheet { padding-bottom: 16px; }
+}
