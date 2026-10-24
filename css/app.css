@@ -811,6 +811,6 @@ html { overflow-x: clip; }
 
 /* Лист над клавиатурой: --kb — высота клавиатуры (app.js, chatViewport). */
 @media (max-width: 767px) {
-  .sheet { bottom: var(--kb, 0px); max-height: calc(100dvh - var(--kb, 0px) - var(--safe-top) - 16px); transition: bottom 0.2s ease; }
+  .sheet { bottom: var(--kb, 0px); max-height: calc(100dvh - var(--kb, 0px) - var(--safe-top) - 16px); transition: bottom var(--kb-dur, 0.25s) cubic-bezier(0.38, 0.7, 0.125, 1); }
   .kb-open .sheet { padding-bottom: 16px; }
 }

@@ -255,6 +255,8 @@ function chatViewport() {
   document.documentElement.style.setProperty("--chat-top", (v?.offsetTop || 0) + "px");
   // Высота клавиатуры: на iPhone она перекрывает страницу, не уменьшая её, —
   // листы внизу экрана поднимаются на эту величину и остаются над клавиатурой.
+  // В приложении на iPhone высоту присылает нативная часть заранее (MARKBridgeViewController).
+  if (window.__markNativeKeyboard) return;
   const kb = v ? Math.max(0, Math.round(window.innerHeight - v.height - v.offsetTop)) : 0;
   document.documentElement.style.setProperty("--kb", (kb > 80 ? kb : 0) + "px");
   document.documentElement.classList.toggle("kb-open", kb > 80);

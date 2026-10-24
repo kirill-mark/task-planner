@@ -72,6 +72,29 @@ class MARKBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(MARKWidgetPlugin())
         bridge?.registerPluginInstance(MARKSpeechPlugin())
         webView?.hideFormAccessoryBar()
+        let center = NotificationCenter.default
+        center.addObserver(self, selector: #selector(keyboardWillChange(_:)), name: UIResponder.keyboardWillChangeFrameNotification, object: nil)
+        center.addObserver(self, selector: #selector(keyboardWillHide(_:)), name: UIResponder.keyboardWillHideNotification, object: nil)
+    }
+
+    // The page learns the keyboard height when the keyboard starts moving, with its
+    // duration, so bottom sheets rise together with it instead of jumping afterwards
+    // (visualViewport reports only after the animation ends).
+    @objc private func keyboardWillChange(_ note: Notification) {
+        guard let webView, let end = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+        let frame = webView.convert(end, from: nil)
+        sendKeyboard(height: max(0, webView.bounds.maxY - frame.minY), note: note)
+    }
+
+    @objc private func keyboardWillHide(_ note: Notification) {
+        sendKeyboard(height: 0, note: note)
+    }
+
+    private func sendKeyboard(height: CGFloat, note: Notification) {
+        let duration = (note.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+        let h = Int(height.rounded())
+        let js = "window.__markNativeKeyboard=true;var r=document.documentElement;r.style.setProperty('--kb-dur','\(duration)s');r.style.setProperty('--kb','\(h > 80 ? h : 0)px');r.classList.toggle('kb-open',\(h > 80));"
+        webView?.evaluateJavaScript(js, completionHandler: nil)
     }
 }
 

@@ -103,7 +103,7 @@ export function createMotion(root, onExit = () => {}) {
       enter('editor', sheet, [
         { transform: narrow ? 'translateY(100%)' : `${base === 'none' ? '' : base} translateY(20px)`, opacity: narrow ? 1 : .3 },
         { transform: base, opacity: 1 },
-      ], 550, !!next.editor && next.editor !== previous.editor);
+      ], sheet?.classList.contains('c-quick') ? 340 : 550, !!next.editor && next.editor !== previous.editor);
       enter('scrim', root.querySelector('.sheet-scrim'), [{ opacity: 0 }, { opacity: 1 }], 420,
         !!next.editor && !previous.editor);
       if (closing?.sheet) {
