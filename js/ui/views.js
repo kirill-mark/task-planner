@@ -1297,9 +1297,10 @@ export function renderAssistant(ctx) {
     ${a.chat.length ? `<button type="button" data-action="assistant-clear">${icons.trash(18)}Очистить этот чат</button>` : ""}
     ${enabled ? `<button type="button" class="bad" data-action="assistant-revoke">Выключить помощника</button>` : ""}
     <small>Чаты и память хранятся на этом телефоне.</small></div></details>`;
-  const starters = [["План на сегодня", "Покажи мои задачи на сегодня и предложи порядок выполнения"],
-    ["Что сделать первым?", "Что мне сделать первым сегодня? Объясни почему"],
-    ["Разобрать входящие", "Помоги разобрать входящие: что нужно уточнить?"]];
+  // Короткие подписи — в одну строку; помощнику уходит полный вопрос.
+  const starters = [["План дня", "Покажи мои задачи на сегодня и предложи порядок выполнения"],
+    ["С чего начать?", "Что мне сделать первым сегодня? Объясни почему"],
+    ["Входящие", "Помоги разобрать входящие: что нужно уточнить?"]];
   const welcome = `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}">
       ${markSymbol(34, { label: null })}
       <h1>${esc(greetingText(a.greetingIndex, name))}</h1>
