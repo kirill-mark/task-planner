@@ -1287,7 +1287,10 @@ function revealPlan(m, html) {
 
 function revealWords(html, plan) {
   let i = 0;
-  return html.split(/(<[^>]+>)/).map((part) => part.startsWith("<") ? part
+  const at = () => Math.round(i * plan.step - plan.elapsed);
+  // Пункт списка появляется вместе со своим первым словом, а не после всего списка.
+  return html.split(/(<[^>]+>)/).map((part) => part.startsWith("<li") ? `<li class="a-li" style="animation-delay:${at()}ms">`
+    : part.startsWith("<") ? part
     : part.replace(/\S+/g, (w) => `<span class="a-word" style="animation-delay:${Math.round(i++ * plan.step - plan.elapsed)}ms">${w}</span>`)).join("");
 }
 

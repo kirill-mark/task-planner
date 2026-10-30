@@ -887,5 +887,5 @@ html { overflow-x: clip; }
 .a-word { opacity: 0; animation: a-word 0.32s ease-out forwards; }
 @keyframes a-word { from { opacity: 0; } to { opacity: 1; } }
 .revealing .a-after { opacity: 0; animation: a-word 0.3s ease-out forwards; }
-.revealing .assistant-answer li::marker { color: transparent; }
-@media (prefers-reduced-motion: reduce) { .a-word, .revealing .a-after { animation: none; opacity: 1; } }
+.a-li { opacity: 0; animation: a-word 0.32s ease-out forwards; }
+@media (prefers-reduced-motion: reduce) { .a-word, .a-li, .revealing .a-after { animation: none; opacity: 1; } }
