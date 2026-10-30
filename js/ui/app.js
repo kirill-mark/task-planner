@@ -108,6 +108,8 @@ const ui = {
   layoutMsg: "",
   focusPick: false,
   mainPick: false,   // лист выбора главной задачи
+  picker: null,      // окно выбора в карточке задачи: { kind: plan|due|project|priority, date, time, duration, month }
+  taskMenu: false,   // меню «…» открытой задачи
   tasksMode: readTasksMode(), // «Списком» | «По проектам», хранится на телефоне
   tasksMenu: false, tasksFilters: false, searchOpen: false,
   projectQuery: "", projectMenu: false, projectForm: null, // { id|null, name, error }
@@ -312,8 +314,10 @@ function setDraft(path, value) {
       persistDraft();
       const add = root.querySelector(".c-quick .c-add");
       if (add) add.disabled = !String(ui.editor.draft.title || "").trim();
-      if (rest[0] === "title") sizeQuickTitle();
     }
+    if (rest[0] === "title" || rest[0] === "notes") sizeQuickTitle();
+    const ok = root.querySelector(".c-task-sheet .c-sheet-ok");
+    if (ok && rest[0] === "title") ok.disabled = !String(value || "").trim();
   }
   else if (head === "manage" && ui.manage?.form) ui.manage.form[rest[1]] = value;
   else if (head === "confirm" && ui.confirm) ui.confirm.moveTo = value;
@@ -321,6 +325,7 @@ function setDraft(path, value) {
   else if (head === "auth") ui.auth[rest[0]] = value;
   else if (head === "search") { ui.search = value; render(); }
   else if (head === "projectQuery") { ui.projectQuery = value; render(); }
+  else if (head === "picker" && ui.picker) { ui.picker.time = value; }
   else if (head === "projectForm" && ui.projectForm) {
     ui.projectForm.name = value;
     ui.projectForm.error = "";
@@ -578,6 +583,9 @@ function showToast(text, label = "", action = null) {
 function closeEditor() {
   const ed = ui.editor;
   if (!ed) return;
+  commitTextFields();
+  ui.picker = null;
+  ui.taskMenu = false;
   ui.editor = null;
   if (!ed.id && ed.touched && draftHasContent(ed.draft)) {
     writeDraft(ed.draft);
@@ -587,10 +595,11 @@ function closeEditor() {
 }
 
 function sizeQuickTitle() {
-  const el = root.querySelector("#quick-title");
-  if (!el) return;
-  el.style.height = "auto";
-  el.style.height = Math.min(el.scrollHeight, parseFloat(getComputedStyle(el).lineHeight) * 5 + 22) + "px";
+  for (const el of root.querySelectorAll("#quick-title, #task-title, #task-notes")) {
+    el.style.height = "auto";
+    const lines = el.id === "task-notes" ? 10 : 5;
+    el.style.height = Math.min(el.scrollHeight + 2, parseFloat(getComputedStyle(el).lineHeight) * lines + 22) + "px";
+  }
 }
 
 async function setMainTask(id) {
@@ -619,6 +628,45 @@ function openEditor(id, defaults = {}) {
   render();
 }
 
+function draftFields(d) {
+  return {
+    title: String(d.title || "").trim(), notes: d.notes || "", group_id: d.group_id || null,
+    planned_date: d.planned_date || null, planned_time: d.planned_date ? d.planned_time || null : null,
+    due_date: d.due_date || null, due_time: d.due_date ? d.due_time || null : null,
+    duration_minutes: d.duration_minutes ? Number(d.duration_minutes) : null, priority: d.priority || "normal",
+  };
+}
+
+// Изменение одного поля в карточке: у открытой задачи сохраняется сразу,
+// у новой — остаётся в черновике до «Добавить».
+function applyTaskPatch(patch) {
+  const ed = ui.editor;
+  if (!ed) return;
+  Object.assign(ed.draft, patch);
+  ui.picker = null;
+  if (ed.id) {
+    const fields = draftFields(ed.draft);
+    if (!fields.title) fields.title = rows.tasks.find((t) => t.id === ed.id)?.title || "";
+    store.updateTaskV2(ed.id, fields, { timezone: settings.timezone });
+  } else {
+    ed.touched = true;
+    persistDraft();
+  }
+  render();
+}
+
+// Название и описание открытой задачи сохраняются, когда поле теряет фокус
+// или карточка закрывается. Пустое название не сохраняется — возвращается прежнее.
+function commitTextFields() {
+  const ed = ui.editor;
+  if (!ed?.id) return;
+  const t = rows.tasks.find((x) => x.id === ed.id);
+  if (!t) return;
+  if (!String(ed.draft.title || "").trim()) ed.draft.title = t.title;
+  const fields = draftFields(ed.draft);
+  if (fields.title !== t.title || fields.notes !== (t.notes || "")) store.updateTaskV2(ed.id, { title: fields.title, notes: fields.notes }, { timezone: settings.timezone });
+}
+
 function saveEditor() {
   const ed = ui.editor;
   const d = ed.draft;
@@ -626,12 +674,7 @@ function saveEditor() {
   if (!title) { ed.error = "Нужно название задачи."; render(); return; }
   if (d.planned_time && !d.planned_date) { ed.error = "Для времени «на» укажите дату — время без даты не сохраняется."; render(); return; }
   if (d.due_time && !d.due_date) { ed.error = "Для времени дедлайна укажите дату."; render(); return; }
-  const fields = {
-    title, notes: d.notes || "", group_id: d.group_id || null,
-    planned_date: d.planned_date || null, planned_time: d.planned_time || null,
-    due_date: d.due_date || null, due_time: d.due_time || null,
-    duration_minutes: d.duration_minutes ? Number(d.duration_minutes) : null, priority: d.priority || "normal",
-  };
+  const fields = draftFields(d);
   const exists = ed.id && rows.tasks.some((t) => t.id === ed.id);
   if (exists) store.updateTaskV2(ed.id, fields, { timezone: settings.timezone });
   else {
@@ -798,7 +841,7 @@ const actions = {
   "tasks-filters": () => { ui.tasksFilters = true; render(); },
   "tasks-filters-close": (el) => { ui.tasksFilters = false; if (el.tagName === "A") go(el.getAttribute("href")); else render(); },
   "project-menu": () => { ui.projectMenu = !ui.projectMenu; render(); },
-  "project-new": () => { ui.projectForm = { id: null, name: "", error: "" }; render(); },
+  "project-new": (el) => { ui.projectForm = { id: null, name: "", error: "", forTask: !!el?.dataset?.forTask }; render(); },
   "project-rename": (el) => {
     const g = rows.groups.find((x) => x.id === el.dataset.id);
     ui.projectMenu = false;
@@ -822,6 +865,43 @@ const actions = {
       } };
     render();
   },
+  "task-menu": () => { ui.taskMenu = !ui.taskMenu; render(); },
+  "picker-open": (el) => {
+    const d = ui.editor?.draft;
+    if (!d) return;
+    commitTextFields();
+    const kind = el.dataset.kind;
+    const date = kind === "plan" ? d.planned_date || "" : kind === "due" ? d.due_date || "" : "";
+    ui.picker = { kind, date, time: hhmm(kind === "plan" ? d.planned_time : kind === "due" ? d.due_time : "") || "",
+      duration: d.duration_minutes || "", month: (date || todayIso()).slice(0, 7) };
+    render();
+  },
+  "picker-cancel": () => { ui.picker = null; render(); },
+  "picker-date": (el) => { if (!ui.picker) return; ui.picker.date = el.dataset.date; ui.picker.month = el.dataset.date.slice(0, 7); render(); },
+  "picker-month": (el) => {
+    if (!ui.picker) return;
+    const [y, m] = ui.picker.month.split("-").map(Number);
+    const d = new Date(y, m - 1 + Number(el.dataset.dir), 1);
+    ui.picker.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    render();
+  },
+  "picker-time": (el) => { if (!ui.picker) return; ui.picker.time = el.dataset.time || ""; render(); },
+  "picker-duration": (el) => { if (!ui.picker) return; ui.picker.duration = el.dataset.min || ""; render(); },
+  "picker-clear": () => {
+    const p = ui.picker;
+    if (!p) return;
+    applyTaskPatch(p.kind === "plan" ? { planned_date: "", planned_time: "" } : { due_date: "", due_time: "" });
+  },
+  "picker-done": () => {
+    const p = ui.picker;
+    if (!p) return;
+    const time = p.date ? p.time || "" : "";
+    if (p.kind === "plan") applyTaskPatch({ planned_date: p.date || "", planned_time: time, duration_minutes: p.duration || "" });
+    else if (p.kind === "due") applyTaskPatch({ due_date: p.date || "", due_time: time });
+    else { ui.picker = null; render(); }
+  },
+  "picker-project": (el) => applyTaskPatch({ group_id: el.dataset.id || "" }),
+  "picker-priority": (el) => applyTaskPatch({ priority: el.dataset.v || "normal" }),
   "main-pick": () => { ui.mainPick = true; render(); },
   "main-pick-close": () => { ui.mainPick = false; render(); },
   "main-set": (el) => setMainTask(el.dataset.id),
@@ -1364,6 +1444,7 @@ const submits = {
       const id = store.createGroupV2({ name, section_id: null });
       if (!id) { f.error = "Хранилище на телефоне ещё не готово. Попробуйте через пару секунд."; render(); return; }
       ui.projectForm = null;
+      if (f.forTask && ui.editor) { applyTaskPatch({ group_id: id }); return; }
       go(`#/tasks?project=${encodeURIComponent(id)}`);
       return;
     }
@@ -1421,6 +1502,7 @@ const submits = {
 root.addEventListener("click", (e) => {
   const el = e.target.closest("[data-action]");
   if (!el || el.tagName === "FORM" || el.tagName === "INPUT" || el.tagName === "SELECT") return;
+  if (el.dataset.action !== "task-menu") ui.taskMenu = false;
   const fn = actions[el.dataset.action];
   if (fn) { e.preventDefault(); fn(el); }
 });
@@ -1483,6 +1565,7 @@ document.addEventListener("keydown", (e) => {
   if (ui.confirm) ui.confirm = null;
   else if (ui.assistant.panel) ui.assistant.panel = null;
   else if (ui.manage) ui.manage = null;
+  else if (ui.picker) ui.picker = null;
   else if (ui.mainPick) ui.mainPick = false;
   else if (ui.projectForm) ui.projectForm = null;
   else if (ui.tasksMenu || ui.tasksFilters || ui.projectMenu) { ui.tasksMenu = ui.tasksFilters = ui.projectMenu = false; }
@@ -1492,9 +1575,14 @@ document.addEventListener("keydown", (e) => {
 });
 
 root.addEventListener("keydown", (e) => {
-  if (e.key !== "Enter" || e.shiftKey || e.isComposing || e.target.id !== "quick-title") return;
+  if (e.key !== "Enter" || e.shiftKey || e.isComposing || !["quick-title", "task-title"].includes(e.target.id)) return;
   e.preventDefault();
-  e.target.form?.requestSubmit();
+  if (ui.editor?.id) e.target.blur();
+  else e.target.form?.requestSubmit();
+});
+
+root.addEventListener("focusout", (e) => {
+  if (["task-title", "task-notes"].includes(e.target.id)) commitTextFields();
 });
 
 DESKTOP.addEventListener("change", () => render());

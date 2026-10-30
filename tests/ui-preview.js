@@ -185,6 +185,16 @@ document.addEventListener("click", async (e) => {
   else if (a === "assistant-ask") { ui.assistant.input = el.dataset.text; }
   else if (a === "assistant-voice") { ui.assistant.voice = { phase: (ui.assistant.voice?.phase || "idle") === "idle" ? "recording" : "idle" }; }
   else if (a === "open-task") { const t = rows.tasks.find((x) => x.id === el.dataset.id); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
+  else if (a === "task-menu") ui.taskMenu = !ui.taskMenu;
+  else if (a === "picker-open") { const d = ui.editor.draft, k = el.dataset.kind; const date = k === "plan" ? d.planned_date || "" : k === "due" ? d.due_date || "" : ""; ui.picker = { kind: k, date, time: (k === "plan" ? d.planned_time : k === "due" ? d.due_time : "") || "", duration: d.duration_minutes || "", month: (date || today).slice(0, 7) }; }
+  else if (a === "picker-cancel") ui.picker = null;
+  else if (a === "picker-date") { ui.picker.date = el.dataset.date; ui.picker.month = el.dataset.date.slice(0, 7); }
+  else if (a === "picker-month") { const [y, m] = ui.picker.month.split("-").map(Number); const d = new Date(y, m - 1 + Number(el.dataset.dir), 1); ui.picker.month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`; }
+  else if (a === "picker-time") ui.picker.time = el.dataset.time || "";
+  else if (a === "picker-duration") ui.picker.duration = el.dataset.min || "";
+  else if (a === "picker-done") { const p = ui.picker; if (p.kind === "plan") Object.assign(ui.editor.draft, { planned_date: p.date, planned_time: p.date ? p.time : "", duration_minutes: p.duration }); if (p.kind === "due") Object.assign(ui.editor.draft, { due_date: p.date, due_time: p.date ? p.time : "" }); ui.picker = null; }
+  else if (a === "picker-project") { ui.editor.draft.group_id = el.dataset.id; ui.picker = null; }
+  else if (a === "picker-priority") { ui.editor.draft.priority = el.dataset.v; ui.picker = null; }
   else if (a === "cal-month-toggle") ui.calMonthOpen = !ui.calMonthOpen;
   else if (a === "cal-week-prev" || a === "cal-week-next") { ui.selectedDate = addDays(ui.selectedDate, a === "cal-week-prev" ? -7 : 7); ui.calMonth = ui.selectedDate.slice(0, 7); }
   else if (a === "cal-today") { ui.selectedDate = today; ui.calMonth = today.slice(0, 7); }
@@ -248,6 +258,7 @@ if (q.get("layout")) { ui.layoutDraft = { desktop: [{ type: "summary", col: "mai
 if (q.get("focus")) ui.focusPick = true;
 if (q.get("mode")) ui.tasksMode = q.get("mode");
 if (q.get("month")) ui.calMonthOpen = true;
+if (q.get("picker")) setTimeout(() => { document.querySelector(`[data-action="picker-open"][data-kind="${q.get("picker")}"]`)?.click(); }, 50);
 if (q.get("searching")) ui.searchOpen = true;
 if (q.get("quick")) ui.editor = { id: null, error: "", mode: "quick", restored: q.get("quick") === "draft", draft: { title: q.get("quick") === "empty" ? "" : "Забрать оборудование из проката на Старом Арбате и вернуть залог", notes: "", group_id: q.get("quick") === "draft" ? "g2" : "", planned_date: "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
 render();

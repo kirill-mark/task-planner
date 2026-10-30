@@ -834,8 +834,8 @@ html { overflow-x: clip; }
 .c-menu > *:first-child { border-top: 0; }
 .c-menu > * svg:last-child:not(:first-child) { margin-left: auto; color: var(--accent); }
 .c-menu .bad { color: var(--danger); }
-.c-sheet-ok { color: var(--accent); font-weight: 600; justify-self: end; }
-.c-sheet-ok:disabled { color: var(--text-faint); }
+.c-sheet-ok, .btn.c-sheet-ok { color: var(--accent); font-weight: 600; justify-self: end; }
+.c-sheet-ok:disabled, .btn.c-sheet-ok:disabled { color: var(--text-faint); }
 .c-page > .c-soft-btn { align-self: flex-start; }
 
 /* Лист над клавиатурой: --kb — высота клавиатуры (app.js, chatViewport). */
@@ -889,3 +889,48 @@ html { overflow-x: clip; }
 .revealing .a-after { opacity: 0; animation: a-word 0.3s ease-out forwards; }
 .a-li { opacity: 0; animation: a-word 0.32s ease-out forwards; }
 @media (prefers-reduced-motion: reduce) { .a-word, .a-li, .revealing .a-after { animation: none; opacity: 1; } }
+
+/* Карточка задачи и окна выбора (макеты E01–E04, C08–C09, D01–D09) */
+.c-task-sheet { gap: 14px; }
+@media (max-width: 767px) { .c-task-sheet { top: calc(var(--safe-top) + 40px); max-height: none; border-radius: 20px 20px 0 0; } }
+.c-task-title { display: flex; gap: 12px; align-items: flex-start; }
+.c-task-title .check { margin-top: 5px; }
+.c-task-title .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-title-inline {
+  display: block; width: 100%; resize: none; overflow: hidden; border: 0; background: none; padding: 0;
+  font-size: 22px; font-weight: 600; line-height: 1.3; color: var(--text); field-sizing: content;
+}
+.c-title-inline:focus { outline: none; }
+.c-title-inline.done { color: var(--text-dim); text-decoration: line-through; }
+.c-notes-field {
+  display: block; width: 100%; min-height: 84px; resize: none; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; padding: 10px 12px; font-size: 16px; line-height: 1.4; color: var(--text); field-sizing: content;
+}
+.c-notes-field:focus { outline: none; border-color: var(--accent); }
+.c-row-btn { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; text-align: left; font-size: 16px; }
+.c-group .c-row-btn:first-child { border-top: 0; }
+.c-row-value { color: var(--text); }
+.c-row-value .muted { color: var(--text-dim); }
+.warn { color: var(--warn); }
+.c-sheet-menu { justify-self: end; }
+.c-task-menu { top: calc(var(--safe-top) + 96px); z-index: 46; }
+.c-menu-scrim { z-index: 45; }
+
+.c-picker-scrim { z-index: 50; }
+.c-picker { z-index: 51; gap: 14px; }
+.c-pick-sec { display: flex; flex-direction: column; gap: 8px; }
+.c-pick-month { background: var(--bg); border-radius: 14px; padding: 6px 8px 8px; }
+.c-pick-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 2px; }
+.c-pick-grid .cal-wd { text-align: center; font-size: 12px; color: var(--text-dim); padding: 4px 0; }
+.c-pick-day {
+  justify-self: center; width: 40px; height: 40px; border-radius: 20px; border: 0; background: none; padding: 0;
+  color: var(--text); font-size: 16px; font-variant-numeric: tabular-nums;
+}
+.c-pick-day.out { color: var(--text-faint); }
+.c-pick-day.today { border: 1.5px solid var(--accent); color: var(--accent); font-weight: 600; }
+.c-pick-day.sel { background: var(--accent); color: var(--on-accent); font-weight: 700; border: 0; }
+.c-time-cap { gap: 6px; padding-right: 8px; }
+.c-time-cap input { border: 0; background: none; color: inherit; font: inherit; font-size: 14px; min-width: 56px; padding: 0; }
+.c-time-cap input::-webkit-calendar-picker-indicator { display: none; }
+.c-time-cap input:disabled { opacity: .5; }
+.cap:disabled { opacity: .45; }

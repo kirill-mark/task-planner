@@ -1467,9 +1467,143 @@ function renderQuickSheet(ctx) {
     </form>`;
 }
 
+// ---------------------------------------- карточка задачи и выбор даты, концепция C --
+// Макеты E01–E04, C08–C09, D01–D09. Одна карточка для открытой задачи и для
+// подробной формы новой. У открытой задачи каждое изменение сохраняется сразу,
+// у новой — по «Добавить». Окна выбора открываются поверх карточки.
+
+function planText(ctx, d) {
+  if (!d.planned_date) return "";
+  const t = d.planned_time ? ", " + hhmm(d.planned_time) : "";
+  const dur = d.duration_minutes ? " · " + durationText(Number(d.duration_minutes)) : "";
+  return `${relativeDay(d.planned_date, ctx.today)}${t}${dur}`;
+}
+
+function dueText(ctx, d) {
+  if (!d.due_date) return "";
+  const t = { ...d, completed: false };
+  if (isOverdue(t, ctx.today, ctx.nowMin)) return `<span class="bad">Просрочено · срок ${esc(shortDate(d.due_date, { today: ctx.today }))}${d.due_time ? " " + hhmm(d.due_time) : ""}</span>`;
+  if (d.due_date === ctx.today) return `<span class="warn">Срок сегодня, ${d.due_time ? "до " + hhmm(d.due_time) : "до конца дня"}</span>`;
+  return esc(`до ${relativeDay(d.due_date, ctx.today).toLowerCase()}${d.due_time ? ", " + hhmm(d.due_time) : ""}`);
+}
+
+function sheetRow(action, icon, label, value, extra = "") {
+  return `<button type="button" class="c-li c-row-btn" data-action="${action}" ${extra}>${icon}
+    <span class="grow"><span class="c-label">${label}</span><span class="c-row-value">${value || '<span class="muted">Не задано</span>'}</span></span>${icons.right(16)}</button>`;
+}
+
+function renderTaskSheet(ctx) {
+  const ed = ctx.ui.editor, d = ed.draft;
+  const task = ed.id ? ctx.rows.tasks.find((t) => t.id === ed.id) : null;
+  const isNew = !ed.id;
+  const prio = { normal: "Обычный", high: "Высокий", low: "Низкий" }[d.priority || "normal"];
+  const main = !isNew && ctx.settings.focus?.date === ctx.today && (ctx.settings.focus.ids || [])[0] === ed.id;
+  const head = isNew
+    ? `<div class="sheet-header"><button type="button" class="btn quiet small" data-action="close-editor">Отмена</button><h2>Новая задача</h2>
+        <button type="submit" class="btn quiet small c-sheet-ok" ${String(d.title || "").trim() ? "" : "disabled"}>Добавить</button></div>`
+    : `<div class="sheet-header"><button type="button" class="btn quiet small" data-action="close-editor">Закрыть</button><h2>Задача</h2>
+        <button type="button" class="c-icon-btn c-sheet-menu" data-action="task-menu" aria-label="Действия с задачей" aria-expanded="${!!ui_taskMenu(ctx)}">${icons.more(20)}</button></div>`;
+  const titleRow = isNew
+    ? `<label class="c-quick-label" for="task-title">Название</label>
+       <textarea id="task-title" class="c-title-field" name="title" data-key="ed-title" data-draft="editor.title" rows="1" maxlength="200" placeholder="Что нужно сделать?" enterkeyhint="done">${esc(d.title)}</textarea>`
+    : `<div class="c-task-title">
+        <button type="button" class="check ${task?.completed ? "done" : ""}" data-action="toggle" data-id="${esc(ed.id)}" aria-pressed="${!!task?.completed}" aria-label="${task?.completed ? "Вернуть в работу" : "Отметить выполненной"}">${task?.completed ? icons.check() : ""}</button>
+        <div class="grow">${main ? '<span class="c-main-label">Главная задача</span>' : ""}
+          <textarea id="task-title" class="c-title-inline ${task?.completed ? "done" : ""}" name="title" data-key="ed-title" data-draft="editor.title" rows="1" maxlength="200" aria-label="Название задачи" enterkeyhint="done">${esc(d.title)}</textarea></div></div>`;
+  const rows = `<div class="c-group">
+      ${sheetRow("picker-open", icons.cal(20), "Когда сделать", esc(planText(ctx, d)), 'data-kind="plan"')}
+      ${sheetRow("picker-open", icons.flag(20), "Выполнить до", dueText(ctx, d), 'data-kind="due"')}
+      ${sheetRow("picker-open", icons.folder(20), "Проект", esc(projectName(ctx.rows, d.group_id) || "Без проекта"), 'data-kind="project"')}
+      ${sheetRow("picker-open", icons.alert(20), "Приоритет", esc(prio), 'data-kind="priority"')}
+    </div>`;
+  const notes = `<label class="c-quick-label" for="task-notes">Описание</label>
+    <textarea id="task-notes" class="c-notes-field" name="notes" data-key="ed-notes" data-draft="editor.notes" rows="3" maxlength="5000" placeholder="Подробности, ссылки, адрес">${esc(d.notes || "")}</textarea>`;
+  const foot = isNew ? `<p class="c-note">Обязательно только название. Остальное можно заполнить позже.</p>`
+    : `<p class="c-note">${task?._pending ? "Сохранено на телефоне, ждёт отправки" : "Изменения сохраняются сразу"}</p>`;
+  const menu = !isNew && ui_taskMenu(ctx) ? `<div class="c-menu-scrim" data-action="task-menu"></div><div class="c-menu c-task-menu" role="menu">
+      <button type="button" role="menuitem" data-action="toggle" data-id="${esc(ed.id)}" data-close="1">${icons.check(18)}${task?.completed ? "Вернуть в работу" : "Выполнить"}</button>
+      ${main ? `<button type="button" role="menuitem" data-action="main-clear">${icons.spark(18)}Не делать главной</button>`
+        : task && !task.completed && (task.planned_date === ctx.today || task.due_date === ctx.today) ? `<button type="button" role="menuitem" data-action="main-set" data-id="${esc(ed.id)}">${icons.spark(18)}Сделать главной</button>` : ""}
+      <button type="button" role="menuitem" class="bad" data-action="delete-task" data-id="${esc(ed.id)}">${icons.trash(18)}Удалить</button></div>` : "";
+  return `<div class="sheet-scrim" data-action="close-editor"></div>
+    <form class="sheet task-editor c-task-sheet" role="dialog" aria-modal="true" aria-label="${isNew ? "Новая задача" : "Задача"}" data-action="save-task">
+      <span class="handle"></span>${head}
+      ${ed.error ? `<div class="c-banner bad" role="alert"><span class="grow"><b>${esc(ed.error)}</b></span></div>` : ""}
+      ${titleRow}${rows}${notes}${foot}
+    </form>${menu}${ctx.ui.picker ? renderPicker(ctx) : ""}`;
+}
+
+function ui_taskMenu(ctx) { return ctx.ui.taskMenu; }
+
+function pickerMonth(ctx, p) {
+  const [y, m] = p.month.split("-").map(Number);
+  const grid = monthGrid(y, m - 1, ctx.settings.week_start || 1);
+  const sel = p.date;
+  return `<div class="c-pick-month">
+    <div class="c-month-nav"><button type="button" class="c-icon-btn" data-action="picker-month" data-dir="-1" aria-label="Предыдущий месяц">${icons.left(18)}</button>
+      <b>${esc(monthTitle(y, m - 1))}</b><button type="button" class="c-icon-btn" data-action="picker-month" data-dir="1" aria-label="Следующий месяц">${icons.right(18)}</button></div>
+    <div class="c-pick-grid">${weekHeader(ctx.settings.week_start || 1).map((w) => `<span class="cal-wd">${w}</span>`).join("")}
+      ${grid.map((c) => `<button type="button" class="c-pick-day${c.inMonth ? "" : " out"}${c.iso === sel ? " sel" : ""}${c.iso === ctx.today ? " today" : ""}" data-action="picker-date" data-date="${c.iso}" aria-pressed="${c.iso === sel}" aria-label="${esc(longDate(c.iso))}">${c.day}</button>`).join("")}</div>
+  </div>`;
+}
+
+function renderPicker(ctx) {
+  const p = ctx.ui.picker, today = ctx.today, tomorrow = addDays(today, 1);
+  const chip = (action, label, on, extra = "") => `<button type="button" class="cap${on ? " sel" : ""}" data-action="${action}" aria-pressed="${on}" ${extra}>${label}</button>`;
+  const header = (title) => `<div class="sheet-header"><button type="button" class="btn quiet small" data-action="picker-cancel">Отмена</button><h2>${title}</h2><button type="button" class="btn quiet small c-sheet-ok" data-action="picker-done">Готово</button></div>`;
+  let body = "";
+  if (p.kind === "plan") {
+    const d = ctx.ui.editor.draft;
+    const later = p.date && d.due_date && (p.date > d.due_date || (p.date === d.due_date && p.time && d.due_time && p.time > hhmm(d.due_time)));
+    body = `${header("Когда сделать")}
+      <div class="c-pick-sec"><span class="c-label">Дата</span><div class="c-caps">
+        ${chip("picker-date", "Сегодня", p.date === today, `data-date="${today}"`)}${chip("picker-date", "Завтра", p.date === tomorrow, `data-date="${tomorrow}"`)}
+        ${p.date && p.date !== today && p.date !== tomorrow ? chip("picker-date", esc(shortDate(p.date, { weekday: true, today })), true, `data-date="${p.date}"`) : ""}</div></div>
+      ${pickerMonth(ctx, p)}
+      <div class="c-pick-sec"><span class="c-label">Время</span><div class="c-caps">
+        ${chip("picker-time", "Без времени", !p.time, 'data-time=""')}
+        ${["09:00", "12:00", "15:00", "18:00"].map((t) => chip("picker-time", t, p.time === t, `data-time="${t}" ${p.date ? "" : "disabled"}`)).join("")}
+        ${(() => { const custom = p.time && !["09:00", "12:00", "15:00", "18:00"].includes(p.time);
+          return `<label class="cap c-time-cap${custom ? " sel" : ""}"><span>Другое</span><input type="time" data-key="picker-time" data-draft="picker.time" value="${esc(custom ? p.time : "")}" aria-label="Точное время" ${p.date ? "" : "disabled"}></label>`; })()}</div>
+        ${p.date ? "" : '<span class="c-note">Сначала выберите дату.</span>'}</div>
+      <div class="c-pick-sec"><span class="c-label">Длительность</span><div class="c-caps">
+        ${[["", "Не задана"], ["15", "15 мин"], ["30", "30 мин"], ["60", "1 ч"], ["90", "1 ч 30 мин"], ["120", "2 ч"]].map(([v, l]) => chip("picker-duration", l, String(p.duration || "") === v, `data-min="${v}"`)).join("")}</div></div>
+      ${d.due_date ? `<div class="c-banner ${later ? "warn" : ""}"><span class="grow"><b>Крайний срок не изменится</b><span>Выполнить до: ${dueText(ctx, d).replace(/<[^>]+>/g, "")}.${later ? " Новое время позже срока." : ""}</span></span></div>` : ""}
+      ${p.date ? `<button type="button" class="c-soft-btn bad" data-action="picker-clear">${icons.close(16)}Убрать дату</button><p class="c-note">Проект и описание не изменятся.</p>` : ""}`;
+  } else if (p.kind === "due") {
+    body = `${header("Выполнить до")}
+      <div class="c-pick-sec"><span class="c-label">Крайний срок</span><div class="c-caps">
+        ${chip("picker-date", "Сегодня", p.date === today, `data-date="${today}"`)}${chip("picker-date", "Завтра", p.date === tomorrow, `data-date="${tomorrow}"`)}
+        ${p.date && p.date !== today && p.date !== tomorrow ? chip("picker-date", esc(shortDate(p.date, { weekday: true, today })), true, `data-date="${p.date}"`) : ""}</div></div>
+      ${pickerMonth(ctx, p)}
+      <div class="c-pick-sec"><span class="c-label">Время срока</span><div class="c-caps">
+        ${chip("picker-time", "До конца дня", !p.time, 'data-time=""')}
+        <label class="cap c-time-cap${p.time ? " sel" : ""}">Ко времени<input type="time" data-key="picker-time" data-draft="picker.time" value="${esc(p.time || "")}" aria-label="Время крайнего срока" ${p.date ? "" : "disabled"}></label></div></div>
+      <div class="c-banner"><span class="grow"><b>Срок отдельно от плана</b><span>«Когда сделать» — когда вы планируете заняться задачей. Перенос этого времени не меняет крайний срок.</span></span></div>
+      ${p.date ? `<button type="button" class="c-soft-btn bad" data-action="picker-clear">${icons.close(16)}Убрать срок</button>` : ""}`;
+  } else if (p.kind === "project") {
+    const cur = ctx.ui.editor.draft.group_id || "";
+    const list = visibleGroups(ctx).map((g) => ({ id: g.id, name: projectName(ctx.rows, g.id) })).sort((a, b) => a.name.localeCompare(b.name, "ru"));
+    const sel = ctx.rows.groups.find((g) => g.id === cur);
+    if (sel && !list.some((x) => x.id === cur)) list.unshift({ id: cur, name: projectName(ctx.rows, cur) });
+    const opt = (id, name) => `<button type="button" class="c-option" role="radio" aria-checked="${cur === id}" data-action="picker-project" data-id="${esc(id)}"><span class="grow">${esc(name)}</span>${cur === id ? icons.check(18) : ""}</button>`;
+    body = `<div class="sheet-header"><button type="button" class="btn quiet small" data-action="picker-cancel">Отмена</button><h2>Проект</h2><span></span></div>
+      <div role="radiogroup" aria-label="Проект">${opt("", "Без проекта")}${list.map((x) => opt(x.id, x.name)).join("")}</div>
+      <button type="button" class="c-soft-btn" data-action="project-new" data-for-task="1">${icons.plus(16)}Новый проект</button>`;
+  } else if (p.kind === "priority") {
+    const cur = ctx.ui.editor.draft.priority || "normal";
+    body = `<div class="sheet-header"><button type="button" class="btn quiet small" data-action="picker-cancel">Отмена</button><h2>Приоритет</h2><span></span></div>
+      <div role="radiogroup" aria-label="Приоритет">${[["normal", "Обычный"], ["high", "Высокий", "в списках появится метка «Важно»"], ["low", "Низкий"]].map(([v, l, sub]) =>
+        `<button type="button" class="c-option" role="radio" aria-checked="${cur === v}" data-action="picker-priority" data-v="${v}"><span class="grow"><span>${l}</span>${sub ? `<span class="c-label">${sub}</span>` : ""}</span>${cur === v ? icons.check(18) : ""}</button>`).join("")}</div>`;
+  }
+  return `<div class="sheet-scrim c-picker-scrim" data-action="picker-cancel"></div>
+    <section class="sheet c-sheet c-picker" role="dialog" aria-modal="true"><span class="handle"></span>${body}</section>`;
+}
+
 function renderEditorSheet(ctx) {
   const ed = ctx.ui.editor;
   if (!ed.id && ed.mode === "quick") return renderQuickSheet(ctx);
+  if (!ctx.isDesktop) return renderTaskSheet(ctx);
   return `<div class="sheet-scrim" data-action="close-editor"></div>
     <form class="sheet task-editor" role="dialog" aria-modal="true" aria-label="${ed.id ? "Задача" : "Новая задача"}" data-action="save-task">
       <span class="handle"></span>
