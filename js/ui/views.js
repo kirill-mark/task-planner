@@ -1256,10 +1256,12 @@ function renderChatMessage(ctx, m, idx) {
     }
   }
   const headHtml = head.startsWith("<span") ? head : esc(head);
-  return `<div class="bubble bot">
+  const plan = m.error ? null : revealPlan(m, renderAssistantHtml(m));
+  const after = plan ? ` style="animation-delay:${plan.total - plan.elapsed}ms"` : "";
+  return `<div class="bubble bot${plan ? " revealing" : ""}">
     ${m.error ? `<span class="a-note bad">${esc(m.error)}</span>` : `${renderAssistantText(m)}`}
-    ${refs.length ? `<details class="assistant-refs" data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="a-refs">${refs.map((t) => `<button type="button" class="cap" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
-    ${drafts.length ? `<section class="a-proposal" aria-label="Предложение помощника">
+    ${refs.length ? `<details class="assistant-refs a-after"${after} data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="a-refs">${refs.map((t) => `<button type="button" class="cap" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
+    ${drafts.length ? `<section class="a-proposal a-after"${after} aria-label="Предложение помощника">
       <div class="a-proposal-head"><b>${headHtml}</b>${sub ? `<span>${sub}</span>` : ""}</div>
       <div class="a-actions">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked, results.get(d.action_id))).join("")}</div>
       ${footer}</section>` : ""}
@@ -1269,7 +1271,33 @@ function renderChatMessage(ctx, m, idx) {
 
 const micIcon = `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><rect x="9" y="2" width="6" height="13" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>`;
 
+// Проявление нового ответа по словам. Задержки отсчитываются от m.revealAt,
+// поэтому перерисовка экрана посреди анимации продолжает её, а не начинает заново;
+// после окончания ответ рисуется обычным текстом.
+const REVEAL_MAX_MS = 2600, REVEAL_STEP_MS = 32;
+
+function revealPlan(m, html) {
+  if (!m.revealAt) return null;
+  const words = (html.replace(/<[^>]+>/g, " ").match(/\S+/g) || []).length;
+  const step = Math.min(REVEAL_STEP_MS, REVEAL_MAX_MS / Math.max(words, 1));
+  const total = Math.round(words * step);
+  const elapsed = Date.now() - m.revealAt;
+  return elapsed < total + 400 ? { step, total, elapsed } : null;
+}
+
+function revealWords(html, plan) {
+  let i = 0;
+  return html.split(/(<[^>]+>)/).map((part) => part.startsWith("<") ? part
+    : part.replace(/\S+/g, (w) => `<span class="a-word" style="animation-delay:${Math.round(i++ * plan.step - plan.elapsed)}ms">${w}</span>`)).join("");
+}
+
 function renderAssistantText(m) {
+  const html = renderAssistantHtml(m);
+  const plan = revealPlan(m, html);
+  return plan ? revealWords(html, plan) : html;
+}
+
+function renderAssistantHtml(m) {
   if (Array.isArray(m.sections) && m.sections.length) return `<div class="assistant-answer">${m.content ? `<p>${esc(m.content)}</p>` : ""}${m.sections.slice(0, 4).map((s) => `<section>${s.title ? `<h2>${esc(s.title)}</h2>` : ""}${Array.isArray(s.items) ? `<ul>${s.items.slice(0, 12).map((i) => `<li>${esc(i)}</li>`).join("")}</ul>` : ""}</section>`).join("")}</div>`;
   // Render a tiny, escaped subset of Markdown, including old saved replies.
   return `<div class="assistant-answer">${(String(m.content || "").length > 320 ? String(m.content || "").replace(/\s+(?=\d{1,2}[.)]\s)/g, "\n\n").replace(/([.!?])\s+([А-ЯA-Z«])/g, "$1\n\n$2") : String(m.content || "")).split(/\n\s*\n/).map((block) => {

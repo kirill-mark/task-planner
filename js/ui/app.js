@@ -235,6 +235,15 @@ function render() {
   root.querySelectorAll("details[data-detail]").forEach((el) => { el.open = openDetails.includes(el.dataset.detail); });
   const nextTranscript = root.querySelector(".assistant-transcript");
   if (nextTranscript) nextTranscript.scrollTop = atEnd || ui.assistant.scrollEnd ? nextTranscript.scrollHeight : chatScroll;
+  // Длинный новый ответ показывается с начала, чтобы было видно, как он проявляется.
+  if (nextTranscript && ui.assistant.scrollToReply) {
+    const replies = nextTranscript.querySelectorAll(".assistant-messages > .bubble.bot");
+    const last = replies[replies.length - 1];
+    if (last && last.offsetHeight > nextTranscript.clientHeight * 0.6) {
+      nextTranscript.scrollTop += last.getBoundingClientRect().top - nextTranscript.getBoundingClientRect().top - 12;
+    }
+    ui.assistant.scrollToReply = false;
+  }
   ui.assistant.scrollEnd = false;
   resizeComposer();
   sizeQuickTitle();
@@ -1256,6 +1265,11 @@ async function askAssistant(text) {
   if (assistantRequest === controller) assistantRequest = null;
   a.busy = false;
   if (!current()) return;
+  if (!reply.error) {
+    // текст проявляется по словам (views.js); по окончании — обычная перерисовка
+    reply.revealAt = Date.now(); a.scrollToReply = true;
+    setTimeout(() => { if (route.name === "assistant") render(); }, 3100);
+  }
   a.chat.push(reply);
   saveChat();
   render();
