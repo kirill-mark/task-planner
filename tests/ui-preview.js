@@ -114,7 +114,15 @@ const previewStore = {
     rows.tasks = rows.tasks.filter((t) => t.id !== id);
   },
 };
-const status = { state: q.get("status") || "synced", lastSyncedAt: Date.now(), unconfirmed: q.get("status") === "saving" ? 2 : 0, conflicts: [], failed: [] };
+const status = { state: q.get("status") || "synced", lastSyncedAt: q.get("fresh") ? null : Date.now(), unconfirmed: ["saving", "offline"].includes(q.get("status")) ? 2 : 0, conflicts: [], failed: [] };
+// ?fresh=1 — первая загрузка без данных на телефоне; ?conflict=1 — две версии срока
+if (q.get("fresh")) rows.tasks = [];
+if (q.get("conflict")) {
+  const t = rows.tasks.find((x) => x.id === "t14");
+  status.state = "conflict";
+  status.conflicts = [{ seq: 7, entity: "task", entity_id: "t14", type: "update", local_at: new Date(Date.now() - 20 * 60000).toISOString(),
+    changes: { due_date: d(1), due_time: "18:00:00" }, result: { current: { ...t, due_date: today, due_time: null, updated_at: new Date(Date.now() - 6 * 60000).toISOString() } } }];
+}
 const DESKTOP = window.matchMedia("(min-width: 1024px)");
 const motion = createMotion(document.getElementById('app'), () => syncModalScroll(document.getElementById('app')));
 
@@ -185,6 +193,8 @@ document.addEventListener("click", async (e) => {
   else if (a === "assistant-ask") { ui.assistant.input = el.dataset.text; }
   else if (a === "assistant-voice") { ui.assistant.voice = { phase: (ui.assistant.voice?.phase || "idle") === "idle" ? "recording" : "idle" }; }
   else if (a === "open-task") { const t = rows.tasks.find((x) => x.id === el.dataset.id); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
+  else if (a === "conflict-open") ui.conflictOpen = Number(el.dataset.seq);
+  else if (a === "conflict-close") ui.conflictOpen = null;
   else if (a === "task-menu") ui.taskMenu = !ui.taskMenu;
   else if (a === "picker-open") { const d = ui.editor.draft, k = el.dataset.kind; const date = k === "plan" ? d.planned_date || "" : k === "due" ? d.due_date || "" : ""; ui.picker = { kind: k, date, time: (k === "plan" ? d.planned_time : k === "due" ? d.due_time : "") || "", duration: d.duration_minutes || "", month: (date || today).slice(0, 7) }; }
   else if (a === "picker-cancel") ui.picker = null;

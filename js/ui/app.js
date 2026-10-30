@@ -108,6 +108,7 @@ const ui = {
   layoutMsg: "",
   focusPick: false,
   mainPick: false,   // лист выбора главной задачи
+  conflictOpen: null, // seq операции, чьи две версии сравниваются (H09)
   picker: null,      // окно выбора в карточке задачи: { kind: plan|due|project|priority, date, time, duration, month }
   taskMenu: false,   // меню «…» открытой задачи
   tasksMode: readTasksMode(), // «Списком» | «По проектам», хранится на телефоне
@@ -959,9 +960,11 @@ const actions = {
     if (el.dataset.go === "calendar") go(`#/calendar?date=${el.dataset.date}`); else render();
   },
   "sync-now": () => store.syncNow(),
-  "keep-mine": (el) => store.keepMine(Number(el.dataset.seq)),
-  "restore-apply": (el) => store.restoreAndReapply(Number(el.dataset.seq)),
-  "save-new": (el) => store.saveAsNew(Number(el.dataset.seq)),
+  "conflict-open": (el) => { ui.conflictOpen = Number(el.dataset.seq); render(); },
+  "conflict-close": () => { ui.conflictOpen = null; render(); },
+  "keep-mine": (el) => { ui.conflictOpen = null; store.keepMine(Number(el.dataset.seq)); render(); },
+  "restore-apply": (el) => { ui.conflictOpen = null; store.restoreAndReapply(Number(el.dataset.seq)); render(); },
+  "save-new": (el) => { ui.conflictOpen = null; store.saveAsNew(Number(el.dataset.seq)); render(); },
   "restore-task": async (el) => {
     await store.restoreTask(el.dataset.id);
     trash = { ...trash, tasks: trash.tasks.filter((t) => t.id !== el.dataset.id) };
@@ -1081,7 +1084,7 @@ const actions = {
   },
   "focus-pick": () => { ui.focusPick = !ui.focusPick; render(); },
   "export-csv": () => exportCsv(),
-  "discard-mine": (el) => store.discard(Number(el.dataset.seq)),
+  "discard-mine": (el) => { ui.conflictOpen = null; store.discard(Number(el.dataset.seq)); render(); },
   "tz-use-device": () => chooseTimezone(tz.prompt?.device),
   "tz-keep": () => chooseTimezone(tz.prompt?.account),
   "set-theme": (el) => {
@@ -1565,6 +1568,7 @@ document.addEventListener("keydown", (e) => {
   if (ui.confirm) ui.confirm = null;
   else if (ui.assistant.panel) ui.assistant.panel = null;
   else if (ui.manage) ui.manage = null;
+  else if (ui.conflictOpen != null) ui.conflictOpen = null;
   else if (ui.picker) ui.picker = null;
   else if (ui.mainPick) ui.mainPick = false;
   else if (ui.projectForm) ui.projectForm = null;

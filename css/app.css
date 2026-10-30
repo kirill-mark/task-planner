@@ -934,3 +934,26 @@ html { overflow-x: clip; }
 .c-time-cap input::-webkit-calendar-picker-indicator { display: none; }
 .c-time-cap input:disabled { opacity: .5; }
 .cap:disabled { opacity: .45; }
+
+/* Состояния главной: нет сети, две версии, загрузка, ошибка (H07–H09, H13–H14) */
+.c-banner > svg { flex-shrink: 0; color: var(--text-dim); }
+.c-banner.warn b { color: var(--warn); }
+.c-banner .btn.small { flex-shrink: 0; }
+.c-banner-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.c-ver { background: var(--bg); border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; }
+.c-ver b { font-weight: 600; }
+.c-ver-row { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--divider); }
+.c-ver-row > span:last-child { text-align: right; overflow-wrap: anywhere; }
+.c-ver .btn { margin-top: 4px; }
+.c-skeleton { display: flex; flex-direction: column; gap: 16px; }
+.c-sk { display: block; border-radius: 6px; background: var(--surface-2); animation: c-sk 1.4s ease-in-out infinite; }
+@keyframes c-sk { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) { .c-sk { animation: none; } }
+.c-sk-card { background: var(--surface); border-radius: 20px; padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.c-sk-block { display: flex; flex-direction: column; gap: 8px; }
+.c-sk-row { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.c-sk-row .grow { flex: 1; display: flex; flex-direction: column; gap: 6px; }
+.c-sk-dot { width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0; }
+.c-sk-note { text-align: center; }
+.c-load-error { padding-top: 48px; }
+.c-load-error > svg { color: var(--text-dim); }

@@ -127,6 +127,7 @@ export function renderShell(ctx, content) {
     ${ctx.ui.editor && !(ctx.isDesktop && route === "tasks") ? renderEditorSheet(ctx) : ""}
     ${ctx.ui.manage ? renderManageSheet(ctx) : ""}
     ${ctx.ui.confirm ? renderConfirm(ctx.ui.confirm) : ""}
+    ${ctx.ui.conflictOpen != null ? renderVersions(ctx, ctx.ui.conflictOpen) : ""}
     ${ctx.ui.toast ? renderToast(ctx.ui.toast) : ""}
   </div>`;
 }
@@ -139,6 +140,7 @@ function renderToast(t) {
 
 // Вопросы о поясе и конфликты показываются на всех экранах.
 export function renderNotices(ctx) {
+  if (!ctx.isDesktop) return renderNoticesPhone(ctx);
   let out = "";
   if (ctx.tz?.prompt) {
     const p = ctx.tz.prompt;
@@ -152,16 +154,73 @@ export function renderNotices(ctx) {
   return out;
 }
 
+// Плашки телефона (макеты H07–H09): по одной строке на ситуацию и одно действие.
+// Подробности конфликта — в окне сравнения версий, а не на главной.
+function conflictName(ctx, op) {
+  const cur = op.result?.current;
+  const list = op.entity === "task" ? ctx.rows.tasks : op.entity === "group" ? ctx.rows.groups : ctx.rows.sections;
+  const local = list.find((x) => x.id === op.entity_id);
+  return cur?.title || cur?.name || local?.title || local?.name || op.changes?.title || op.changes?.name || "без названия";
+}
+
+function renderNoticesPhone(ctx) {
+  let out = "";
+  if (ctx.tz?.prompt) {
+    const p = ctx.tz.prompt;
+    out += `<div class="c-banner" role="status"><span class="grow"><b>Другой часовой пояс</b><span>Напоминания приходят по поясу ${esc(p.account)}, а телефон сейчас в ${esc(p.device)}.</span>
+      <span class="c-banner-actions"><button type="button" class="cap" data-action="tz-use-device">Перейти на ${esc(p.device)}</button><button type="button" class="cap" data-action="tz-keep">Оставить</button></span></span></div>`;
+  }
+  for (const op of ctx.status?.conflicts || []) {
+    const gone = op.result?.current?.deleted_at;
+    const kind = op.entity === "task" ? "задачи" : "проекта";
+    out += `<div class="c-banner warn" role="status"><span class="grow"><b>${gone ? `${op.entity === "task" ? "Задачу" : "Проект"} удалили на другом устройстве` : `У ${kind} две версии`}</b>
+      <span>«${esc(conflictName(ctx, op))}»: ${gone ? "ваше изменение ждёт решения" : "изменили на двух устройствах"}</span></span>
+      <button type="button" class="btn small" data-action="conflict-open" data-seq="${op.seq}">${gone ? "Решить" : "Сравнить"}</button></div>`;
+  }
+  for (const op of ctx.status?.failed || []) {
+    out += `<div class="c-banner bad" role="alert"><span class="grow"><b>Изменение не сохранилось</b>
+      <span>«${esc(conflictName(ctx, op))}»: сервер не принял${op.result?.reason ? ` (${esc(op.result.reason)})` : ""}.</span></span>
+      <button type="button" class="btn small" data-action="discard-mine" data-seq="${op.seq}">Отменить</button></div>`;
+  }
+  return out;
+}
+
+// Окно сравнения двух версий (H09): что на этом телефоне и что на другом
+// устройстве, только отличающиеся поля. Ничего не перезаписывается до выбора.
+export function renderVersions(ctx, seq) {
+  const op = (ctx.status?.conflicts || []).find((o) => o.seq === seq);
+  if (!op) return "";
+  const cur = op.result?.current;
+  const gone = !!cur?.deleted_at;
+  const keys = Object.keys(op.changes || {}).filter((k) => k !== "timezone" && (gone || !cur || String(cur[k] ?? "") !== String(op.changes[k] ?? "")));
+  const row = (k, v) => `<div class="c-ver-row"><span class="c-label">${esc(capitalize(FIELD_LABELS[k] || k))}</span><span>${esc(fieldValue(ctx, k, v))}</span></div>`;
+  const mine = keys.map((k) => row(k, op.changes[k])).join("") || `<div class="c-ver-row"><span>${op.type === "delete" ? "Удалить" : "Изменение"}</span></div>`;
+  const theirs = gone ? `<div class="c-ver-row"><span>${op.entity === "task" ? "Задача удалена" : "Удалено"}</span></div>` : keys.map((k) => row(k, cur?.[k])).join("");
+  const when = (iso) => iso ? new Date(iso).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+  return `<div class="sheet-scrim" data-action="conflict-close"></div>
+    <section class="sheet c-sheet" role="dialog" aria-modal="true" aria-label="Две версии">
+      <span class="handle"></span>
+      <div class="sheet-header"><button type="button" class="btn quiet small" data-action="conflict-close">Позже</button><h2>${gone ? "Удалено на другом устройстве" : "Две версии"}</h2><span></span></div>
+      <p class="c-note">«${esc(conflictName(ctx, op))}» изменили на двух устройствах, пока не было связи. Выберите, какую версию оставить, — до выбора ничего не перезаписывается.</p>
+      <div class="c-ver"><b>На этом телефоне</b><span class="c-label">изменено ${esc(when(op.local_at))}</span>${mine}
+        ${gone ? `<button type="button" class="btn" data-action="restore-apply" data-seq="${op.seq}">Восстановить с моими изменениями</button>
+          ${op.entity === "task" ? `<button type="button" class="btn quiet" data-action="save-new" data-seq="${op.seq}">Сохранить как новую задачу</button>` : ""}`
+        : `<button type="button" class="btn" data-action="keep-mine" data-seq="${op.seq}">Оставить эту версию</button>`}</div>
+      <div class="c-ver"><b>На другом устройстве</b>${cur?.updated_at ? `<span class="c-label">изменено ${esc(when(cur.updated_at))}</span>` : ""}${theirs}
+        <button type="button" class="btn" data-action="discard-mine" data-seq="${op.seq}">${gone ? "Оставить удалённой" : "Оставить эту версию"}</button></div>
+    </section>`;
+}
+
 const FIELD_LABELS = {
-  title: "название", notes: "описание", completed: "выполнено", group_id: "группа",
-  planned_date: "дата «на»", planned_time: "время «на»", due_date: "срок «до»", due_time: "время «до»",
+  title: "название", notes: "описание", completed: "выполнено", group_id: "проект",
+  planned_date: "когда сделать", planned_time: "время", due_date: "выполнить до", due_time: "время срока",
   duration_minutes: "длительность", priority: "приоритет", name: "название", color: "цвет", section_id: "раздел", position: "порядок",
 };
 
 function fieldValue(ctx, key, v) {
-  if (v === null || v === undefined || v === "") return "—";
+  if (v === null || v === undefined || v === "") return { due_time: "до конца дня", planned_time: "без времени", group_id: "без проекта", due_date: "без срока", planned_date: "без даты" }[key] || "—";
   if (key === "completed") return v ? "да" : "нет";
-  if (key === "group_id") return ctx.rows.groups.find((g) => g.id === v)?.name || v;
+  if (key === "group_id") return projectName(ctx.rows, v) || v;
   if (key.endsWith("_time")) return hhmm(v);
   if (key.endsWith("_date")) return shortDate(v, { today: ctx.today });
   if (key === "duration_minutes") return durationText(v);
@@ -534,10 +593,13 @@ function statusBanner(ctx) {
   const st = ctx.status?.state;
   if (!st || st === "synced" || st === "saving" || st === "idle" || st === "loading") return "";
   const s = syncLabel(ctx.status);
-  const tone = st === "offline" ? "" : s.cls === "bad" ? "bad" : "warn";
-  const sub = st === "offline" ? "Изменения сохранены на телефоне и отправятся, когда появится связь" : "";
-  return `<div class="c-banner ${tone}" role="status"><span class="grow"><b>${esc(s.text)}</b>${sub ? `<span>${sub}</span>` : ""}</span>
-    ${st === "offline" ? "" : `<button type="button" class="btn small quiet" data-action="sync-now">Повторить</button>`}</div>`;
+  if (st === "conflict" || st === "failed") return ""; // свои плашки — в renderNoticesPhone
+  const n = ctx.status?.unconfirmed || 0;
+  if (st === "offline") return `<div class="c-banner" role="status">${icons.cloudOff(20)}<span class="grow"><b>Нет сети</b>
+    <span>Изменения сохранены на телефоне и отправятся, когда появится связь${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}</span></span></div>`;
+  const tone = s.cls === "bad" ? "bad" : "warn";
+  return `<div class="c-banner ${tone}" role="status"><span class="grow"><b>${esc(s.text)}</b></span>
+    <button type="button" class="btn small" data-action="sync-now">Повторить</button></div>`;
 }
 
 function renderMainPick(ctx, main) {
@@ -564,6 +626,25 @@ function renderHomePhone(ctx) {
   const head = `<header class="c-head">${markSymbol(22)}
       <div class="c-head-text"><span class="c-date">${esc(longDate(today))}</span><h1>${esc(greeting(nowMin))}${name ? ", " + esc(name) : ""}</h1></div>
       <a class="c-avatar" href="#/profile" aria-label="Профиль">${esc((name || "?")[0])}</a></header>`;
+
+  // Первая загрузка (H13) и ошибка получения данных (H14) — пока на телефоне нет
+  // ни одной сохранённой задачи и сверка ещё ни разу не прошла.
+  const st = ctx.status?.state;
+  if (!rows.tasks.length && !ctx.status?.lastSyncedAt) {
+    if (st === "loading" || st === "idle" || st === "saving" || !st) {
+      const line = (w, h = 12) => `<span class="c-sk" style="width:${w};height:${h}px"></span>`;
+      return `<div class="c-home">${head}<div class="c-skeleton" aria-busy="true" aria-label="Загрузка задач">
+        <div class="c-sk-card">${line("35%", 10)}${line("70%", 18)}${line("40%", 10)}</div>
+        <div class="c-sk-block">${line("40%", 10)}${line("60%", 18)}</div>
+        ${["55%", "40%", "62%", "48%"].map((w) => `<div class="c-sk-row"><span class="c-sk c-sk-dot"></span><span class="grow">${line(w)}${line("30%", 10)}</span></div>`).join("")}
+        <span class="c-note c-sk-note">Загружаю задачи…</span></div></div>`;
+    }
+    if (st === "error" || st === "offline") {
+      return `<div class="c-home">${head}<div class="c-empty c-load-error">${icons.cloudOff(28)}
+        <b>Не получилось загрузить задачи</b><span>${st === "offline" ? "Нет связи с интернетом." : "Сервер не ответил."} Проверьте интернет и попробуйте ещё раз. Задачи, сохранённые на телефоне, не пропадут.</span>
+        <button type="button" class="btn" data-action="sync-now">Повторить</button></div></div>`;
+    }
+  }
 
   const mainHtml = main ? `<section class="c-main" aria-label="Главная задача">
       <div class="c-main-top"><span class="c-main-label">Главная задача</span><button type="button" class="c-link" data-action="main-pick">Сменить</button></div>
