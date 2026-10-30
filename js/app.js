@@ -694,7 +694,7 @@ function renderProfileScreen() {
   return `
     <header class="app-header">
       <button class="back-btn" data-action="back-to-app" aria-label="Назад">←</button>
-      <h1>Личный кабинет</h1>
+      <h1>Профиль</h1>
     </header>
     <div class="profile-screen">
       <div class="profile-section">
@@ -1130,7 +1130,7 @@ async function tryTelegramAutoLogin(tg) {
     if (existing) return; // onAuthChange already has it; splash gives way to the planner
     const result = await telegramMiniAppSignIn(tg.initData);
     if (!result.ok && result.reason === "not_linked") {
-      authMessage = "Этот Telegram ещё не привязан к аккаунту Mark. Войди по email, затем в «Личный кабинет» → «Привязать Telegram».";
+      authMessage = "Этот Telegram ещё не привязан к аккаунту Mark. Войди по email, затем в «Профиль» → «Привязать Telegram».";
     }
   } finally {
     // Whatever happened, stop holding the splash: either a session arrived and

@@ -107,7 +107,7 @@ export function renderShell(ctx, content) {
         <div class="nav-label">Разделы</div>
         ${sections || '<span class="muted" style="padding:0 12px;font-size:13px">Пока нет разделов</span>'}
       </div>
-      <a class="nav-account" href="#/profile" aria-label="Личный кабинет">
+      <a class="nav-account" href="#/profile" aria-label="Профиль">
         <span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span>
         <span style="display:flex;flex-direction:column;gap:2px;min-width:0">
           <span style="font-size:14px;font-weight:600;overflow:hidden;text-overflow:ellipsis">${esc(firstName(ctx.session) || ctx.session?.user?.email || "")}</span>
@@ -116,7 +116,7 @@ export function renderShell(ctx, content) {
       </a>
     </nav>
     <main class="main" id="main">
-      ${!["profile", "home", "tasks"].includes(route) ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Личный кабинет"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Кабинет</span></a></div>` : ""}
+      ${!["profile", "home", "tasks", "calendar"].includes(route) ? `<div class="mobile-account-bar"><a class="mobile-account" href="#/profile" aria-label="Профиль"><span class="avatar">${esc((firstName(ctx.session) || "?")[0])}</span><span>Профиль</span></a></div>` : ""}
       ${content}
     </main>
     <nav class="bottom-nav" aria-label="Основная навигация">
@@ -563,7 +563,7 @@ function renderHomePhone(ctx) {
   const main = mainTaskOf(ctx);
   const head = `<header class="c-head">${markSymbol(22)}
       <div class="c-head-text"><span class="c-date">${esc(longDate(today))}</span><h1>${esc(greeting(nowMin))}${name ? ", " + esc(name) : ""}</h1></div>
-      <a class="c-avatar" href="#/profile" aria-label="Кабинет">${esc((name || "?")[0])}</a></header>`;
+      <a class="c-avatar" href="#/profile" aria-label="Профиль">${esc((name || "?")[0])}</a></header>`;
 
   const mainHtml = main ? `<section class="c-main" aria-label="Главная задача">
       <div class="c-main-top"><span class="c-main-label">Главная задача</span><button type="button" class="c-link" data-action="main-pick">Сменить</button></div>
@@ -1043,7 +1043,49 @@ function sortForList(a, b) {
 
 // ----------------------------------------------------------------- календарь --
 
+// Календарь телефона (UX06 ТЗ v1.1): неделя и выбранный день по умолчанию,
+// месяц раскрывается нажатием на его название.
+function renderCalendarPhone(ctx) {
+  const sel = ctx.ui.selectedDate || ctx.today;
+  const ws = ctx.settings.week_start || 1;
+  const offset = (parseIso(sel).getDay() - (ws % 7) + 7) % 7;
+  const start = addDays(sel, -offset);
+  const days = Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  const marks = monthMarks(ctx.rows, days[0], days[6]);
+  const wd = ["Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб"];
+  const [y, m] = sel.split("-").map(Number);
+  const open = !!ctx.ui.calMonthOpen;
+  const week = `<div class="c-week" role="group" aria-label="Неделя">${days.map((d) => {
+    const n = marks[d]?.count || 0;
+    return `<button type="button" class="c-wday${d === sel ? " sel" : ""}${d === ctx.today ? " today" : ""}" data-action="pick-date" data-date="${d}" aria-pressed="${d === sel}"
+      aria-label="${esc(longDate(d))}${n ? ", " + n + " " + plural(n, "задача", "задачи", "задач") : ""}"><span class="wd">${wd[parseIso(d).getDay()]}</span><span class="n">${parseIso(d).getDate()}</span><i aria-hidden="true"${n ? "" : ' class="none"'}></i></button>`;
+  }).join("")}</div>`;
+  let month = "";
+  if (open) {
+    const [my, mm] = ctx.ui.calMonth.split("-").map(Number);
+    const grid = monthGrid(my, mm - 1, ws);
+    const mk = monthMarks(ctx.rows, grid[0].iso, grid[grid.length - 1].iso);
+    month = `<section class="c-month" aria-label="Месяц">
+      <div class="c-month-nav"><button type="button" class="c-icon-btn" data-action="cal-prev" aria-label="Предыдущий месяц">${icons.left(18)}</button>
+        <b>${esc(monthTitle(my, mm - 1))}</b>
+        <button type="button" class="c-icon-btn" data-action="cal-next" aria-label="Следующий месяц">${icons.right(18)}</button></div>
+      <div class="cal-grid">${weekHeader(ws).map((w) => `<span class="cal-wd">${w}</span>`).join("")}${grid.map((c) => dayCell(ctx, c, mk[c.iso], sel, false)).join("")}</div>
+    </section>`;
+  }
+  return `<div class="c-page">
+    <header class="c-title"><div><h1>Календарь</h1>
+        <button type="button" class="c-month-btn" data-action="cal-month-toggle" aria-expanded="${open}">${esc(monthTitle(y, m - 1))}${icons.right(14)}</button></div>
+      <div class="c-title-actions">${sel !== ctx.today ? `<button type="button" class="c-link c-today-btn" data-action="cal-today">Сегодня</button>` : ""}
+        ${iconBtn("cal-week-prev", "Предыдущая неделя", icons.left(20))}${iconBtn("cal-week-next", "Следующая неделя", icons.right(20))}</div></header>
+    ${renderNotices(ctx)}
+    ${month}
+    ${week}
+    ${renderDayPanel(ctx, sel)}
+  </div>`;
+}
+
 export function renderCalendar(ctx) {
+  if (!ctx.isDesktop) return renderCalendarPhone(ctx);
   const [y, m] = ctx.ui.calMonth.split("-").map(Number);
   const grid = monthGrid(y, m - 1, ctx.settings.week_start);
   const marks = monthMarks(ctx.rows, grid[0].iso, grid[grid.length - 1].iso);
@@ -1237,7 +1279,7 @@ export function renderAssistant(ctx) {
     <button type="button" data-action="assistant-new">Новый чат</button>
     <button type="button" data-action="assistant-chats">Мои чаты</button>
     <button type="button" data-action="assistant-memory">Память${a.book?.memory?.length ? " · " + a.book.memory.length : ""}</button>
-    <a href="#/profile">Кабинет и настройки</a>
+    <a href="#/profile">Профиль и настройки</a>
     ${a.chat.length ? '<button type="button" data-action="assistant-clear">Очистить этот чат</button>' : ""}
     ${enabled ? '<button type="button" data-action="assistant-revoke">Выключить помощника</button>' : ""}
     <small>Чаты и память хранятся на этом устройстве.</small></div></details>`;
@@ -1476,7 +1518,7 @@ export function renderProfile(ctx) {
     <input type="checkbox" class="switch" data-action="set-setting" data-setting="${key}" ${s[key] ? "checked" : ""}></label>`;
   const n = ctx.status?.unconfirmed || 0;
 
-  return `<header class="page-head"><div class="row" style="gap:8px">${ctx.ui.profileFrom ? `<a class="icon-btn" href="${esc(ctx.ui.profileFrom)}" aria-label="Назад">${icons.left(20)}</a>` : ""}<h1>Кабинет</h1></div>${statusButton(ctx.status)}</header>
+  return `<header class="page-head"><div class="row" style="gap:8px">${ctx.ui.profileFrom ? `<a class="icon-btn" href="${esc(ctx.ui.profileFrom)}" aria-label="Назад">${icons.left(20)}</a>` : ""}<h1>Профиль</h1></div>${statusButton(ctx.status)}</header>
     ${renderNotices(ctx)}
     <div class="profile-grid">
       <section class="card" aria-label="Профиль">

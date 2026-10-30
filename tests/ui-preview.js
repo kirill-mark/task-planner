@@ -185,6 +185,9 @@ document.addEventListener("click", async (e) => {
   else if (a === "assistant-ask") { ui.assistant.input = el.dataset.text; }
   else if (a === "assistant-voice") { ui.assistant.voice = { phase: (ui.assistant.voice?.phase || "idle") === "idle" ? "recording" : "idle" }; }
   else if (a === "open-task") { const t = rows.tasks.find((x) => x.id === el.dataset.id); ui.editor = { id: t.id, error: "", draft: { ...t, planned_time: (t.planned_time || "").slice(0, 5), due_time: (t.due_time || "").slice(0, 5), duration_minutes: t.duration_minutes || "", group_id: t.group_id || "" } }; }
+  else if (a === "cal-month-toggle") ui.calMonthOpen = !ui.calMonthOpen;
+  else if (a === "cal-week-prev" || a === "cal-week-next") { ui.selectedDate = addDays(ui.selectedDate, a === "cal-week-prev" ? -7 : 7); ui.calMonth = ui.selectedDate.slice(0, 7); }
+  else if (a === "cal-today") { ui.selectedDate = today; ui.calMonth = today.slice(0, 7); }
   else if (a === "search-open") ui.searchOpen = true;
   else if (a === "search-close") { ui.searchOpen = false; ui.search = ""; }
   else if (a === "tasks-mode-menu") ui.tasksMenu = !ui.tasksMenu;
@@ -244,6 +247,7 @@ if (q.get("manage")) ui.manage = { form: null };
 if (q.get("layout")) { ui.layoutDraft = { desktop: [{ type: "summary", col: "main" }, { type: "plan", col: "main" }, { type: "calendar", col: "side" }, { type: "upcoming", col: "side" }], phone: [{ type: "summary" }, { type: "upcoming" }, { type: "calendar" }, { type: "plan" }, { type: "progress" }] }; }
 if (q.get("focus")) ui.focusPick = true;
 if (q.get("mode")) ui.tasksMode = q.get("mode");
+if (q.get("month")) ui.calMonthOpen = true;
 if (q.get("searching")) ui.searchOpen = true;
 if (q.get("quick")) ui.editor = { id: null, error: "", mode: "quick", restored: q.get("quick") === "draft", draft: { title: q.get("quick") === "empty" ? "" : "Забрать оборудование из проката на Старом Арбате и вернуть залог", notes: "", group_id: q.get("quick") === "draft" ? "g2" : "", planned_date: "", planned_time: "", due_date: "", due_time: "", duration_minutes: "", priority: "normal" } };
 render();

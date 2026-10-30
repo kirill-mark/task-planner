@@ -173,7 +173,6 @@ window.addEventListener("hashchange", () => {
   route = parseRoute();
   ui.tasksMenu = false; ui.tasksFilters = false; ui.projectMenu = false;
   if (route.name !== "tasks") ui.searchOpen = false;
-  if (route.name === "assistant" && !from.startsWith("#/assistant")) createFreshChat();
   if (route.name !== "assistant") deviceSpeech?.cancel();
   if (route.name === "profile" && !from.startsWith("#/profile")) ui.profileFrom = from;
   if (route.name === "calendar" && route.params.date) selectDate(route.params.date);
@@ -516,7 +515,7 @@ async function tryTelegramAutoLogin() {
     if (await getSession()) return;
     const result = await telegramMiniAppSignIn(tg.initData);
     if (!result.ok && result.reason === "not_linked") {
-      ui.auth.message = "Этот Telegram ещё не привязан к аккаунту Mark. Войдите по email, затем в кабинете подключите Telegram.";
+      ui.auth.message = "Этот Telegram ещё не привязан к аккаунту Mark. Войдите по email, затем в профиле подключите Telegram.";
     }
   } finally {
     tgLoginInFlight = false;
@@ -862,8 +861,12 @@ const actions = {
   "cal-prev": () => { shiftMonth(-1); },
   "cal-next": () => { shiftMonth(1); },
   "cal-today": () => { selectDate(todayIso()); render(); },
+  "cal-month-toggle": () => { ui.calMonthOpen = !ui.calMonthOpen; ui.calMonth = (ui.selectedDate || todayIso()).slice(0, 7); render(); },
+  "cal-week-prev": () => { selectDate(addDays(ui.selectedDate || todayIso(), -7)); render(); },
+  "cal-week-next": () => { selectDate(addDays(ui.selectedDate || todayIso(), 7)); render(); },
   "pick-date": (el) => {
     selectDate(el.dataset.date);
+    if (!DESKTOP.matches) ui.calMonthOpen = false;
     if (el.dataset.go === "calendar") go(`#/calendar?date=${el.dataset.date}`); else render();
   },
   "sync-now": () => store.syncNow(),
@@ -1084,7 +1087,6 @@ function loadChat(userId) {
   const book = readChats(localStorage, userId);
   ui.assistant.book = book;
   activateChat(book.activeId);
-  if (route.name === "assistant") createFreshChat();
 }
 function createFreshChat() {
   saveChat();
@@ -1093,7 +1095,8 @@ function createFreshChat() {
   const t = beginConversation(book);
   activateChat(t.id);
 }
-// A backgrounded/terminated app returns to a fresh conversation; the old one stays saved.
+// Сворачивание и возврат продолжают текущий разговор с черновиком (UX09 ТЗ v1.1);
+// новый чат — только кнопкой «Новый чат». Незаконченный запрос прерывается.
 let assistantWasHidden = false;
 function assistantAppState(active) {
   if (!active) {
@@ -1101,7 +1104,7 @@ function assistantAppState(active) {
     if (assistantWasHidden) { deviceSpeech?.cancel(); assistantRequest?.abort(); }
   } else if (assistantWasHidden) {
     assistantWasHidden = false;
-    if (route.name === "assistant" && session) { createFreshChat(); render(); }
+    if (route.name === "assistant" && session) render();
   }
 }
 // iOS reports actual background transitions, rather than temporary permission sheets.

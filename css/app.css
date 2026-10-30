@@ -836,3 +836,20 @@ html { overflow-x: clip; }
 .c-done .task-title { color: var(--text-dim); }
 .c-day-add { align-self: flex-start; }
 .c-done .task.done .task-title { text-decoration: none; }
+
+/* Календарь телефона: неделя по умолчанию, месяц по нажатию (UX06) */
+.c-month-btn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; padding: 0; border: 0; background: none; color: var(--text-dim); font-size: 15px; }
+.c-month-btn svg { transition: transform 0.2s ease; }
+.c-month-btn[aria-expanded="true"] svg { transform: rotate(90deg); }
+.c-today-btn { color: var(--accent); font-size: 15px; min-height: 44px; padding: 0 6px; }
+.c-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.c-wday { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 64px; padding: 0; border: 0; background: none; color: var(--text); }
+.c-wday .wd { font-size: 13px; color: var(--text-dim); }
+.c-wday .n { width: 36px; height: 36px; border-radius: 18px; display: grid; place-items: center; font-weight: 600; font-variant-numeric: tabular-nums; box-sizing: border-box; }
+.c-wday.today .n { border: 1.5px solid var(--accent); color: var(--accent); }
+.c-wday.sel .n { background: var(--accent); color: var(--on-accent); border: 0; }
+.c-wday i { width: 4px; height: 4px; border-radius: 2px; background: var(--text-dim); }
+.c-wday i.none { visibility: hidden; }
+.c-month { background: var(--surface); border-radius: 16px; padding: 8px 10px 12px; }
+.c-month-nav { display: flex; align-items: center; justify-content: space-between; }
+.c-month-nav b { font-size: 16px; }
