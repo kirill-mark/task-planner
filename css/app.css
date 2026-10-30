@@ -804,6 +804,32 @@ html { overflow-x: clip; }
 .c-li .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .c-li:hover { color: var(--text); }
 
+button.c-li { width: 100%; background: none; border: 0; border-top: 1px solid var(--divider); font: inherit; text-align: left; }
+button.c-li:first-child { border-top: 0; }
+.c-li-value { flex-shrink: 0; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-li-danger, .c-li-danger > svg, .c-li-danger:hover { color: var(--danger); }
+
+/* Профиль (O05–O09) */
+.c-account { display: flex; align-items: center; gap: 14px; }
+.c-account .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.c-account b { font-size: 18px; font-weight: 600; overflow-wrap: anywhere; }
+.c-account .c-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.c-avatar-lg { width: 56px; height: 56px; border-radius: 28px; font-size: 22px; }
+.c-sync-line { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 6px 0 14px; border-radius: 12px; background: var(--surface); font-size: 14px; }
+.c-sync-line .grow { flex: 1; min-width: 0; }
+.c-sync-line .dot { width: 8px; height: 8px; border-radius: 4px; background: var(--text-dim); flex-shrink: 0; }
+.c-sync-line.ok .dot { background: var(--accent); }
+.c-sync-line.warn .dot { background: var(--warn); }
+.c-sync-line .c-link { min-height: 44px; padding: 0 10px; color: var(--accent); font-size: 14px; }
+.c-pgroup { display: flex; flex-direction: column; gap: 6px; }
+.c-pgroup-title { padding-left: 16px; }
+.c-version { text-align: center; }
+.c-settings { display: flex; flex-direction: column; gap: 14px; background: var(--surface); border-radius: 16px; padding: 16px; }
+.c-settings .card { background: transparent; border: 0; padding: 0; box-shadow: none; }
+.c-settings .seg { display: flex; }
+.c-settings .seg button { flex: 1; padding: 0 8px; }
+.c-settings .input, .c-settings .select { width: 100%; }
+
 .c-back { display: flex; align-items: center; margin: -8px -8px -8px -10px; }
 .c-back a { min-height: 44px; display: inline-flex; align-items: center; gap: 2px; color: var(--accent); font-size: 16px; padding-right: 8px; }
 .c-back .grow { flex: 1; }

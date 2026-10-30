@@ -1799,12 +1799,9 @@ export function renderProfile(ctx) {
     <input type="checkbox" class="switch" data-action="set-setting" data-setting="${key}" ${s[key] ? "checked" : ""}></label>`;
   const n = ctx.status?.unconfirmed || 0;
 
-  return `<header class="page-head"><div class="row" style="gap:8px">${ctx.ui.profileFrom ? `<a class="icon-btn" href="${esc(ctx.ui.profileFrom)}" aria-label="Назад">${icons.left(20)}</a>` : ""}<h1>Профиль</h1></div>${statusButton(ctx.status)}</header>
-    ${renderNotices(ctx)}
-    <div class="profile-grid">
-      <section class="card" aria-label="Профиль">
-        <div class="card-head"><h2>Профиль</h2></div>
-        <span class="muted" style="font-size:14px">${esc(ctx.session.user.email)}</span>
+  const sync = `${ctx.status?.lastSyncedAt ? esc(relativeDay(isoFromMs(ctx.status.lastSyncedAt), ctx.today) + ", " + new Date(ctx.status.lastSyncedAt).toTimeString().slice(0, 5)) : "—"}`;
+  const parts = {
+    account: { title: "Имя и пароль", inner: `<span class="muted" style="font-size:14px">${esc(ctx.session.user.email)}</span>
         <form class="row" data-action="save-name" style="align-items:flex-end">
           <label class="field" style="flex:1"><span>Имя</span><input class="input" name="name" data-key="pf-name" data-draft="profile.name" value="${esc(ctx.ui.profile?.name ?? ctx.session.user.user_metadata?.display_name ?? "")}" maxlength="40" placeholder="Как к вам обращаться"></label>
           <button type="submit" class="btn">Сохранить</button></form>
@@ -1812,36 +1809,17 @@ export function renderProfile(ctx) {
         <form class="row" data-action="save-password" style="align-items:flex-end">
           <label class="field" style="flex:1"><span>Новый пароль</span><input class="input" type="password" name="password" data-key="pf-pass" minlength="6" autocomplete="new-password" placeholder="Минимум 6 символов"></label>
           <button type="submit" class="btn">Сменить</button></form>
-        ${msg("password")}
-      </section>
-
-      <section class="card" aria-label="Оформление">
-        <div class="card-head"><h2>Оформление</h2>${msg("theme")}</div>
-        <div class="seg" role="radiogroup" aria-label="Тема">
+        ${msg("password")}` },
+    theme: { title: "Оформление", inner: `${msg("theme")}<div class="seg" role="radiogroup" aria-label="Тема">
           ${[["light", "Светлая"], ["dark", "Тёмная"], ["system", "Как в системе"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${s.theme === v}" data-action="set-theme" data-theme="${v}">${l}</button>`).join("")}
         </div>
-        <span class="muted" style="font-size:13px">«Как в системе» — светлая или тёмная по настройке устройства. Выбор сохраняется в аккаунте.</span>
-      </section>
-
-      <section class="card" aria-label="Часовой пояс">
-        <div class="card-head"><h2>Часовой пояс</h2>${msg("timezone")}</div>
-        <label class="field"><span>Напоминания и сводки приходят по поясу</span>
+        <span class="muted" style="font-size:13px">«Как в системе» — светлая или тёмная по настройке телефона. Выбор сохраняется в аккаунте.</span>` },
+    timezone: { title: "Часовой пояс", inner: `${msg("timezone")}<label class="field"><span>Напоминания и сводки приходят по поясу</span>
           <select class="select" data-action="set-timezone">${zones.map((z) => `<option value="${esc(z)}" ${z === s.timezone ? "selected" : ""}>${esc(z)}${z === ctx.tz?.device ? " — это устройство" : ""}</option>`).join("")}</select></label>
-        <span class="muted" style="font-size:13px">Если устройство окажется в другом поясе, приложение спросит — само не поменяет.</span>
-      </section>
-
-      ${renderIphoneReminders(ctx.iphoneReminders)}
-      ${ctx.iphoneWidget ? `<section class="card" aria-label="Виджет на iPhone">
-        <div class="card-head"><h2>Виджет на iPhone</h2></div>
-        <p class="muted">Зажми свободное место на главном экране iPhone → «Изменить» → «Добавить виджет» → Mark. «Сегодня в Mark» — маленький и средний. «План на день» — большой список задач.</p>
-        <p class="muted">Для экрана блокировки: зажми экран → «Настроить» → «Экран блокировки» → область виджетов под часами → Mark → «План на день». Карточка показывает до трёх задач; нажатие открывает весь список.</p>
-        <p class="muted">Виджет «Сегодня» показывает задачи и открывает их по нажатию. После изменений открой Mark — iOS обновит виджет.</p>
-        ${ctx.iphoneWidget.error ? `<p class="error">${esc(ctx.iphoneWidget.error)}</p>` : ""}
-      </section>` : ""}
-
-      <section class="card" aria-label="Уведомления">
-        <div class="card-head"><h2>Уведомления в Telegram</h2>${msg("notify")}</div>
-        <div>${toggle("morning_digest", "Утренняя сводка", "план на сегодня, дедлайны и просроченное")}${toggle("evening_digest", "Вечерняя сводка", "план на завтра")}${toggle("task_reminders", "Напоминание о задаче", "перед плановым временем, иначе — перед дедлайном со временем")}</div>
+        <span class="muted" style="font-size:13px">Если телефон окажется в другом поясе, приложение спросит — само не поменяет.</span>` },
+    notify: { title: "Уведомления", inner: `${renderIphoneReminders(ctx.iphoneReminders)}
+        <section class="card" aria-label="Уведомления в Telegram"><div class="card-head"><h2>В Telegram</h2>${msg("notify")}</div>
+        <div>${toggle("morning_digest", "Утренняя сводка", "план на сегодня, сроки и просроченное")}${toggle("evening_digest", "Вечерняя сводка", "план на завтра")}${toggle("task_reminders", "Напоминание о задаче", "перед плановым временем, иначе — перед сроком со временем")}</div>
         <div class="two">
           <label class="field"><span>Утренняя сводка в</span><input class="input" type="time" data-notify-input="morning_time" value="${esc(hhmm(s.morning_time))}"></label>
           <label class="field"><span>Вечерняя сводка в</span><input class="input" type="time" data-notify-input="evening_time" value="${esc(hhmm(s.evening_time))}"></label>
@@ -1852,55 +1830,94 @@ export function renderProfile(ctx) {
         ${s.quiet_enabled ? `<div class="two">
           <label class="field"><span>С</span><input class="input" type="time" data-notify-input="quiet_start" value="${esc(hhmm(s.quiet_start))}"></label>
           <label class="field"><span>До</span><input class="input" type="time" data-notify-input="quiet_end" value="${esc(hhmm(s.quiet_end))}"></label></div>` : ""}
-      </section>
-
-      <section class="card" aria-label="Telegram и синхронизация">
-        <div class="card-head"><h2>Telegram и синхронизация</h2></div>
-        <div style="display:flex;flex-direction:column;gap:10px">${tgBlock}${ctx.ui.telegramMsg ? `<span class="form-msg bad">${esc(ctx.ui.telegramMsg)}</span>` : ""}</div>
-        <div class="two">
-          <div class="kv"><span>Последняя сверка</span><span>${ctx.status?.lastSyncedAt ? esc(relativeDay(isoFromMs(ctx.status.lastSyncedAt), ctx.today) + ", " + new Date(ctx.status.lastSyncedAt).toTimeString().slice(0, 5)) : "—"}</span></div>
-          <div class="kv"><span>В очереди на устройстве</span><span>${n} ${plural(n, "изменение", "изменения", "изменений")}</span></div>
+        </section>` },
+    telegram: { title: "Telegram", inner: `<div style="display:flex;flex-direction:column;gap:10px">${tgBlock}${ctx.ui.telegramMsg ? `<span class="form-msg bad">${esc(ctx.ui.telegramMsg)}</span>` : ""}</div>
+        <span class="muted" style="font-size:13px">Бот присылает сводки и напоминания. Что именно — в «Уведомления и напоминания».</span>` },
+    sync: { title: "Синхронизация", inner: `<div class="two">
+          <div class="kv"><span>Последняя сверка</span><span>${sync}</span></div>
+          <div class="kv"><span>Ждут отправки</span><span>${n} ${plural(n, "изменение", "изменения", "изменений")}</span></div>
         </div>
-        <button type="button" class="btn small" style="align-self:flex-start" data-action="sync-now">${icons.sync()}Сверить сейчас</button>
-      </section>
-
-      <section class="card" aria-label="Планирование">
-        <div class="card-head"><h2>Планирование</h2>${msg("planning")}</div>
-        <div class="two">
+        <button type="button" class="btn small" style="align-self:flex-start" data-action="sync-now">${icons.sync()}Сверить сейчас</button>` },
+    widget: ctx.iphoneWidget ? { title: "Виджет на iPhone", inner: `<p class="muted">Зажмите свободное место на главном экране iPhone → «Изменить» → «Добавить виджет» → Mark. «Сегодня в Mark» — маленький и средний. «План на день» — большой список задач.</p>
+        <p class="muted">Для экрана блокировки: зажмите экран → «Настроить» → «Экран блокировки» → область виджетов под часами → Mark → «План на день». Карточка показывает до трёх задач; нажатие открывает весь список.</p>
+        <p class="muted">После изменений откройте Mark — iOS обновит виджет.</p>
+        ${ctx.iphoneWidget.error ? `<p class="error">${esc(ctx.iphoneWidget.error)}</p>` : ""}` } : null,
+    planning: { title: "Планирование", inner: `${msg("planning")}<div class="two">
           <label class="field"><span>Начало рабочего дня</span><input class="input" type="time" data-setting-input="workday_start" value="${esc(hhmm(s.workday_start))}"></label>
           <label class="field"><span>Конец рабочего дня</span><input class="input" type="time" data-setting-input="workday_end" value="${esc(hhmm(s.workday_end))}"></label>
         </div>
-        <label class="field"><span>Буфер между делами</span><select class="select" data-setting-input="buffer_minutes">${[0, 5, 10, 15, 30].map((v) => `<option value="${v}" ${Number(s.buffer_minutes) === v ? "selected" : ""}>${v ? v + " мин" : "без буфера"}</option>`).join("")}</select></label>
+        <label class="field"><span>Перерыв между задачами</span><select class="select" data-setting-input="buffer_minutes">${[0, 5, 10, 15, 30].map((v) => `<option value="${v}" ${Number(s.buffer_minutes) === v ? "selected" : ""}>${v ? v + " мин" : "без перерыва"}</option>`).join("")}</select></label>
         <div class="field"><span>Неделя начинается</span><div class="seg" role="radiogroup" aria-label="Первый день недели">
           ${[[1, "с понедельника"], [7, "с воскресенья"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${Number(s.week_start) === v}" data-action="set-week-start" data-value="${v}">${l}</button>`).join("")}</div></div>
-        <div class="field"><span>Задача без названной даты</span><div class="seg" role="radiogroup" aria-label="Куда попадает задача без даты">
+        <div class="field"><span>Задача без даты</span><div class="seg" role="radiogroup" aria-label="Куда попадает задача без даты">
           ${[["inbox", "во «Входящие»"], ["today", "на сегодня"]].map(([v, l]) => `<button type="button" role="radio" aria-checked="${s.new_task_date === v}" data-action="set-new-task-date" data-value="${v}">${l}</button>`).join("")}</div></div>
-        <span class="muted" style="font-size:13px">Рабочие часы и буфер используются в расчёте свободного времени календаря.</span>
-      </section>
-
-      <section class="card" aria-label="Помощник">
-        <div class="card-head"><h2>Помощник</h2>${msg("assistant")}</div>
-        ${s.assistant_consent_at ? `<div>
+        <span class="muted" style="font-size:13px">Рабочие часы и перерыв помогут помощнику предлагать план дня.</span>` },
+    assistant: { title: "Помощник", inner: `${msg("assistant")}${s.assistant_consent_at ? `<div>
           <label class="switch-row"><span class="grow"><span>Краткие ответы</span><span class="muted" style="font-size:12px">вывод, основание, действие</span></span><input type="checkbox" class="switch" data-action="set-setting" data-setting="assistant_brief" ${s.assistant_brief !== false ? "checked" : ""}></label>
-          <p class="muted" style="font-size:13px">Все изменения задач требуют подтверждения в чате.</p></div>
+          <p class="muted" style="font-size:13px">Все изменения задач — только после вашего подтверждения.</p></div>
           <button type="button" class="btn small quiet" style="align-self:flex-start" data-action="assistant-revoke">Выключить помощника</button>`
-        : `<span class="soft" style="font-size:14px">Выключен. Включается на экране «Помощник» — там же сказано, какие данные передаются.</span>`}
-      </section>
-
-      <section class="card" aria-label="Данные">
-        <div class="card-head"><h2>Данные</h2></div>
-        <span class="soft" style="font-size:14px">Все ваши разделы, группы и задачи. JSON — полная копия с версией схемы; CSV — список задач для таблиц.</span>
+        : `<span class="soft" style="font-size:14px">Выключен. Включается на экране «Помощник» — там же сказано, какие данные передаются.</span>`}` },
+    data: { title: "Данные", inner: `<span class="soft" style="font-size:14px">Все ваши проекты и задачи. JSON — полная копия; CSV — список задач для таблиц.</span>
         <div class="chips"><button type="button" class="btn small" data-action="export-json" ${ctx.ui.profile.exportBusy ? "disabled" : ""}>Экспорт JSON</button><button type="button" class="btn small" data-action="export-csv" ${ctx.ui.profile.exportBusy ? "disabled" : ""}>Экспорт CSV</button>
           <a class="btn small quiet" href="#/tasks?view=trash">Корзина</a></div>
-        ${ctx.ui.saved.export?.text ? `<div class="form-msg ${ctx.ui.saved.export.cls}" role="status">${esc(ctx.ui.saved.export.text)}</div>` : ""}
-      </section>
+        ${ctx.ui.saved.export?.text ? `<div class="form-msg ${ctx.ui.saved.export.cls}" role="status">${esc(ctx.ui.saved.export.text)}</div>` : ""}` },
+    logout: { title: "Выход", inner: `${n ? `<span class="soft" style="font-size:14px">${n} ${plural(n, "изменение ещё не отправлено", "изменения ещё не отправлены", "изменений ещё не отправлены")}. Они останутся на этом телефоне и уйдут при следующем входе в этот аккаунт.</span>` : ""}
+        <button type="button" class="btn danger" style="align-self:flex-start" data-action="logout">Выйти из аккаунта</button>` },
+  };
+  if (!ctx.isDesktop) return renderProfilePhone(ctx, parts, { sync, n });
+  const card = (key) => parts[key] ? `<section class="card" aria-label="${esc(parts[key].title)}"><div class="card-head"><h2>${esc(parts[key].title)}</h2></div>${parts[key].inner}</section>` : "";
+  return `<header class="page-head"><div class="row" style="gap:8px">${ctx.ui.profileFrom ? `<a class="icon-btn" href="${esc(ctx.ui.profileFrom)}" aria-label="Назад">${icons.left(20)}</a>` : ""}<h1>Профиль</h1></div>${statusButton(ctx.status)}</header>
+    ${renderNotices(ctx)}
+    <div class="profile-grid">${["account", "theme", "timezone"].map(card).join("")}${parts.notify.inner.replace('<section class="card" aria-label="Уведомления в Telegram"><div class="card-head"><h2>В Telegram</h2>', '<section class="card" aria-label="Уведомления в Telegram"><div class="card-head"><h2>Уведомления в Telegram</h2>')}
+      ${card("widget")}<section class="card" aria-label="Telegram и синхронизация"><div class="card-head"><h2>Telegram и синхронизация</h2></div>${parts.telegram.inner}${parts.sync.inner}</section>
+      ${["planning", "assistant", "data", "logout"].map(card).join("")}</div>`;
+}
 
-      <section class="card" aria-label="Выход">
-        <div class="card-head"><h2>Выход</h2></div>
-        ${n ? `<span class="soft" style="font-size:14px">${n} ${plural(n, "изменение ещё не отправлено", "изменения ещё не отправлены", "изменений ещё не отправлены")}. Они останутся на этом устройстве и уйдут при следующем входе в этот аккаунт.</span>` : ""}
-        <button type="button" class="btn danger" style="align-self:flex-start" data-action="logout">Выйти из аккаунта</button>
-      </section>
-    </div>`;
+// Профиль телефона (макеты O05–O09): аккаунт и состояние сверки сверху, ниже
+// группы строк; каждая настройка — отдельная страница «‹ Профиль».
+function renderProfilePhone(ctx, parts, { sync, n }) {
+  const s = ctx.settings;
+  const sec = ctx.route.params.section;
+  if (sec && parts[sec]) {
+    return `<div class="c-page c-profile-sub">${backBar("#/profile", "Профиль")}
+      <header class="c-title"><div><h1>${esc(parts[sec].title)}</h1></div></header>
+      <div class="c-settings">${parts[sec].inner}</div></div>`;
+  }
+  const name = firstName(ctx.session);
+  const st = ctx.status?.state;
+  const at = ctx.status?.lastSyncedAt;
+  const when = at ? (isoFromMs(at) === ctx.today ? "в " : relativeDay(isoFromMs(at), ctx.today).toLowerCase() + ", ") + new Date(at).toTimeString().slice(0, 5) : "";
+  const statusLine = st === "synced" ? `Всё сохранено${when ? ` · сверка ${when}` : ""}` : st === "offline" ? `Нет сети${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}` : syncLabel(ctx.status).text;
+  const row = (href, icon, label, value = "", extra = "") => `<a class="c-li" href="${href}" ${extra}>${icon}<span class="grow"><span>${label}</span></span>${value ? `<span class="c-label c-li-value">${esc(value)}</span>` : ""}${icons.right(16)}</a>`;
+  const go = (key) => `#/profile?section=${key}`;
+  const tg = ctx.telegram;
+  const tgValue = tg.status === "linked" ? (tg.link.telegram_username ? "@" + tg.link.telegram_username : "Подключён") : tg.status === "loading" ? "" : "Не подключён";
+  const themeValue = { light: "Светлая", dark: "Тёмная", system: "Как в системе" }[s.theme] || "";
+  const tz = String(s.timezone || "").split("/").pop().replace(/_/g, " ");
+  const group = (title, rows) => `<div class="c-pgroup">${title ? `<span class="c-label c-pgroup-title">${title}</span>` : ""}<div class="c-group">${rows.join("")}</div></div>`;
+  return `<div class="c-page">
+    ${ctx.ui.profileFrom ? backBar(ctx.ui.profileFrom, "Назад") : ""}
+    <header class="c-title"><div><h1>Профиль</h1></div></header>
+    <div class="c-account">
+      <span class="c-avatar c-avatar-lg" aria-hidden="true">${esc((name || "?")[0])}</span>
+      <span class="grow"><b>${esc(name || "Без имени")}</b><span class="c-label">${esc(ctx.session.user.email || "")}</span></span>
+    </div>
+    <div class="c-sync-line ${st === "synced" ? "ok" : st === "offline" ? "" : "warn"}"><span class="dot"></span><span class="grow">${esc(statusLine)}</span>
+      <button type="button" class="c-link" data-action="sync-now">Сверить</button></div>
+    ${renderNotices(ctx)}
+    ${group("Оформление", [row(go("theme"), icons.moon(20), "Тема", themeValue), row(go("timezone"), icons.globe(20), "Часовой пояс", tz)])}
+    ${group("Связь", [row(go("notify"), icons.bell(20), "Уведомления и напоминания"),
+      row(go("telegram"), icons.send(20), "Telegram", tgValue), parts.widget ? row(go("widget"), icons.cal(20), "Виджет на iPhone") : ""])}
+    ${group("Работа", [row(go("planning"), icons.clock(20), "Планирование", `${hhmm(s.workday_start) || "10:00"}–${hhmm(s.workday_end) || "19:00"}`),
+      row(go("assistant"), icons.spark(20), "Помощник", s.assistant_consent_at ? "Включён" : "Выключен"),
+      row("#/tasks?view=projects", icons.folder(20), "Проекты", String(visibleGroups(ctx).length))])}
+    ${group("Данные", [row(go("data"), icons.download(20), "Экспорт задач", "JSON, CSV"),
+      row("#/tasks?view=trash", icons.trash(20), "Корзина", ctx.trash?.status === "ok" && ctx.trash.tasks.length ? String(ctx.trash.tasks.length) : "")])}
+    ${group("Аккаунт", [row(go("account"), icons.edit(20), "Имя и пароль"),
+      `<button type="button" class="c-li c-li-danger" data-action="logout">${icons.out(20)}<span class="grow">Выйти из аккаунта</span></button>`])}
+    ${n ? `<p class="c-note">${n} ${plural(n, "изменение ещё не отправлено", "изменения ещё не отправлены", "изменений ещё не отправлены")}. При выходе они останутся на этом телефоне.</p>` : ""}
+    <p class="c-note c-version">Mark · тестовая сборка</p>
+  </div>`;
 }
 
 function isoFromMs(ms) {
