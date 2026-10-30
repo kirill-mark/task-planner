@@ -338,12 +338,20 @@ export class ModelStore {
     return out;
   }
 
-  createTaskV2(fields, { timezone } = {}) {
+  createTaskV2(fields, { timezone, holdMs = 0 } = {}) {
     if (!this.engine) return null;
     const id = crypto.randomUUID();
     const f = this.taskFieldsFor({ planned_time: null, due_time: null, ...fields }, timezone);
-    this.engine.createTask({ id, ...f, position: f.position ?? this.nextPosition(this.rows.tasks) });
+    this.engine.createTask({ id, ...f, position: f.position ?? this.nextPosition(this.rows.tasks) }, { holdMs });
     return id;
+  }
+
+  // «Отменить» сразу после добавления: без следа, пока создание удерживается;
+  // если запись уже ушла на сервер — обычное удаление в корзину.
+  async undoCreate(id) {
+    if (this.engine && await this.engine.cancelHeld(id)) return "gone";
+    await this.deleteTask(id);
+    return "trash";
   }
 
   updateTaskV2(id, fields, { timezone } = {}) {

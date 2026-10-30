@@ -158,13 +158,13 @@ export async function run() {
     const adapter = { userId: "u", get rows() { return A.view; }, deleteTask: (id) => A.deleteTask(id) };
     const result = await clearOverdue(adapter, "2026-10-09", 600);
     await A.sync();
-    ok("массовая очистка убрала только три просроченные задачи", result.moved === 3 && !result.failed && A.view.tasks.length === 4);
+    ok("массовая очистка убрала только две задачи с прошедшим сроком; пропущенный план — нет", result.moved === 2 && !result.failed && A.view.tasks.length === 5);
     A.close();
     A = await open(srv, "smoke:cleanup");
-    ok("массовая очистка без сети переживает переоткрытие", A.outbox.length === 3 && A.view.tasks.length === 4);
+    ok("массовая очистка без сети переживает переоткрытие", A.outbox.length === 2 && A.view.tasks.length === 5);
     srv.offline = false;
     await A.sync(); await A.sync();
-    ok("очистка синхронизирует мягкое удаление и сохраняет остальные задачи", A.outbox.length === 0 && ["late", "missed", "pastTime"].every((id) => srv.rows.task.get(id).deleted_at) && ["done", "future", "undated", "later"].every((id) => !srv.rows.task.get(id).deleted_at));
+    ok("очистка синхронизирует мягкое удаление и сохраняет остальные задачи", A.outbox.length === 0 && ["late", "pastTime"].every((id) => srv.rows.task.get(id).deleted_at) && ["missed", "done", "future", "undated", "later"].every((id) => !srv.rows.task.get(id).deleted_at));
     A.close();
   }
 
@@ -238,6 +238,27 @@ export async function run() {
     ok("отказ от конфликтной правки — частичный итог «1 из 2», не «применено»", A.proposalStatus(p4.proposal_id).state === "partial");
     A.close();
     await deleteLocalDb("smoke:P");
+  }
+
+  // «Отменить» после добавления (решение владельца 30.10): удерживаемое создание
+  // не уходит на сервер, отмена убирает его без следа; без отмены — уходит.
+  {
+    const srv = fakeServer();
+    let H = await open(srv, "smoke:H");
+    const kept = await H.createTask({ title: "Купить корм коту" }, { holdMs: 300 });
+    const gone = await H.createTask({ title: "Ошибочная задача" }, { holdMs: 300 });
+    await H.sync();
+    ok("удержание: пока доступна отмена, на сервер ничего не ушло", srv.rows.task.size === 0 && H.view.tasks.length === 2);
+    ok("удержание: отмена убирает задачу без следа", await H.cancelHeld(gone) && H.view.tasks.length === 1 && !H.outbox.some((o) => o.entity_id === gone));
+    H.close();
+    H = await open(srv, "smoke:H");
+    await new Promise((r) => setTimeout(r, 350));
+    await H.sync();
+    ok("удержание: после перезапуска и конца удержания задача на сервере, отменённой нет",
+      srv.rows.task.size === 1 && srv.rows.task.has(kept) && !srv.rows.task.has(gone));
+    ok("удержание: после отправки отмена без следа уже невозможна", !(await H.cancelHeld(kept)));
+    H.close();
+    await deleteLocalDb("smoke:H");
   }
 
   for (const n of ["smoke:A", "smoke:B", "smoke:R", "smoke:V", "smoke:cleanup"]) await deleteLocalDb(n);

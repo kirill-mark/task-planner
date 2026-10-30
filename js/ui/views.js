@@ -542,9 +542,8 @@ function statusBanner(ctx) {
 
 function renderMainPick(ctx, main) {
   const { rows, today, nowMin } = ctx;
-  const seen = new Set();
-  const list = tasksOfDay(rows, today).filter(isOpen).concat(overdue(rows, today, nowMin))
-    .filter((t) => !seen.has(t.id) && seen.add(t.id));
+  // Главная задача выбирается из задач этого дня (решение владельца 30.10).
+  const list = tasksOfDay(rows, today).filter(isOpen);
   const opts = list.map((t) => `<button type="button" class="c-option" role="radio" aria-checked="${main?.id === t.id}" data-action="main-set" data-id="${esc(t.id)}">
       <span class="c-radio" aria-hidden="true"></span><span class="grow"><span class="task-title">${esc(t.title)}</span>
       <span class="task-meta">${planPill(t, today, { dayView: true })}${duePill(t, today, nowMin)}${projectName(rows, t.group_id) ? `<span>${esc(projectName(rows, t.group_id))}</span>` : ""}</span></span></button>`).join("");
@@ -552,7 +551,7 @@ function renderMainPick(ctx, main) {
     <section class="sheet c-sheet" role="dialog" aria-modal="true" aria-label="Главная задача">
       <span class="handle"></span>
       <div class="sheet-header"><button type="button" class="btn quiet small" data-action="main-pick-close">Отмена</button><h2>Главная задача</h2><span aria-hidden="true"></span></div>
-      <p class="c-note">Главная задача показывается первой и не повторяется в плане дня. Выполненную выбрать нельзя.</p>
+      <p class="c-note">Выберите одну из задач на сегодня. Она показывается первой и не повторяется в плане дня.</p>
       <div role="radiogroup" aria-label="Задачи на сегодня">${opts || '<div class="empty">На сегодня нет открытых задач.</div>'}</div>
       ${main ? `<button type="button" class="btn quiet" data-action="main-clear">Не выбирать главную задачу</button>` : ""}
     </section>`;

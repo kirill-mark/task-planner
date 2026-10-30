@@ -627,7 +627,8 @@ function saveEditor() {
   const exists = ed.id && rows.tasks.some((t) => t.id === ed.id);
   if (exists) store.updateTaskV2(ed.id, fields, { timezone: settings.timezone });
   else {
-    const id = store.createTaskV2(fields, { timezone: settings.timezone });
+    // 6 секунд задача ждёт на телефоне, пока на экране «Отменить» (5 секунд).
+    const id = store.createTaskV2(fields, { timezone: settings.timezone, holdMs: 6000 });
     if (!id) {
       ed.error = "Хранилище на телефоне ещё не готово. Текст остался в форме — попробуйте ещё раз через пару секунд.";
       render();
@@ -639,7 +640,7 @@ function saveEditor() {
       : fields.planned_date === today ? "в план на сегодня"
       : fields.planned_date ? `в план на ${shortDate(fields.planned_date, { today })}`
       : !fields.due_date ? "во «Входящие»" : "";
-    showToast(`Задача добавлена${where ? " " + where : ""}`, "Отменить", () => store.deleteTask(id));
+    showToast(`Задача добавлена${where ? " " + where : ""}`, "Отменить", () => store.undoCreate(id));
   }
   ui.editor = null;
   render();

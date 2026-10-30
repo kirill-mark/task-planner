@@ -161,6 +161,20 @@ export class SyncEngine {
     return held;
   }
 
+  // Видны на экране, но пока не отправляются: создание, у которого ещё доступно
+  // «Отменить», и следующие за ним правки того же объекта.
+  delayedSeqs() {
+    const now = Date.now();
+    const waiting = new Set();
+    const out = new Set();
+    for (const op of this.outbox) {
+      const key = `${op.entity}:${op.entity_id}`;
+      if (waiting.has(key)) { out.add(op.seq); continue; }
+      if (op.state === "pending" && op.meta?.hold_until && Date.parse(op.meta.hold_until) > now) { out.add(op.seq); waiting.add(key); }
+    }
+    return out;
+  }
+
   recompute() {
     const rows = {};
     for (const entity of Object.keys(ENTITY_STORES)) {
@@ -230,16 +244,36 @@ export class SyncEngine {
     this.recompute();
     this.notify();
     this.sync("edit");
+    const holdMs = saved.meta?.hold_until ? Date.parse(saved.meta.hold_until) - Date.now() : 0;
+    if (holdMs > 0) setTimeout(() => this.sync("hold"), holdMs + 50);
     return saved;
   }
 
   // Новый объект получает постоянный id до первой отправки, поэтому повтор
-  // создания не может породить копию.
-  async createTask(fields) {
+  // создания не может породить копию. holdMs — короткое удержание на телефоне,
+  // пока доступно «Отменить»: запись уже в очереди и переживает перезапуск.
+  async createTask(fields, { holdMs = 0 } = {}) {
     const id = fields.id || newId();
     const { id: _ignored, ...changes } = fields;
-    await this.enqueue("task", "create", id, changes);
+    const meta = holdMs > 0 ? { hold_until: new Date(Date.now() + holdMs).toISOString() } : undefined;
+    await this.enqueue("task", "create", id, changes, meta);
     return id;
+  }
+
+  // «Отменить» после добавления: удерживаемое создание снимается с очереди целиком,
+  // на сервер ничего не уходит. false — удержание уже кончилось и запись отправлена.
+  async cancelHeld(entityId) {
+    const now = Date.now();
+    const drop = this.outbox.filter((o) => o.entity_id === entityId && o.state === "pending" &&
+      (o.meta?.hold_until ? Date.parse(o.meta.hold_until) > now : false));
+    if (!drop.length || drop[0].type !== "create") return false;
+    const seqs = this.outbox.filter((o) => o.entity_id === entityId && o.state === "pending").map((o) => o.seq);
+    const cancelled = this.outbox.filter((o) => seqs.includes(o.seq));
+    this.mergeProposals(await this.db.deleteOps(seqs, cancelled));
+    this.outbox = this.outbox.filter((o) => !seqs.includes(o.seq));
+    this.recompute();
+    this.notify();
+    return true;
   }
   updateTask(id, changes) { return this.enqueue("task", "update", id, changes); }
   completeTask(id, completed = true) { return this.enqueue("task", "update", id, { completed }); }
@@ -443,7 +477,8 @@ export class SyncEngine {
   async flush() {
     for (;;) {
       const held = this.heldSeqs();
-      const batch = this.outbox.filter((o) => o.state === "pending" && !held.has(o.seq)).slice(0, MAX_BATCH);
+      const delayed = this.delayedSeqs();
+      const batch = this.outbox.filter((o) => o.state === "pending" && !held.has(o.seq) && !delayed.has(o.seq)).slice(0, MAX_BATCH);
       if (!batch.length) return "ok";
 
       const r = await this.transport.sendOps(
