@@ -66,8 +66,9 @@ class MARKWidgetPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 }
 class MARKBridgeViewController: CAPBridgeViewController {
+    // The assistant now follows the app theme (concept C), so the status bar no
+    // longer switches to light text on its screen. The flag is kept for the plugin.
     var assistantActive = false
-    override var preferredStatusBarStyle: UIStatusBarStyle { assistantActive ? .lightContent : super.preferredStatusBarStyle }
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(MARKWidgetPlugin())
         bridge?.registerPluginInstance(MARKSpeechPlugin())

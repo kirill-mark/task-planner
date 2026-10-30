@@ -1156,16 +1156,17 @@ function renderDayPanel(ctx, day) {
 // ----------------------------------------------------------------- помощник --
 
 const DRAFT_FIELD = {
-  title: "название", notes: "описание", planned_date: "на", planned_time: "время", due_date: "до", due_time: "время дедлайна",
-  duration_minutes: "длительность", group_id: "группа", priority: "приоритет", completed: "выполнено",
+  title: "Название", notes: "Описание", planned_date: "Когда сделать", planned_time: "Время", due_date: "Выполнить до", due_time: "Время срока",
+  duration_minutes: "Длительность", group_id: "Проект", priority: "Приоритет", completed: "Выполнено",
 };
 
 function draftValue(ctx, k, v) {
+  if ((v === null || v === undefined || v === "") && k === "group_id") return "Без проекта";
   if (v === null || v === undefined || v === "") return "—";
   if (k.endsWith("_date")) return shortDate(v, { weekday: true, today: ctx.today });
   if (k.endsWith("_time")) return hhmm(v);
   if (k === "duration_minutes") return durationText(v);
-  if (k === "group_id") return ctx.rows.groups.find((g) => g.id === v)?.name || "—";
+  if (k === "group_id") return projectName(ctx.rows, v) || "—";
   if (k === "priority") return { low: "низкий", normal: "обычный", high: "высокий" }[v] || v;
   if (k === "completed") return v ? "да" : "нет";
   return String(v);
@@ -1173,31 +1174,33 @@ function draftValue(ctx, k, v) {
 
 // Итог одного действия — по его операции (пакет A ТЗ v1.1).
 const ACTION_LABEL = {
-  queued: ["", "ждёт отправки"], syncing: ["", "отправляется"], applied: ["ok", "применено"],
-  conflict: ["warn", "конфликт"], failed: ["bad", "не принято"], cancelled: ["", "отменено"],
+  queued: ["", "Ждёт отправки"], syncing: ["", "Отправляется"], applied: ["ok", "Применено"],
+  conflict: ["warn", "Две версии"], failed: ["bad", "Не применено"], cancelled: ["", "Отменено"],
 };
 
+// Одно действие предложения (макеты A06–A12): глагол, задача, что было → что станет,
+// метка итога. Галочка выбора — только пока предложение не отправлено.
 function renderDraft(ctx, d, i, msgIndex, locked, result) {
-  let body;
+  let verb, title, detail = "";
   if (d.type === "create") {
     const f = d.fields;
-    const bits = [f.planned_date ? `на ${draftValue(ctx, "planned_date", f.planned_date)}${f.planned_time ? " · " + hhmm(f.planned_time) : ""}` : "",
+    verb = "Создать"; title = f.title;
+    detail = [f.planned_date ? `${draftValue(ctx, "planned_date", f.planned_date)}${f.planned_time ? ", " + hhmm(f.planned_time) : ""}` : "без даты",
       f.due_date ? `до ${draftValue(ctx, "due_date", f.due_date)}${f.due_time ? " " + hhmm(f.due_time) : ""}` : "",
-      f.duration_minutes ? durationText(f.duration_minutes) : "", f.group_id ? draftValue(ctx, "group_id", f.group_id) : "Входящие"].filter(Boolean);
-    body = `<b>Новая задача:</b> ${esc(f.title)}<span class="muted" style="font-size:13px">${esc(bits.join(" · "))}</span>`;
+      f.duration_minutes ? durationText(f.duration_minutes) : "", f.group_id ? draftValue(ctx, "group_id", f.group_id) : ""].filter(Boolean).map(esc).join(" · ");
   } else if (d.type === "delete") {
-    body = `<b>Удалить:</b> ${esc(d.before?.title || "")}<span class="muted" style="font-size:13px">уйдёт в корзину на 30 дней</span>`;
+    verb = "Удалить"; title = d.before?.title || ""; detail = "уйдёт в корзину";
   } else if (d.fields.completed === true && Object.keys(d.fields).length === 1) {
-    body = `<b>Отметить выполненной:</b> ${esc(d.before?.title || "")}`;
+    verb = "Отметить выполненной"; title = d.before?.title || "";
   } else {
-    const rows = Object.entries(d.fields).map(([k, v]) => `<span class="h">${esc(DRAFT_FIELD[k] || k)}</span><span>${esc(draftValue(ctx, k, d.before?.[k]))}</span><span>${esc(draftValue(ctx, k, v))}</span>`).join("");
-    body = `<b>Изменить:</b> ${esc(d.before?.title || "")}<div class="conflict-grid"><span></span><span class="h">Было</span><span class="h">Станет</span>${rows}</div>`;
+    verb = "Изменить"; title = d.before?.title || "";
+    detail = Object.entries(d.fields).map(([k, v]) => `<span class="a-change">${esc(DRAFT_FIELD[k] || k)}: <s>${esc(draftValue(ctx, k, d.before?.[k]))}</s> → <b>${esc(draftValue(ctx, k, v))}</b></span>`).join("");
   }
   const [cls, label] = result ? ACTION_LABEL[result.status] || ["", result.status] : locked && d.skip ? ["", "не выбрано"] : ["", ""];
-  const badge = label ? `<span class="form-msg ${cls}" style="font-size:12px">${esc(label)}${result?.reason ? ": " + esc(result.reason) : ""}</span>` : "";
-  return `<label class="draft ${d.type === "delete" ? "danger" : ""}">
-    ${locked ? "" : `<input type="checkbox" data-action="draft-pick" data-msg="${msgIndex}" data-i="${i}" ${d.skip ? "" : "checked"} aria-label="Применить это изменение">`}
-    <span style="display:flex;flex-direction:column;gap:4px;min-width:0">${body}${badge}</span></label>`;
+  const badge = label ? `<span class="badge ${cls === "ok" ? "ok" : cls}">${esc(label)}${result?.reason ? ": " + esc(result.reason) : ""}</span>` : "";
+  return `<label class="a-action ${d.type === "delete" ? "danger" : ""}">
+    ${locked ? "" : `<input type="checkbox" class="a-pick" data-action="draft-pick" data-msg="${msgIndex}" data-i="${i}" ${d.skip ? "" : "checked"} aria-label="Применить: ${esc(verb)} «${esc(title)}»">`}
+    <span class="a-action-body"><span><span class="a-verb">${esc(verb)}</span> «${esc(title)}»</span>${detail ? `<span class="a-detail">${detail}</span>` : ""}${badge}</span></label>`;
 }
 
 // Итог предложения целиком: что сохранено на устройстве, что принял сервер,
@@ -1229,30 +1232,38 @@ function renderChatMessage(ctx, m, idx) {
   const locked = !pending;
   const chosen = drafts.filter((d) => !d.skip).length;
   const results = new Map((st?.actions || []).map((a) => [a.action_id, a]));
-  let footer = "";
+  let footer = "", head = "", sub = "";
+  const n = drafts.length;
   if (drafts.length) {
+    head = n > 1 ? `Предлагаю ${n} ${plural(n, "изменение", "изменения", "изменений")}` : "Предлагаю изменение";
     if (pending) {
-      footer = `${m.applyError ? `<span class="form-msg bad">${esc(m.applyError)}</span>` : ""}<div class="chips"><button type="button" class="btn small primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>${drafts.length > 1 ? `Применить ${chosen}` : "Применить"}</button>
-        <button type="button" class="btn small quiet" data-action="draft-cancel" data-msg="${idx}">Отмена</button></div>`;
+      sub = "Ничего не изменится, пока вы не нажмёте «Применить».";
+      footer = `${m.applyError ? `<span class="a-note bad" role="alert">${esc(m.applyError)}</span>` : ""}<div class="a-buttons"><button type="button" class="btn primary" data-action="draft-apply" data-msg="${idx}" ${chosen ? "" : "disabled"}>${n > 1 ? `Применить ${chosen}` : "Применить"}</button>
+        <button type="button" class="btn" data-action="draft-cancel" data-msg="${idx}">Отклонить</button></div>`;
     } else if (saving) {
-      footer = `<div class="chips"><button type="button" class="btn small primary" disabled>Сохраняю…</button></div>`;
+      footer = `<div class="a-buttons"><button type="button" class="btn primary" disabled><span class="a-spin" aria-hidden="true"></span>Применяю…</button></div>
+        <span class="a-note">Повторное нажатие ничего не задвоит.</span>`;
     } else if (st) {
       const [cls, text] = proposalSummary(st);
-      footer = `<span class="form-msg ${cls}">${esc(text)}</span>`;
+      head = `<span class="${cls}">${esc(text)}</span>`;
     } else if (m.state === "auto") {
-      footer = `<div class="row"><span class="form-msg ok">Добавлено</span><button type="button" class="btn small quiet" data-action="draft-undo" data-msg="${idx}">Отменить</button></div>`;
+      head = "Добавлено";
+      footer = `<div class="a-buttons"><button type="button" class="btn" data-action="draft-undo" data-msg="${idx}">Отменить</button></div>`;
     } else if (m.state === "applied") {
-      footer = `<span class="form-msg ok">Применено — изменения ушли в очередь</span>`; // чаты до пакета A
+      head = "Применено — изменения ушли в очередь"; // чаты до пакета A
     } else {
-      footer = `<span class="form-msg">Отменено, ничего не изменено</span>`;
+      head = "Отменено, ничего не изменено";
     }
   }
+  const headHtml = head.startsWith("<span") ? head : esc(head);
   return `<div class="bubble bot">
-    ${m.error ? `<span class="form-msg bad">${esc(m.error)}</span>` : `${renderAssistantText(m)}`}
-    ${refs.length ? `<details class="assistant-refs" data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="chips">${refs.map((t) => `<button type="button" class="chip-btn" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
-    ${drafts.length && pending ? `<span class="eyebrow">Предлагаю — проверьте перед применением</span>` : ""}
-    ${drafts.length ? `<div style="display:flex;flex-direction:column;gap:8px">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked, results.get(d.action_id))).join("")}</div>${footer}` : ""}
-    ${m.rejected?.length ? `<span class="muted" style="font-size:12px">Не принято сервером: ${esc(m.rejected.join("; "))}</span>` : ""}
+    ${m.error ? `<span class="a-note bad">${esc(m.error)}</span>` : `${renderAssistantText(m)}`}
+    ${refs.length ? `<details class="assistant-refs" data-detail="refs-${idx}"><summary>Связанные задачи · ${refs.length}</summary><div class="a-refs">${refs.map((t) => `<button type="button" class="cap" data-action="open-task" data-id="${esc(t.id)}">${esc(t.title.length > 40 ? t.title.slice(0, 39) + "…" : t.title)}</button>`).join("")}</div></details>` : ""}
+    ${drafts.length ? `<section class="a-proposal" aria-label="Предложение помощника">
+      <div class="a-proposal-head"><b>${headHtml}</b>${sub ? `<span>${sub}</span>` : ""}</div>
+      <div class="a-actions">${drafts.map((d, i) => renderDraft(ctx, d, i, idx, locked, results.get(d.action_id))).join("")}</div>
+      ${footer}</section>` : ""}
+    ${m.rejected?.length ? `<span class="a-note">Не принято сервером: ${esc(m.rejected.join("; "))}</span>` : ""}
   </div>`;
 }
 
@@ -1268,6 +1279,9 @@ function renderAssistantText(m) {
   }).join("")}</div>`;
 }
 
+// Помощник в общей системе оформления (макеты A01–A15, DS02 и UX07 ТЗ v1.1):
+// шапка «‹ Mark · Помощник», спокойный стартовый экран с работающими сценариями,
+// поле «Что нужно организовать?». Логика предложений — пакет A, без изменений.
 export function renderAssistant(ctx) {
   const a = ctx.ui.assistant || { chat: [], input: "", busy: false };
   const enabled = !!ctx.settings.assistant_consent_at;
@@ -1275,35 +1289,55 @@ export function renderAssistant(ctx) {
   const recording = voice.phase !== "idle";
   const offline = ctx.status?.state === "offline";
   const name = firstName(ctx.session);
-  const menu = `<details class="assistant-menu" data-detail="menu"><summary class="assistant-icon" aria-label="Меню чата">${icons.menu ? icons.menu(22) : '<span>•••</span>'}</summary><div class="assistant-menu-panel">
-    <button type="button" data-action="assistant-new">Новый чат</button>
-    <button type="button" data-action="assistant-chats">Мои чаты</button>
-    <button type="button" data-action="assistant-memory">Память${a.book?.memory?.length ? " · " + a.book.memory.length : ""}</button>
-    <a href="#/profile">Профиль и настройки</a>
-    ${a.chat.length ? '<button type="button" data-action="assistant-clear">Очистить этот чат</button>' : ""}
-    ${enabled ? '<button type="button" data-action="assistant-revoke">Выключить помощника</button>' : ""}
-    <small>Чаты и память хранятся на этом устройстве.</small></div></details>`;
-  return `<header class="assistant-header" ${a.panel ? 'inert aria-hidden="true"' : ""}><a href="#/home" class="assistant-icon" aria-label="Назад в Mark"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m14 6-6 6 6 6"/></svg></a><span>Mark <span class="assistant-header-label">/ помощник</span></span>${menu}</header>
+  const menu = `<details class="assistant-menu" data-detail="menu"><summary class="assistant-icon" aria-label="Меню чата">${icons.more(22)}</summary><div class="assistant-menu-panel">
+    <button type="button" data-action="assistant-new">${icons.plus(18)}Новый чат</button>
+    <button type="button" data-action="assistant-chats">${icons.tasks(18)}Мои чаты</button>
+    <button type="button" data-action="assistant-memory">${icons.edit(18)}Память${a.book?.memory?.length ? " · " + a.book.memory.length : ""}</button>
+    <a href="#/profile">${icons.cal(18)}Профиль и настройки</a>
+    ${a.chat.length ? `<button type="button" data-action="assistant-clear">${icons.trash(18)}Очистить этот чат</button>` : ""}
+    ${enabled ? `<button type="button" class="bad" data-action="assistant-revoke">Выключить помощника</button>` : ""}
+    <small>Чаты и память хранятся на этом телефоне.</small></div></details>`;
+  const starters = [["План на сегодня", "Покажи мои задачи на сегодня и предложи порядок выполнения"],
+    ["Что сделать первым?", "Что мне сделать первым сегодня? Объясни почему"],
+    ["Разобрать входящие", "Помоги разобрать входящие: что нужно уточнить?"]];
+  const welcome = `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}">
+      ${markSymbol(34, { label: null })}
+      <h1>${esc(greetingText(a.greetingIndex, name))}</h1>
+      ${enabled ? `<p class="a-lead">Помогу разобраться с задачами и предложу изменения. Задачи меняются только после вашего подтверждения.</p>
+        <div class="assistant-starters">${starters.map(([label, text]) => `<button type="button" class="cap" data-action="assistant-ask" data-text="${esc(text)}" ${offline || a.busy ? "disabled" : ""}>${label}</button>`).join("")}</div>`
+      : `<div class="assistant-consent"><p>Чтобы отвечать по делу, помощник передаёт ваш вопрос, историю текущего чата, подходящие фрагменты прошлых сообщений, сохранённые заметки памяти и до 60 подходящих задач с описаниями на сервер Mark и провайдеру Groq.</p>
+        <p>Любые изменения задач — только после вашего подтверждения.</p>
+        <button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button>${ctx.ui.saved?.assistant?.cls === "bad" ? `<p class="bad" role="alert">${esc(ctx.ui.saved.assistant.text)}</p>` : ""}</div>`}
+    </div>`;
+  const hints = [a.storageError ? `<div class="c-banner bad" role="alert"><span class="grow"><b>${esc(a.storageError)}</b></span></div>` : "",
+    offline ? `<div class="c-banner" role="status"><span class="grow"><b>Нет сети</b><span>Помощнику нужен интернет. Черновик останется здесь.</span></span></div>`
+      : ctx.status?.unconfirmed ? `<div class="assistant-hint" role="status">Есть изменения, которые ещё не отправлены. Ответ может их не учитывать.</div>` : "",
+    voice.error ? `<div class="c-banner bad" role="alert"><span class="grow"><b>${esc(voice.error)}</b></span></div>` : "",
+    recording ? `<div class="assistant-recording" role="status"><span class="recording-dot"></span>${voice.phase === "starting" ? "Включаю микрофон…" : voice.phase === "finishing" ? "Завершаю распознавание…" : "Слушаю. Нажмите ■, когда закончите."}</div>` : ""].join("");
+  return `<header class="assistant-header" ${a.panel ? 'inert aria-hidden="true"' : ""}>
+      <a href="#/home" class="a-back" aria-label="Назад в Mark">${icons.left(22)}${markSymbol(16, { label: null })}<span>Mark</span></a>
+      <span class="a-title">Помощник</span>${menu}</header>
     <div class="assistant-transcript" ${a.panel ? 'inert aria-hidden="true"' : ""} role="log" aria-label="Диалог с помощником" aria-live="polite">
       ${renderNotices(ctx)}
-      ${a.chat.length && enabled ? `<div class="assistant-messages">${a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("")}${a.busy ? '<div class="assistant-thinking"><span></span><span></span><span></span><span class="sr-only">Думаю…</span></div>' : ""}</div>` : `<div class="assistant-welcome ${!a.greetingAnimated ? "assistant-welcome-enter" : ""}"><span class="assistant-mark">Mark AI ${icons.spark(14)}</span><p>Твой помощник по делам.</p><h1>${esc(greetingText(a.greetingIndex, name))}</h1><span class="assistant-intro">Освободим голову.<br>Соберём день по твоим задачам.</span>
-        ${enabled ? `<div class="assistant-starters">${["План на сегодня", "Что сделать первым?", "Разобрать входящие"].map((label, i) => `<button type="button" data-action="assistant-ask" data-text="${["Покажи мои задачи на сегодня и предложи порядок выполнения", "Что мне сделать первым сегодня? Объясни почему", "Помоги разобрать входящие: что нужно уточнить?"][i]}" ${offline || a.busy ? "disabled" : ""}>${label}<span>↗</span></button>`).join("")}</div>` : `<div class="assistant-consent"><p>Чтобы отвечать по делу, помощник передаёт твой вопрос, историю текущего чата, подходящие фрагменты твоих сообщений из прошлых чатов и сохранённые тобой заметки памяти и до 60 подходящих задач с описаниями на сервер Mark и провайдеру Groq.</p><p>Любые изменения задач — после твоего подтверждения.</p><button type="button" class="btn primary" data-action="assistant-consent">Включить помощника</button>${ctx.ui.saved?.assistant?.cls === "bad" ? `<p role="alert">${esc(ctx.ui.saved.assistant.text)}</p>` : ""}</div>`}
-      </div>`}
+      ${a.chat.length && enabled ? `<div class="assistant-messages">${a.chat.map((m, i) => renderChatMessage(ctx, m, i)).join("")}${a.busy ? '<div class="assistant-thinking" role="status"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>Смотрю ваши задачи…</div>' : ""}</div>` : welcome}
     </div>
     ${enabled ? `<div class="assistant-bottom" ${a.panel ? 'inert aria-hidden="true"' : ""}>
-      ${a.storageError ? `<div class="assistant-hint bad" role="alert">${esc(a.storageError)}</div>` : ""}
-      ${offline ? '<div class="assistant-hint" role="status">Нет связи. Черновик останется здесь.</div>' : ctx.status?.unconfirmed ? '<div class="assistant-hint" role="status">Есть несинхронизированные изменения. Ответ может их не учитывать.</div>' : ""}
-      ${voice.error ? `<div class="assistant-hint bad" role="alert">${esc(voice.error)}</div>` : ""}
-      ${recording ? `<div class="assistant-recording" role="status"><span class="recording-dot"></span>${voice.phase === "starting" ? "Включаю микрофон…" : voice.phase === "finishing" ? "Завершаю распознавание…" : "Слушаю. Нажми ■, когда закончишь."}</div>` : ""}
-      <form class="assistant-composer" data-action="assistant-send"><textarea name="message" data-key="assistant" data-draft="assistantInput" rows="1" maxlength="2000" autocomplete="off" aria-label="Сообщение помощнику" placeholder="О чём поговорим?" ${recording ? "readonly" : ""}>${esc(a.input)}</textarea>
-        <div class="assistant-composer-tools"><span class="assistant-composer-label">${recording ? "Диктовка" : "Твои задачи. Твой ритм."}</span>
-        ${ctx.speechAvailable ? `<button type="button" class="assistant-icon ${recording ? "is-recording" : ""}" data-action="assistant-voice" aria-label="${recording ? "Остановить диктовку" : "Надиктовать сообщение"}" ${a.busy || voice.phase === "finishing" ? "disabled" : ""}>${recording ? '<span class="recording-stop">■</span>' : micIcon}</button>` : ""}
-        <button type="submit" class="assistant-send" aria-label="Отправить сообщение" ${a.busy || offline || recording || !a.input.trim() ? "disabled" : ""}>${icons.send(20)}</button></div>
-      </form><p class="assistant-footnote">${recording ? "Распознавание выполняет iPhone или сервис Apple. Текст отправишь сам." : "Помощник может ошибаться. Изменения — с твоего согласия."}</p>
+      ${hints}
+      <form class="assistant-composer" data-action="assistant-send"><textarea name="message" data-key="assistant" data-draft="assistantInput" rows="1" maxlength="2000" autocomplete="off" aria-label="Сообщение помощнику" placeholder="Что нужно организовать?" ${recording ? "readonly" : ""}>${esc(a.input)}</textarea>
+        ${ctx.speechAvailable ? `<button type="button" class="assistant-icon a-round ${recording ? "is-recording" : ""}" data-action="assistant-voice" aria-label="${recording ? "Остановить диктовку" : "Надиктовать сообщение"}" ${a.busy || voice.phase === "finishing" ? "disabled" : ""}>${recording ? '<span class="recording-stop">■</span>' : micIcon}</button>` : ""}
+        <button type="submit" class="assistant-send" aria-label="Отправить сообщение" ${a.busy || offline || recording || !a.input.trim() ? "disabled" : ""}>${icons.send(20)}</button>
+      </form>${recording ? `<p class="assistant-footnote">Распознавание выполняет iPhone или сервис Apple. Текст вы отправляете сами.</p>` : ""}
     </div>` : ""}
     ${a.panel ? `<div class="assistant-panel" role="dialog" aria-modal="true" aria-label="${a.panel === "chats" ? "Мои чаты" : "Память помощника"}">
-      <header><h2>${a.panel === "chats" ? "Мои чаты" : "Память"}</h2><button type="button" class="assistant-icon" data-action="assistant-close-panel" data-key="assistant-panel-close" autofocus aria-label="Закрыть">×</button></header>
-      ${a.panel === "chats" ? `<button type="button" class="btn primary" data-action="assistant-new">+ Новый чат</button><div class="assistant-chat-list">${(a.book?.threads || []).map(t => `<button type="button" data-action="assistant-open-chat" data-id="${esc(t.id)}" ${t.id === a.threadId ? 'aria-current="true"' : ""}><strong>${esc(t.title)}</strong><small>${t.messages.length} сообщений</small></button>`).join("")}</div>` : `<p>Эти заметки помощник учитывает во всех чатах. Решения на сегодня действуют только в указанную дату. Сохраняй предпочтения фразой «Запомни: …» или добавляй здесь по одной заметке на строку.</p><p>Память хранится на этом устройстве и передаётся ИИ вместе с вопросом. Её можно изменить или удалить здесь.</p><textarea data-key="assistant-memory" data-draft="assistantMemory" aria-label="Заметки памяти" rows="8" maxlength="8020">${esc(a.memoryDraft || "")}</textarea>${a.memoryError || a.storageError ? `<p class="bad" role="alert">${esc(a.memoryError || a.storageError)}</p>` : ""}<button type="button" class="btn primary" data-action="assistant-memory-save">Сохранить память</button>`}
+      <header><button type="button" class="a-back" data-action="assistant-close-panel" data-key="assistant-panel-close" autofocus>${icons.left(22)}Помощник</button><h2>${a.panel === "chats" ? "Мои чаты" : "Память"}</h2></header>
+      ${a.panel === "chats" ? `<button type="button" class="c-soft-btn" data-action="assistant-new">${icons.plus(16)}Новый чат</button>
+        <div class="c-group assistant-chat-list">${(a.book?.threads || []).map(t => `<button type="button" class="c-li" data-action="assistant-open-chat" data-id="${esc(t.id)}" ${t.id === a.threadId ? 'aria-current="true"' : ""}><span class="grow"><span>${esc(t.title)}</span><span class="c-label">${t.messages.length} ${plural(t.messages.length, "сообщение", "сообщения", "сообщений")}</span></span>${t.id === a.threadId ? icons.check(16) : icons.right(16)}</button>`).join("")}</div>
+        <p class="c-note">Чаты и память хранятся на этом телефоне.</p>`
+      : `<p class="c-note">Эти заметки помощник учитывает во всех чатах. Решения на сегодня действуют только в указанную дату. Сохраняйте предпочтения фразой «Запомни: …» или добавляйте здесь по одной заметке на строку.</p>
+        <textarea class="c-title-field a-memory" data-key="assistant-memory" data-draft="assistantMemory" aria-label="Заметки памяти" rows="8" maxlength="8020">${esc(a.memoryDraft || "")}</textarea>
+        ${a.memoryError || a.storageError ? `<p class="c-note bad" role="alert">${esc(a.memoryError || a.storageError)}</p>` : ""}
+        <button type="button" class="btn primary" data-action="assistant-memory-save">Сохранить память</button>
+        <p class="c-note">Память хранится на этом телефоне и передаётся помощнику вместе с вопросом.</p>`}
     </div>` : ""}`;
 }
 
