@@ -35,6 +35,7 @@ export function createTransport({ getAccessToken, fetchImpl = apiFetch, url = SU
     } catch (e) {
       // сеть недоступна или запрос не дождался ответа: результат неизвестен,
       // поэтому операция остаётся в очереди и уйдёт повторно с тем же id
+      console.warn(`[mark sync] ${path}: нет ответа: ${e && e.message || e}`);
       return { kind: "offline", message: String(e && e.message || e) };
     } finally {
       clearTimeout(timer);
@@ -43,6 +44,7 @@ export function createTransport({ getAccessToken, fetchImpl = apiFetch, url = SU
     let data = null;
     try { data = await res.json(); } catch { /* тело не JSON */ }
     if (res.ok) return { kind: "ok", data };
+    console.warn(`[mark sync] ${path}: HTTP ${res.status}: ${data?.message || data?.error || "тело не JSON"}`);
     if (res.status === 401 || res.status === 403) return { kind: "auth", message: data?.message || data?.error };
     if (res.status === 426) return { kind: "outdated", message: data?.message };
     if (res.status >= 500 || res.status === 429 || res.status === 408) {
