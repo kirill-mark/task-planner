@@ -114,7 +114,7 @@ const previewStore = {
     rows.tasks = rows.tasks.filter((t) => t.id !== id);
   },
 };
-const status = { state: q.get("status") || "synced", lastSyncedAt: q.get("fresh") ? null : Date.now(), unconfirmed: ["saving", "offline"].includes(q.get("status")) ? 2 : 0, conflicts: [], failed: [] };
+const status = { state: q.get("status") || "synced", lastSyncedAt: q.get("fresh") ? null : Date.now(), unconfirmed: ["saving", "offline", "error"].includes(q.get("status")) ? 2 : 0, conflicts: [], failed: [] };
 // ?fresh=1 — первая загрузка без данных на телефоне; ?conflict=1 — две версии срока
 if (q.get("fresh")) rows.tasks = [];
 if (q.get("conflict")) {

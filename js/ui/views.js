@@ -597,6 +597,11 @@ function statusBanner(ctx) {
   const n = ctx.status?.unconfirmed || 0;
   if (st === "offline") return `<div class="c-banner" role="status">${icons.cloudOff(20)}<span class="grow"><b>Нет сети</b>
     <span>Изменения сохранены на телефоне и отправятся, когда появится связь${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}</span></span></div>`;
+  // Сервер отвечает ошибкой (как 5.11: «JWT issued at future»): правки не
+  // потеряны и повторяются сами — плашка говорит это прямо, а не «ждёт».
+  if (st === "error") return `<div class="c-banner bad" role="status"><span class="grow"><b>Сервер не принимает изменения</b>
+    <span>Они сохранены на телефоне и уйдут сами${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}</span></span>
+    <button type="button" class="btn small" data-action="sync-now">Повторить</button></div>`;
   const tone = s.cls === "bad" ? "bad" : "warn";
   return `<div class="c-banner ${tone}" role="status"><span class="grow"><b>${esc(s.text)}</b></span>
     <button type="button" class="btn small" data-action="sync-now">Повторить</button></div>`;
@@ -1887,7 +1892,7 @@ function renderProfilePhone(ctx, parts, { sync, n }) {
   const st = ctx.status?.state;
   const at = ctx.status?.lastSyncedAt;
   const when = at ? (isoFromMs(at) === ctx.today ? "в " : relativeDay(isoFromMs(at), ctx.today).toLowerCase() + ", ") + new Date(at).toTimeString().slice(0, 5) : "";
-  const statusLine = st === "synced" ? `Всё сохранено${when ? ` · сверка ${when}` : ""}` : st === "offline" ? `Нет сети${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}` : syncLabel(ctx.status).text;
+  const statusLine = st === "synced" ? `Всё сохранено${when ? ` · сверка ${when}` : ""}` : st === "error" ? `Сервер не принимает изменения${n ? ` · ${n} ${plural(n, "ждёт", "ждут", "ждут")}` : ""}` : st === "offline" ? `Нет сети${n ? ` · ${n} ${plural(n, "изменение ждёт", "изменения ждут", "изменений ждут")}` : ""}` : syncLabel(ctx.status).text;
   const row = (href, icon, label, value = "", extra = "") => `<a class="c-li" href="${href}" ${extra}>${icon}<span class="grow"><span>${label}</span></span>${value ? `<span class="c-label c-li-value">${esc(value)}</span>` : ""}${icons.right(16)}</a>`;
   const go = (key) => `#/profile?section=${key}`;
   const tg = ctx.telegram;
