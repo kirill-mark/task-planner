@@ -25,7 +25,7 @@ import { clearOverdue } from "./clear-overdue.js";
 import { todayIso, hhmm, deviceTimezone, plural, addDays, shortDate } from "./lib.js";
 import { overdueKind, dayLoad } from "./derive.js";
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from "../mark/transport.js";
-import { apiFetch } from "../mark/endpoint.js";
+import { apiFetch, AUTH_STORAGE_KEY } from "../mark/endpoint.js";
 import {
   layoutOf, defaultLayout, renderShell, renderHome, renderTasks, renderCalendar, renderAssistant, renderProfile,
   renderAuth, renderSplash, syncLabel,
@@ -487,7 +487,30 @@ async function loadTelegram() {
 
 // --------------------------------------------------------------------- вход --
 
+// Сохранённый вход читается сразу. Библиотека входа при запуске сначала
+// обновляет устаревший вход и ждёт сеть; без связи заставка висела бы, хотя
+// все задачи уже есть на телефоне.
+function storedSession() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "null");
+    return saved?.user?.id ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
 onAuthChange((next) => {
+  // Пустая сессия при сохранённом входе — это сбой обновления по сети, а не
+  // выход: при выходе и отозванном входе библиотека сначала стирает запись.
+  if (!next && session && storedSession()) {
+    authResolved = true;
+    render();
+    return;
+  }
+  applySession(next);
+});
+
+function applySession(next) {
   authResolved = true;
   if (next) tgLoginInFlight = false;
   const prevId = session?.user?.id;
@@ -519,7 +542,11 @@ onAuthChange((next) => {
   }
   updateIphoneReminders();
   render();
-});
+}
+
+// После загрузки всего модуля: обработчики ниже по файлу уже определены.
+const bootSession = storedSession();
+if (bootSession) queueMicrotask(() => { if (!session) applySession(bootSession); });
 
 async function tryTelegramAutoLogin() {
   const tg = window.Telegram?.WebApp;

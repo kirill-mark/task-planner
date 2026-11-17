@@ -23,7 +23,7 @@ let directFirstUntil = 0;
 // недавно, рядом с запросом идёт короткая проба: нет ответа за PROBE_MS —
 // запрос снимается и уходит напрямую. Медленный, но живой ответ (помощник)
 // пробу не задевает: она смотрит только, отвечает ли сам прокси.
-export const timing = { probeMs: 4000, proxyOkMs: 2 * 60 * 1000 };
+export const timing = { probeMs: 4000, proxyOkMs: 2 * 60 * 1000, routeMs: 15000 };
 let proxyOkUntil = 0;
 
 function unreachable() { return new TypeError("proxy unreachable"); }
@@ -67,12 +67,27 @@ export async function apiFetch(input, init = {}, fetchImpl = (...a) => fetch(...
   if (!url.startsWith(PROXY_URL) && !url.startsWith(DIRECT_URL)) return fetchImpl(input, init);
   const path = url.startsWith(PROXY_URL) ? url.slice(PROXY_URL.length) : url.slice(DIRECT_URL.length);
   const send = (base, opts) => typeof input === "string" ? fetchImpl(base + path, opts) : fetchImpl(new Request(base + path, input), opts);
-  const go = async (base) => {
-    if (base !== PROXY_URL) return send(base, init);
-    const res = await viaProxy(send, init, fetchImpl);
+  // Запросы входа (supabase-js) идут без своего таймаута: при сети, которая
+  // молча теряет пакеты, они висели бы бесконечно, а вместе с ними — запуск
+  // приложения. Поэтому у каждого пути без таймаута вызывающего есть предел.
+  const capped = (run) => async (base) => {
+    if (init?.signal) return run(base, init);
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timing.routeMs);
+    try {
+      return await run(base, { ...init, signal: ctrl.signal });
+    } catch (e) {
+      throw ctrl.signal.aborted ? new TypeError("route timed out") : e;
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  const go = capped(async (base, opts) => {
+    if (base !== PROXY_URL) return send(base, opts);
+    const res = await viaProxy(send, opts, fetchImpl);
     proxyOkUntil = Date.now() + timing.proxyOkMs;
     return res;
-  };
+  });
   const routes = Date.now() < directFirstUntil ? [DIRECT_URL, PROXY_URL] : [PROXY_URL, DIRECT_URL];
   try {
     return await go(routes[0]);

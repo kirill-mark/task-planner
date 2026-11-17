@@ -79,9 +79,19 @@ slowCalls = [];
 await apiFetch(PROXY_URL + "/rest/v1/e", {}, slow);
 ok("недавно отвечавший прокси — без пробы", slowCalls.length === 1);
 
+// Сеть молча теряет всё (Россия без VPN при выключенном прокси): запрос без
+// своего таймаута не висит вечно, а заканчивается сетевой ошибкой.
+resetRoute();
+timing.routeMs = 60;
+sl = silent(true);
+t0 = Date.now();
+const capErr = await apiFetch(PROXY_URL + "/auth/v1/token", { method: "POST" }, sl.impl).then(() => null, (e) => e);
+ok("оба пути молчат — сетевая ошибка, а не вечное ожидание", capErr instanceof TypeError && Date.now() - t0 < 1000);
+timing.routeMs = 15000;
+
 f = fake([]);
 await apiFetch("https://example.com/other", {}, f.impl);
 ok("чужие адреса не трогаются", f.calls[0] === "https://example.com/other");
 
 if (fails) { console.log(`${fails} endpoint checks failed`); process.exit(1); }
-console.log("13/13 endpoint checks passed");
+console.log("14/14 endpoint checks passed");

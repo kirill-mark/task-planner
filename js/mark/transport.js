@@ -18,7 +18,14 @@ const REQUEST_TIMEOUT_MS = 20000;
 // должен брать актуальный. fetchImpl подменяется в тестах.
 export function createTransport({ getAccessToken, fetchImpl = apiFetch, url = SUPABASE_URL, anonKey = SUPABASE_ANON_KEY }) {
   async function request(path, body) {
-    const token = await getAccessToken();
+    let token;
+    try {
+      token = await getAccessToken();
+    } catch (e) {
+      // вход не обновился из-за сети: сохранённые правки ждут, а не требуют входа
+      console.warn(`[mark sync] ${path}: вход не обновился: ${e && e.message || e}`);
+      return { kind: "offline", message: String(e && e.message || e) };
+    }
     if (!token) return { kind: "auth" };
 
     const ctrl = new AbortController();

@@ -120,7 +120,12 @@ export class ModelStore {
     this.setStatus({ state: "loading", message: "", lastSyncedAt: null, unconfirmed: 0 });
 
     const transport = createTransport({
-      getAccessToken: async () => (await this.supabase.auth.getSession()).data.session?.access_token || null,
+      getAccessToken: async () => {
+        const { data, error } = await this.supabase.auth.getSession();
+        if (data.session) return data.session.access_token;
+        if (error) throw error; // вход не обновился (обычно сеть); выход приходит событием
+        return null;
+      },
     });
     const engine = new SyncEngine({ userId, transport, source: this.source });
     await engine.open();
